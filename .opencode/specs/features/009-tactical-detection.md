@@ -1,4 +1,4 @@
-# Feature 008 — Tactical Detection
+# Feature 009 — Tactical Detection
 
 ## Goal
 

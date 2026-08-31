@@ -311,10 +311,10 @@ How should ChessRemedy implement optional cloud synchronization using Dropbox fo
 - Web Crypto API (already available in modern browsers)
 
 ### Architecture Decisions Required
-1. ADR-008: Confirm Dropbox as sync provider (recommended)
-2. ADR-009: App Folder vs Full Dropbox (recommend App Folder)
-3. ADR-010: Sync file format (recommend JSON with metadata envelope)
-4. ADR-011: Conflict resolution strategy (recommend JSON-level merge)
+1. ADR-008: Confirm Dropbox as sync provider (recommended) — Accepted.
+2. ADR-015: App Folder vs Full Dropbox (recommend App Folder) — Accepted.
+3. ADR-016: Sync file format (recommend JSON with metadata envelope) — Accepted.
+4. ADR-017: Conflict resolution strategy (recommend JSON-level merge) — Accepted.
 
 ## Open Questions
 

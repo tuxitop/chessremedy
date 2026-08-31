@@ -1,4 +1,4 @@
-# Feature 004 — Stockfish
+# Feature 005 — Stockfish
 
 ## Goal
 

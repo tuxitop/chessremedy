@@ -235,7 +235,15 @@ The user can configure repetition behavior.
 
 ## 12. Dashboard
 
-The dashboard provides:
+The dashboard is the **presentation layer** for the application's
+analytics. It renders charts and summary cards but does not calculate
+statistics itself.
+
+All numbers shown in the dashboard are produced by the statistics
+service (Feature 013 — Game Analysis History & Statistics) and consumed
+read-only.
+
+The dashboard surfaces:
 
 ### Rating
 
@@ -269,6 +277,13 @@ Errors by:
 - retention/progress indicators
 
 Charts must expose the selected platform/time-control filters.
+
+Charts must obey the V1 sample-size rule from
+`specs/domain/statistics.md` (minimum aggregate sample size 5; below
+that threshold an "insufficient data" placeholder is shown).
+
+Empty and insufficient-data states must be rendered explicitly and must
+not be replaced by a literal zero.
 
 ---
 
@@ -318,9 +333,16 @@ V1 architecture must allow:
 - export/import
 - future cloud synchronization
 
-The first planned synchronization provider is Dropbox.
+The first planned synchronization provider is Dropbox. Sub-decisions
+are recorded in:
 
-Synchronization must not become a prerequisite for using the application.
+- ADR-008 (provider-independent synchronization architecture)
+- ADR-015 (Dropbox App Folder scope)
+- ADR-016 (gzipped JSON envelope file format)
+- ADR-017 (JSON-level merge with last-write-wins fallback)
+
+Synchronization must not become a prerequisite for using the
+application.
 
 ---
 

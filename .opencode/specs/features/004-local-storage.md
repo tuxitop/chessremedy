@@ -1,4 +1,4 @@
-# Feature 003 — Local Game Storage
+# Feature 004 — Local Game Storage
 
 ## Goal
 

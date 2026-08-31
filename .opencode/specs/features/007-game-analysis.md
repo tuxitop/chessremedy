@@ -1,4 +1,4 @@
-# Feature 006 — Game Analysis
+# Feature 007 — Game Analysis
 
 ## Goal
 

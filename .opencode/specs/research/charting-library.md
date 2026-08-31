@@ -241,7 +241,7 @@ Which charting library is best suited for ChessRemedy's React SPA dashboard (fea
 
 ## Impact on ChessRemedy
 
-1. **Feature 012 (Dashboard)**: Recharts provides all required chart types with minimal setup. `<ResponsiveContainer>` ensures desktop/tablet/mobile support. Custom tooltips can show chess-specific data (rating, accuracy percentages, blunder counts).
+1. **Feature 014 (Dashboard)**: Recharts provides all required chart types with minimal setup. `<ResponsiveContainer>` ensures desktop/tablet/mobile support. Custom tooltips can show chess-specific data (rating, accuracy percentages, blunder counts).
 
 2. **Theme support**: Dark/light themes can be implemented via Recharts' style props on components. The upcoming theming system in v3.11.0 will provide a more formal approach.
 

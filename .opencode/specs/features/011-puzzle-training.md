@@ -1,4 +1,4 @@
-# Feature 010 — Puzzle Training
+# Feature 011 — Puzzle Training
 
 ## Goal
 

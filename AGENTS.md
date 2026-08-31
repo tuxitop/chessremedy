@@ -13,11 +13,40 @@ V1 focuses on:
 5. Personalized tactical puzzle generation.
 6. Puzzle training.
 7. FSRS spaced repetition.
-8. Progress analytics.
+8. Progress analytics (statistics + dashboard).
 9. Optional cloud synchronization.
 
 Future versions may add opening repertoires, opening training, endgame
 training and additional chess-training features.
+
+---
+
+## V1 feature roadmap
+
+The canonical feature list is in `.opencode/specs/features/`. The
+shipping order is:
+
+| # | Feature                                           | Spec                                  |
+|---|---------------------------------------------------|---------------------------------------|
+| 001 | Foundation                                      | `001-foundation.md`                   |
+| 002 | Chessboard & Chess Interaction                   | `002-chessboard-chess-interaction.md` |
+| 003 | Chess/Game Domain & Deterministic Fixtures       | `003-chess-domain.md`                 |
+| 004 | Local Game Storage                               | `004-local-storage.md`                |
+| 005 | Stockfish                                        | `005-stockfish.md`                    |
+| 006 | Game Import                                      | `006-game-import.md`                  |
+| 007 | Game Analysis                                    | `007-game-analysis.md`                |
+| 008 | Move Classification                              | `008-move-classification.md`          |
+| 009 | Tactical Detection                               | `009-tactical-detection.md`           |
+| 010 | Tactical Puzzle Generation                       | `010-puzzle-generation.md`            |
+| 011 | Puzzle Training                                  | `011-puzzle-training.md`              |
+| 012 | Spaced Repetition                                | `012-spaced-repetition.md`            |
+| 013 | Game Analysis History & Statistics               | `013-game-history-statistics.md`      |
+| 014 | Dashboard                                        | `014-dashboard.md`                    |
+| 015 | Synchronization                                  | `015-synchronization.md`              |
+
+Features should be implemented in this order. The current active and
+next feature are tracked by `.opencode/commands/status.md` and should
+not be inferred from implementation alone.
 
 ---
 
@@ -82,7 +111,10 @@ Do not implement multiple unrelated features in one change.
 
 The chessboard implementation must use `@lichess-org/chessground@10.1.1` or
 a higher 10.x version. The installed version must never be lower than
-10.1.1.
+10.1.1 and must remain within the 10.x major range. Major-version
+upgrades require a new ADR.
+
+See ADR-002 (chessboard library) and ADR-014 (version pin).
 
 Do not replace it with react-chessboard or another chessboard library
 without an explicit architecture decision.
@@ -128,6 +160,13 @@ an aggregate view.
 
 Rating, accuracy, blunders and other relevant metrics should retain their
 platform and time-control dimensions.
+
+## Analytics split
+
+Statistics calculation belongs to Feature 013 (Game Analysis History
+& Statistics). The dashboard (Feature 014) is a presentation layer
+that consumes the statistics service read-only; it must not perform
+domain or statistical calculations itself.
 
 ---
 
