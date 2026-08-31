@@ -79,8 +79,10 @@ The four layers defined in `.opencode/specs/ARCHITECTURE.md` map as:
   is used only to prevent FOUC before React mounts.
 - PWA via `vite-plugin-pwa` (Workbox). Service worker is disabled in
   `vite dev` and validated via `vite preview`.
-- All testing follows ADR-009: Vitest 4 + Testing Library 16 + happy-dom
-  - fake-indexeddb + MSW 2 + Playwright 1.
+- All testing follows ADR-009: Vitest + Testing Library + happy-dom
+  (default) / jsdom (on-demand) + fake-indexeddb + MSW (installed by
+  its consumer feature) + Playwright. Exact versions follow the
+  Dependency policy in `AGENTS.md` (latest stable).
 
 See `.opencode/specs/decisions/` for the full set of accepted ADRs.
 

@@ -3,6 +3,10 @@ description: Show ChessRemedy specification and implementation status
 agent: plan
 ---
 
+> **Always follow the `## Dependency policy` and `## Execution policy`
+> in `AGENTS.md`.** Include any dependency or verification warning /
+> error in the "Verification Problems" section so it is not lost.
+
 Review the ChessRemedy specification workspace and current repository.
 
 Determine:

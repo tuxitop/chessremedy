@@ -21,12 +21,7 @@ export function renderWithProviders(
     return render(ui, options);
   }
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <MemoryRouter
-      initialEntries={initialEntries}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
-      {children}
-    </MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
   );
   return render(ui, { wrapper, ...options });
 }

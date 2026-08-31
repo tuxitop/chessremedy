@@ -3,6 +3,11 @@ description: Run ChessRemedy verification checks
 agent: build
 ---
 
+> **Always follow the `## Dependency policy` and `## Execution policy`
+> in `AGENTS.md`.** Any warning, error, or audit finding must be fixed
+> or escalated with the user before the verify command reports
+> success.
+
 Verify the current ChessRemedy implementation.
 
 Run the project's:

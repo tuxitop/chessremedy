@@ -3,5 +3,5 @@ import { RouterProvider } from 'react-router-dom';
 import { router } from './app/router';
 
 export function App(): React.JSX.Element {
-  return <RouterProvider router={router} future={{ v7_startTransition: true }} />;
+  return <RouterProvider router={router} />;
 }

@@ -3,6 +3,11 @@ description: Create or update a feature specification from requirements
 agent: architect
 ---
 
+> **Always follow the `## Dependency policy` and `## Execution policy`
+> in `AGENTS.md`.** In particular: use the latest stable versions of
+> any dependency referenced in the spec; do not introduce version
+> pins unless they represent a hard architectural constraint.
+
 Create or update the ChessRemedy feature specification requested by the user.
 
 Before editing:

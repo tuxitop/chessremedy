@@ -41,25 +41,16 @@ Internal project context consulted:
 
 ## Findings
 
-### Versions and maintenance status (mid-2026)
+### Versions and maintenance status
 
-| Tool                       | Latest stable          | Released       | Maintained by                       | Status                                                                                       |
-| -------------------------- | ---------------------- | -------------- | ----------------------------------- | -------------------------------------------------------------------------------------------- |
-| Vitest                     | 4.1.11                 | 2026-08-18     | VoidZero / Vitest team              | Active. 5.0.0-rc.2 published 2026-08-17.                                                     |
-| Playwright                 | 1.62.1                 | 2026-07-30     | Microsoft                           | Active. Monthly cadence.                                                                     |
-| Jest                       | 30.4.2                 | 2026-05-09     | Jest / OpenJS                       | Active. React 19 supported in `pretty-format`; new ESM runtime rewrite in 30.4.0.             |
-| React Testing Library      | 16.3.2                 | 2026-01-19     | Testing Library                     | Active. React 19 supported since 16.1.0 (2024-12). `@testing-library/dom` is peer.           |
-| @testing-library/user-event| 14.6.6                 | 2026-08-22     | Testing Library                     | Active.                                                                                      |
-| jsdom                      | 30.0.1                 | 2026-07-29     | Domenic (@domenic)                  | Active. Major CSSOM rewrite in 30.0.0 (Node ≥ 22.22.2 / 24.15 / 26).                         |
-| happy-dom                  | 20.11.6                | 2026-08-19     | @capricorn86                        | Active.                                                                                      |
-| fake-indexeddb             | 6.2.5                  | 2025-11-07     | @dumbmatter, @nolanlawson           | Active but slow cadence (last release ~10 months ago). Tracks WPT; `forceCloseDatabase` added 2025-08. |
-| MSW                        | 2.15.0                 | 2026-07-08     | @kettanaito / MSWJS                 | Active. v2 stable since 2023; `WebSocketHandler` and SSE finalization added in 2026.         |
-| Cypress                    | 15.21.1                | 2026-08-25     | Cypress.io                          | Active. Major-version cadence accelerated in 2024–2025.                                      |
-| @web/test-runner           | 1.0.1 (`@web/dev-server-core`) | 2026-07-27 | modernweb-dev / open-wc             | Stable at 1.0.1. Repository activity has slowed; releases since 2024 are mostly patch updates bumping Puppeteer / esbuild. |
-| Storybook                  | 10.5.10 (stable)       | 2026-08-20     | Storybook maintainers / Chromatic   | Active. v10.6.0-alpha.9 published 2026-08-26. Interaction tests are first-class.              |
+Exact tool versions are not reproduced here; they follow the
+**Dependency policy in `AGENTS.md`** (latest stable by default).
+The lockfile is the source of truth for the versions in use. This
+section's role is to document **why each tool was selected**, not
+which version is current.
 
-All projects referenced above are alive in mid-2026. None of the candidates
-considered has been archived.
+All projects referenced below are alive in mid-2026 and maintained
+actively. None of the candidates considered has been archived.
 
 ### Stacks under consideration
 
@@ -67,25 +58,25 @@ For each candidate stack the assessment below reflects a 2026-08 evaluation.
 
 #### A. Vitest + React Testing Library + Playwright
 
-- **Vitest 4.1.11**: Vite-native, ESM-first, TypeScript and JSX handled out of
-  the box. Re-uses the application Vite config, including `vite-plugin-pwa`
-  configuration if needed. Watch mode is HMR-equivalent. Jest-compatible
-  API surface (`vi.fn`, `vi.mock`, `vi.useFakeTimers`, `expect`,
-  `describe`/`it`).
-- **Browser mode** (`vitest --browser`) is real-browser execution using
-  Playwright / WebdriverIO / Puppeteer providers, but the Vitest docs
-  themselves describe it as "early stages of development" and recommend
-  augmenting with Playwright or Cypress for full browser tests. As of v4,
-  browser mode is improving rapidly (v5.0-rc has additional provider fixes),
-  but it is not yet the recommended primary path for production code.
-- **Component tests** via `@testing-library/react` 16.3.2 + `user-event`
-  14.6.6. RTL peer-depends on `@testing-library/dom` (since v16).
-- **Environment choices**: jsdom 30.0.1 or happy-dom 20.11.6. happy-dom is
-  substantially faster (typically 2–5× on cold start and DOM-heavy tests),
-  with more limited API coverage (e.g. CSS computed styles are still
-  narrower). jsdom is more spec-complete and is what Jest uses by default.
-  Vitest lets you switch per-project or per-file via `// @vitest-environment
-  happy-dom`.
+- **Vitest**: Vite-native, ESM-first, TypeScript and JSX handled out
+  of the box. Re-uses the application Vite config, including
+  `vite-plugin-pwa` configuration if needed. Watch mode is
+  HMR-equivalent. Jest-compatible API surface (`vi.fn`, `vi.mock`,
+  `vi.useFakeTimers`, `expect`, `describe`/`it`).
+- **Browser mode** (`vitest --browser`) is real-browser execution
+  using Playwright / WebdriverIO / Puppeteer providers, but the
+  Vitest docs themselves describe it as "early stages of
+  development" and recommend augmenting with Playwright or Cypress
+  for full browser tests. It is not yet the recommended primary path
+  for production code.
+- **Component tests** via `@testing-library/react` +
+  `user-event`. RTL peer-depends on `@testing-library/dom`.
+- **Environment choices**: jsdom or happy-dom. happy-dom is
+  substantially faster (typically 2–5× on cold start and DOM-heavy
+  tests), with more limited API coverage (e.g. CSS computed styles
+  are still narrower). jsdom is more spec-complete and is what Jest
+  uses by default. Vitest lets you switch per-project or per-file
+  via `// @vitest-environment happy-dom`.
 - **Worker tests**: Vitest's `pool: 'threads'` (default) supports real
   `new Worker()` calls. Vitest also exposes `workerThreads` / `vmThreads`
   pool options. Tests can import the Stockfish service module and call the
@@ -97,28 +88,30 @@ For each candidate stack the assessment below reflects a 2026-08 evaluation.
 - **Network mocking**: MSW v2 in Node runs via `setupServer` against the
   internal `fetch` / XHR. In Vitest, MSW works in both node and
   browser-mode environments.
-- **Browser integration tests**: Playwright 1.62.1 drives a real Chromium /
-  Firefox / WebKit against the built app (Vite preview / PWA). Playwright
-  has first-class Worker APIs (`page.workers()`) and `WorkerInfo` reporting.
-  This is the recommended path for the PWA, offline-mode, and Stockfish
-  integration tests.
+- **Browser integration tests**: Playwright drives a real
+  Chromium / Firefox / WebKit against the built app (Vite preview /
+  PWA). Playwright has first-class Worker APIs (`page.workers()`)
+  and `WorkerInfo` reporting. This is the recommended path for the
+  PWA, offline-mode, and Stockfish integration tests.
 - **Coverage**: Vitest ships with `@vitest/coverage-v8` and
   `@vitest/coverage-istanbul`. V8 is faster and recommended for Vite
   projects; istanbul is more reliable on edge runtimes.
-- **Strengths**: single config (`vitest.config.ts`) shared with the app,
-  fastest developer loop, real-ESM, no Jest config translation, no Babel.
-  React 19 + concurrent rendering works because `@testing-library/react`
-  16.3.2 added `onCaughtError` type inference specifically for React 19.
-- **Weaknesses**: Vitest is still adding API surface; some Jest plugins do
-  not have equivalents. Browser mode is not mature enough for the
-  Stockfish-in-Worker integration tests; that work is delegated to
-  Playwright.
+- **Strengths**: single config (`vitest.config.ts`) shared with the
+  app, fastest developer loop, real-ESM, no Jest config translation,
+  no Babel. React 19 + concurrent rendering works because the
+  current `@testing-library/react` adds `onCaughtError` type
+  inference specifically for React 19.
+- **Weaknesses**: Vitest is still adding API surface; some Jest
+  plugins do not have equivalents. Browser mode is not mature enough
+  for the Stockfish-in-Worker integration tests; that work is
+  delegated to Playwright.
 
 #### B. Jest + React Testing Library + Playwright
 
-- **Jest 30.4.2**: stable, mature. ESM support improved substantially in
-  v30 (custom runtime rewrite; `require(esm)` on Node 24.9+). React 19
-  snapshot support landed in `pretty-format` in v30.4.0.
+- **Jest**: stable, mature. ESM support improved substantially in
+  recent majors (custom runtime rewrite; `require(esm)` on Node
+  24.9+). React 19 snapshot support landed in `pretty-format` in
+  v30.4.0.
 - **Vite compatibility**: Jest does not read `vite.config.ts`. The project
   needs `ts-jest` / `@swc/jest` / `babel-jest` for TypeScript and JSX.
   Path aliases, asset imports, and Vite plugins must be re-declared in
@@ -161,7 +154,7 @@ happy-dom.
 
 #### D. Cypress + Cypress Component Testing
 
-- **Cypress 15.21.1**: stable. Component Testing is bundled in the
+- **Cypress**: stable. Component Testing is bundled in the
   Cypress app.
 - **Browser engine**: Cypress runs against a real browser (Chromium /
   Firefox / WebKit in 15.x). Cypress has historically been Electron-only;
@@ -182,7 +175,7 @@ happy-dom.
 
 #### E. @web/test-runner (Web Test Runner) + @testing-library/react
 
-- **@web/test-runner 1.0.1** + `@web/dev-server-core` 1.0.1 (Jul 2026):
+- **@web/test-runner** + `@web/dev-server-core` (Jul 2026):
   stable, but the project is in maintenance mode. Most 2025–2026 releases
   are dependency bumps (Puppeteer 25, esbuild 0.27). The repository's
   open issues and PR queue reflect this slowdown.
@@ -200,7 +193,7 @@ happy-dom.
 
 #### F. Storybook interaction testing
 
-- **Storybook 10.5.10** (stable) ships `@storybook/test-runner` for
+- **Storybook** (stable) ships `@storybook/test-runner` for
   interaction tests and visual regression. Stories are run in a real
   browser. Vitest is integrated through `@storybook/addon-vitest` for
   component-level tests.
@@ -215,7 +208,8 @@ happy-dom.
 
 - **ESM / Vite native**: only Vitest (and WTR) reuse the application Vite
   config. Jest requires a parallel config.
-- **React 18 / 19 concurrent rendering**: RTL 16.3.2 supports React 19
+- **React 18 / 19 concurrent rendering**: current RTL supports
+  React 19
   (`onCaughtError` type), and Vitest 4 has no known regressions with
   React 19. Jest 30.4.0 also supports React 19 snapshots. Cypress is
   neutral.
@@ -228,12 +222,12 @@ happy-dom.
   `jest-environment-node` supports `worker_threads` but requires more
   setup. Playwright is the only candidate that can exercise a real
   production worker in a real browser.
-- **IndexedDB in Node**: `fake-indexeddb` 6.2.5 works equally well with
+- **IndexedDB in Node**: `fake-indexeddb` works equally well with
   Vitest and Jest. Dexie has no preference.
 - **IndexedDB in the browser**: Playwright tests use the real browser
   IndexedDB. Tests that need a clean DB can use Playwright's
   `BrowserContext.storageState` and Dexie's `delete()`.
-- **Mocking network**: MSW v2.15.0 is the de facto choice. It works with
+- **Mocking network**: MSW is the de facto choice. It works with
   Vitest (node and browser) and with Playwright (via
   `page.route()` or by adding MSW as a service worker in test mode).
   Cypress intercepts can replace MSW if Cypress is the chosen browser
@@ -259,7 +253,8 @@ happy-dom.
 - fake-indexeddb's release cadence has slowed (the most recent release
   before v6.2.5 was v6.2.4 in October 2025). It is not abandoned, but
   ChessRemedy should pin the version explicitly and monitor.
-- Coverage tooling comparison: `@vitest/coverage-v8` and `nyc` / istanbul
+- Coverage tooling comparison: `@vitest/coverage-v8` and `nyc` /
+  istanbul
   produce equivalent results for our domain logic, but coverage of
   `chess.js` and the Stockfish worker wrapper is only meaningful if we
   instrument the wrapper, not the underlying engine binary. This document
@@ -287,7 +282,7 @@ The reasoning, broken out by the categories the brief calls out:
 - **React component tests (chessboard wrapper, puzzle UI, dashboard)** —
   Vitest with **happy-dom as the default DOM environment** and
   `// @vitest-environment jsdom` for the few components that depend on
-  css-tree / getComputedStyle fidelity. RTL 16.3.2 + `user-event` 14.6.6.
+  css-tree / getComputedStyle fidelity. Current RTL + `user-event`.
   Vitest's shared Vite config means Vite path aliases, the
   `@lichess-org/chessground` resolve, and any future `vite-plugin-pwa`
   config "just work" in tests.
@@ -349,21 +344,26 @@ The following are **not** part of V1 and should not be installed:
   not rely on it for Stockfish-in-Worker integration yet; the docs
   themselves flag it as early-stage. Re-evaluate at v5.0 stable.
 
-### Concrete version pins for the recommendation (informational)
+### Concrete dependencies for the recommendation
 
-These are the versions to evaluate during foundation implementation. Do
-not install during research.
+The exact versions installed are governed by the **Dependency policy
+in `AGENTS.md`** (latest stable by default). The `package.json` caret
+ranges and the lockfile are the source of truth.
 
-- `vitest@^4.1.11`
-- `@vitest/coverage-v8@^4.1.11`
-- `@testing-library/react@^16.3.2`
+The recommended set is:
+
+- `vitest` (unit/component tests)
+- `@vitest/coverage-v8` (coverage)
+- `@testing-library/react`
 - `@testing-library/dom` (peer)
-- `@testing-library/user-event@^14.6.6`
-- `@testing-library/jest-dom@^6.x`
-- `happy-dom@^20.11.6` (default), `jsdom@^30.0.1` (on-demand)
-- `fake-indexeddb@^6.2.5`
-- `msw@^2.15.0`
-- `@playwright/test@^1.62.1`
+- `@testing-library/user-event`
+- `@testing-library/jest-dom`
+- `happy-dom` (default DOM env), `jsdom` (on-demand via
+  `// @vitest-environment jsdom`)
+- `fake-indexeddb` (IndexedDB in Node)
+- `msw` (network mocking — installed when its consumer feature lands,
+  initially Feature 006 Game Import)
+- `@playwright/test` (browser integration)
 
 ## Impact on ChessRemedy
 
@@ -395,23 +395,19 @@ not install during research.
 
 ## Open questions
 
-- **Vitest 4 → 5 timing**: 5.0.0-rc.2 is on the verge of release. Should
-  V1 adopt 4.x stable or ride the 5.0 release? Recommendation is 4.x
-  stable for now; revisit at 5.0.0 GA.
-- **happy-dom vs jsdom as default**: happy-dom is faster but has narrower
-  CSS / event behavior. We should make the decision at foundation time
-  based on the chessboard wrapper's actual needs. Defaulting to
-  happy-dom and using `// @vitest-environment jsdom` for outliers is the
-  safest compromise.
-- **MSW in Playwright**: Use `page.route()` directly, or run MSW inside
-  Playwright as a service worker? Both are valid. `page.route()` is
-  simpler; MSW gives shared fixtures between Vitest and Playwright
+- **happy-dom vs jsdom as default**: happy-dom is faster but has
+  narrower CSS / event behavior. Defaulting to happy-dom and using
+  `// @vitest-environment jsdom` for outliers is the safest
+  compromise.
+- **MSW in Playwright**: Use `page.route()` directly, or run MSW
+  inside Playwright as a service worker? Both are valid. `page.route()`
+  is simpler; MSW gives shared fixtures between Vitest and Playwright
   tests. Decide during the game-import feature.
-- **Coverage threshold**: not set in this research. To be decided with
-  the team when the foundation feature is implemented.
-- **Visual regression cadence**: should the chessboard snapshots run on
-  every PR, nightly, or only on tagged commits? Defer until Storybook /
-  visual tooling is adopted.
+- **Coverage threshold**: not set in this research. To be decided
+  with the team when the foundation feature is implemented.
+- **Visual regression cadence**: should the chessboard snapshots run
+  on every PR, nightly, or only on tagged commits? Defer until
+  Storybook / visual tooling is adopted.
 - **Browser matrix in Playwright**: Chromium-only on PRs, full
   Chromium / Firefox / WebKit on main + nightly? The product targets
   desktop and mobile, so WebKit (Safari / iOS) is a meaningful CI

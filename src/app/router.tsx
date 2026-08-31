@@ -9,25 +9,20 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
-export const router = createBrowserRouter(
-  [
-    {
-      path: ROUTES.home,
-      element: <AppShell />,
-      children: [
-        { index: true, element: <HomePage /> },
-        { path: 'games', element: <GamesPage /> },
-        { path: 'analysis', element: <AnalysisPage /> },
-        { path: 'puzzles', element: <PuzzlesPage /> },
-        { path: 'dashboard', element: <DashboardPage /> },
-        { path: 'settings', element: <SettingsPage /> },
-        { path: '*', element: <NotFoundPage /> },
-      ],
-    },
-  ],
+// react-router-dom@7 enables v7 future flags by default; no `future` option
+// is needed (and the option is no longer accepted in v7).
+export const router = createBrowserRouter([
   {
-    future: {
-      v7_relativeSplatPath: true,
-    },
+    path: ROUTES.home,
+    element: <AppShell />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: 'games', element: <GamesPage /> },
+      { path: 'analysis', element: <AnalysisPage /> },
+      { path: 'puzzles', element: <PuzzlesPage /> },
+      { path: 'dashboard', element: <DashboardPage /> },
+      { path: 'settings', element: <SettingsPage /> },
+      { path: '*', element: <NotFoundPage /> },
+    ],
   },
-);
+]);

@@ -53,13 +53,14 @@ Spaced repetition:
 
 Visualization:
 
-- Recharts 3.x (ADR-010)
+- Recharts (ADR-010)
 
 Testing:
 
-- Vitest 4.x + Testing Library 16.x + happy-dom / jsdom + fake-indexeddb
-  + MSW 2.x (ADR-009). Playwright 1.x for browser-level integration
-  tests.
+- Vitest + Testing Library + happy-dom (default) / jsdom (on-demand) +
+  fake-indexeddb + MSW (installed by its consumer feature, ADR-009).
+  Playwright for browser-level integration tests. Exact versions follow
+  the Dependency policy in `AGENTS.md` (latest stable).
 
 ---
 

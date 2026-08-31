@@ -3,6 +3,14 @@ description: Implement an approved ChessRemedy implementation plan
 agent: build
 ---
 
+> **Always follow the `## Dependency policy` and `## Execution policy`
+> in `AGENTS.md`.** In particular: bump every dependency to its
+> latest stable release as part of the implementation; fix any
+> warnings or errors that arise during `npm run lint`,
+> `npm run typecheck`, `npm run test`, `npm run build`, or
+> `npm run dev`; consult the user with the blocker and the
+> alternatives considered before applying any suppression.
+
 Implement the requested approved plan:
 
 $ARGUMENTS

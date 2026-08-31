@@ -214,6 +214,58 @@ Keyboard shortcuts must never be the only way to perform an essential action.
 
 ---
 
+## Dependency policy
+
+**Latest stable by default.** Every dependency (runtime, dev, peer,
+optional) and every version pin in spec/ADR/plan files must point at
+the latest stable release at the moment of writing, unless one of the
+following applies:
+
+1. A hard architectural constraint is recorded in AGENTS.md
+   (currently: the Chessground version pin in "Mandatory chessboard
+   dependency").
+2. The user has explicitly pinned a version for a specific reason.
+3. The latest stable is incompatible with another required
+   dependency and no alternative exists.
+
+When (3) applies, the agent must stop, surface the blocker, list the
+alternatives considered (pin, replace, drop, force-install with
+documented justification), and ask the user before applying any
+workaround.
+
+Version pins in ADRs are removed. ADRs identify the **library** and
+its **policy**; the exact version lives in the lockfile. ADR-014
+(Chessground version pin) is the only ADR that retains a version pin
+because the version is an architectural requirement, not a
+convenience.
+
+## Execution policy
+
+Code must complete all of the following without warnings or errors:
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm run format:check`
+- `npm run test`
+- `npm run build`
+- `npm run dev` (no browser-console errors during a smoke run)
+- `npm run test:browser` (when Chromium is available)
+- `npm audit`
+
+When a warning or error appears, the agent must:
+
+1. **Fix the underlying cause** first.
+2. If the fix is not possible (upstream bug, peer-dep dead end,
+   intentional upstream deprecation, etc.), **consult the user** with:
+   the warning text, the underlying cause, the alternatives
+   considered, and a recommendation.
+3. **Apply a workaround** (suppression, escape hatch, alternative)
+   only after the user confirms. The approval and rationale are
+   recorded in the commit message.
+
+This rule is inherited by every `.opencode/commands/*.md` and every
+`.opencode/plans/*.md` generated after this change.
+
 ## Testing
 
 Every feature must have appropriate tests.

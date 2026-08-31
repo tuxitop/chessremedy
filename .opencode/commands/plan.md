@@ -3,6 +3,11 @@ description: Create an implementation plan for an approved feature
 agent: planner
 ---
 
+> **Always follow the `## Dependency policy` and `## Execution policy`
+> in `AGENTS.md`.** In particular: use the latest stable versions of
+> any dependency referenced in the plan; do not introduce version
+> pins unless they represent a hard architectural constraint.
+
 Create an implementation plan for:
 
 $ARGUMENTS

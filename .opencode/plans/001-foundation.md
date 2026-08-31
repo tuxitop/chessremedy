@@ -430,51 +430,44 @@ SW is registered automatically when the production build is served via
 
 ## 9. Dependencies
 
-Versions are minimums consistent with the spec. ADR-009 fixes Vitest
-4.x, Testing Library 16.x, happy-dom 20.x, fake-indexeddb 6.x, MSW 2.x
-and Playwright 1.x. ADR-014 pins Chessground at `^10.1.1` but
+Versions follow the Dependency policy in `AGENTS.md` (latest stable
+by default). ADR-009 identifies the testing tools but does not pin
+versions; ADR-014 pins Chessground at `^10.1.1` but
 **Chessground is NOT installed in Feature 001** — it is a dependency of
 Feature 002.
 
 ### 9.1 Runtime dependencies
 
-| Package                | Version    | Used by                                                       |
-|------------------------|------------|---------------------------------------------------------------|
-| `react`                | `^19`      | UI                                                            |
-| `react-dom`            | `^19`      | UI                                                            |
-| `react-router-dom`     | `^6`       | Routing (D1)                                                  |
-| `dexie`                | `^4`       | IndexedDB wrapper                                             |
+| Package                | Used by                                                       |
+|------------------------|---------------------------------------------------------------|
+| `react`                | UI                                                            |
+| `react-dom`            | UI                                                            |
+| `react-router-dom`     | Routing (D1)                                                  |
+| `dexie`                | IndexedDB wrapper                                             |
 
 ### 9.2 Dev dependencies
 
-| Package                          | Version    | Purpose                                                |
-|----------------------------------|------------|--------------------------------------------------------|
-| `typescript`                     | `^5`       | Language                                               |
-| `vite`                           | `^6`       | Bundler / dev server                                    |
-| `@vitejs/plugin-react`           | `^4`       | React Fast Refresh / JSX                                |
-| `vite-plugin-pwa`                | `^0.20`    | PWA manifest + SW (D3)                                  |
-| `workbox-window`                 | `^7`       | (Optional) only if needed by app code; otherwise transitively pulled |
-| `vitest`                         | `^4`       | Test runner (ADR-009)                                  |
-| `@vitest/coverage-v8`            | `^4`       | Coverage (ADR-009)                                      |
-| `@testing-library/react`         | `^16`      | Component testing (ADR-009)                             |
-| `@testing-library/user-event`    | `^14`      | Realistic user events (ADR-009)                         |
-| `@testing-library/jest-dom`      | `^6`       | Custom matchers                                         |
-| `happy-dom`                      | `^20`      | Default DOM env (ADR-009)                               |
-| `jsdom`                          | `^30`      | On-demand DOM env (ADR-009)                              |
-| `fake-indexeddb`                 | `^6`       | IndexedDB in tests (ADR-009)                             |
-| `msw`                            | `^2`       | Network mocking (ADR-009) — installed, used minimally in Foundation; primary consumers are Feature 006 |
-| `@playwright/test`               | `^1`       | Browser-level integration (ADR-009)                     |
-| `eslint`                         | `^9`       | Linter (D4)                                              |
-| `typescript-eslint`              | `^8`       | TS rules for ESLint 9                                    |
-| `eslint-plugin-react-hooks`      | `^5`       | Hook rules                                               |
-| `eslint-plugin-jsx-a11y`         | `^6`       | Accessibility rules                                      |
-| `eslint-config-prettier`         | `^9`       | Prettier/ESLint integration (D5)                         |
-| `prettier`                       | `^3`       | Formatter (D5)                                            |
-| `@types/react`                   | `^19`      | React types                                               |
-| `@types/react-dom`               | `^19`      | React DOM types                                           |
-| `@types/node`                    | `^20`      | Node types for vite.config / playwright                  |
+The full set is listed in `package.json` and resolved by the
+lockfile. Exact versions follow the Dependency policy in `AGENTS.md`
+(latest stable by default). The set below is the *shape* of the
+Foundation dependency surface:
 
-Storybook is deferred per ADR-009.
+- TypeScript (`typescript`)
+- Build: `vite`, `@vitejs/plugin-react`, `vite-plugin-pwa`,
+  `workbox-window`
+- Tests: `vitest`, `@vitest/coverage-v8`, `@testing-library/react`,
+  `@testing-library/react` peer `@testing-library/dom`,
+  `@testing-library/user-event`, `@testing-library/jest-dom`,
+  `happy-dom`, `jsdom`, `fake-indexeddb`, `@playwright/test`
+- Lint/format: `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`,
+  `eslint-plugin-jsx-a11y`, `eslint-config-prettier`, `prettier`,
+  `globals`
+- Types: `@types/react`, `@types/react-dom`, `@types/node`
+
+`msw` is **not** installed in Foundation; it lands with its first
+consumer feature (Feature 006 Game Import).
+
+Storybook is deferred.
 
 No dependency shall be added that belongs to a later feature
 (`chess.js`, `@lichess-org/chessground`, `stockfish`, `recharts`,
