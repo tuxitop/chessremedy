@@ -1,0 +1,340 @@
+# ChessRemedy Product Specification
+
+## 1. Product
+
+ChessRemedy is a local-first chess training application that analyzes a
+player's own games and converts meaningful mistakes and missed tactical
+opportunities into personalized training.
+
+The initial product focuses exclusively on:
+
+- game analysis
+- blunders
+- tactical misses
+- personalized puzzles
+- spaced repetition
+- progress analysis
+
+Opening repertoire functionality is future scope.
+
+---
+
+## 2. V1 Goal
+
+The application should answer three questions:
+
+1. What mistakes am I repeatedly making?
+2. Am I improving?
+3. What should I train next?
+
+---
+
+## 3. Game Sources
+
+V1 supports:
+
+- Chess.com
+- Lichess
+
+The user can import their games in batches.
+
+Imported games retain:
+
+- platform
+- external game ID
+- players
+- ratings
+- result
+- date/time
+- PGN
+- time control
+- user's color
+
+Duplicate games must not be imported twice.
+
+---
+
+## 4. Analysis
+
+Games are analyzed locally using Stockfish running in a Web Worker.
+
+Analysis identifies:
+
+- move evaluation
+- best move
+- principal variation
+- evaluation change
+- WDL where appropriate
+- move classification
+- tactical opportunities
+- game phase
+
+Analysis must be resumable.
+
+---
+
+## 5. Move Classification
+
+ChessRemedy distinguishes:
+
+- good move
+- inaccuracy
+- mistake
+- blunder
+- missed tactical opportunity
+
+Classification is contextual.
+
+A difference from the engine's top move is not automatically a mistake.
+
+The exact methodology is defined in the domain specifications.
+
+---
+
+## 6. Time Controls
+
+Time control is a first-class dimension.
+
+The canonical V1 normalized time-control categories are:
+
+- bullet
+- blitz
+- rapid
+- classical
+- correspondence
+- unknown
+
+The original source time-control string is preserved alongside the
+normalized category. Statistics must distinguish each category listed
+above and must not silently combine different time controls.
+
+Rating progress must be separated by:
+
+- platform
+- time control
+
+---
+
+## 7. Game Phase
+
+Relevant analysis is categorized as:
+
+- Opening
+- Middlegame
+- Endgame
+
+The methodology for phase classification is documented separately.
+
+---
+
+## 8. Personalized Puzzles
+
+Puzzles originate from the user's own games.
+
+A puzzle represents a meaningful tactical opportunity or mistake.
+
+A puzzle is not simply:
+
+"Play Stockfish's first choice."
+
+A puzzle may contain a sequence of moves.
+
+The sequence continues until the tactical objective is resolved.
+
+Possible objectives include:
+
+- winning material
+- forcing mate
+- obtaining a decisive advantage
+- neutralizing a tactical threat
+
+Candidate puzzles must be engine-verified.
+
+Alternative valid solutions must be considered.
+
+---
+
+## 9. Puzzle Provenance
+
+Every generated puzzle retains:
+
+- source game
+- source position
+- original played move
+- expected solution
+- tactical objective
+- engine/version used
+- analysis metadata
+- puzzle-generation version
+
+The user should eventually be able to understand:
+
+"What did I play, what should I have played, and why did it matter?"
+
+---
+
+## 10. Puzzle Training
+
+The puzzle interface supports:
+
+- responsive chessboard
+- mouse interaction
+- touch interaction
+- arrows
+- highlights
+- board orientation
+- hints
+- retry
+- restart
+- previous
+- next
+- start
+- end
+- engine analysis after completion
+
+If a user plays a wrong move:
+
+- identify it as incorrect
+- allow automatic retry according to settings
+
+Hints are organized into four progressive levels. Each level reveals
+strictly more information than the previous one. The exact level at
+which a hint becomes available is configurable.
+
+1. **Relevant piece** — indicate the piece type that initiates the
+   solution.
+2. **Piece highlight** — highlight that piece on the board.
+3. **Destination** — highlight the destination square of the first
+   solution move.
+4. **Move** — show the full first move of the solution.
+
+If the puzzle solution has multiple moves, additional hints after level
+4 are out of scope for V1.
+
+The exact hint behavior is configurable.
+
+---
+
+## 11. Spaced Repetition
+
+Completed puzzles are scheduled using FSRS.
+
+Review history records:
+
+- puzzle
+- timestamp
+- outcome
+- rating
+- attempts
+- hints
+- response time where available
+
+The user can configure repetition behavior.
+
+---
+
+## 12. Dashboard
+
+The dashboard provides:
+
+### Rating
+
+Rating trends separated by:
+
+- platform
+- time control
+
+### Errors
+
+Trends for:
+
+- inaccuracies
+- mistakes
+- blunders
+- missed tactics
+
+### Game phase
+
+Errors by:
+
+- opening
+- middlegame
+- endgame
+
+### Training
+
+- puzzles due
+- puzzles completed
+- success rate
+- retention/progress indicators
+
+Charts must expose the selected platform/time-control filters.
+
+---
+
+## 13. Responsive UI
+
+The application must work on:
+
+- desktop
+- tablet
+- mobile
+
+Essential functionality must not depend on hover.
+
+Chess interaction must support touch.
+
+---
+
+## 14. Themes
+
+The application supports:
+
+- light theme
+- dark theme
+- multiple chessboard themes
+- multiple piece sets
+
+The exact initial themes are an implementation decision.
+
+---
+
+## 15. Privacy
+
+Game analysis occurs locally.
+
+User game data should remain local unless the user explicitly enables
+synchronization.
+
+---
+
+## 16. Synchronization
+
+Synchronization is optional.
+
+V1 architecture must allow:
+
+- local-only use
+- export/import
+- future cloud synchronization
+
+The first planned synchronization provider is Dropbox.
+
+Synchronization must not become a prerequisite for using the application.
+
+---
+
+## 17. Future Scope
+
+Future versions may include:
+
+- opening repertoires
+- opening training
+- opening puzzles
+- repertoire compliance
+- tactical motif training
+- endgame training
+- AI explanations
+- additional game providers
+
+These are not V1 implementation requirements.
