@@ -1,0 +1,48 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.label {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.helper {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  margin: 0;
+}
+
+.options {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.optionButton {
+  flex: 1;
+  padding: var(--space-3);
+  min-height: var(--touch-target-min);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-weight: 500;
+}
+
+.optionButton:hover {
+  border-color: var(--color-border-strong);
+}
+
+.optionButton.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+}

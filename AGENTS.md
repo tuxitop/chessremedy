@@ -26,23 +26,23 @@ training and additional chess-training features.
 The canonical feature list is in `.opencode/specs/features/`. The
 shipping order is:
 
-| # | Feature                                           | Spec                                  |
-|---|---------------------------------------------------|---------------------------------------|
-| 001 | Foundation                                      | `001-foundation.md`                   |
-| 002 | Chessboard & Chess Interaction                   | `002-chessboard-chess-interaction.md` |
-| 003 | Chess/Game Domain & Deterministic Fixtures       | `003-chess-domain.md`                 |
-| 004 | Local Game Storage                               | `004-local-storage.md`                |
-| 005 | Stockfish                                        | `005-stockfish.md`                    |
-| 006 | Game Import                                      | `006-game-import.md`                  |
-| 007 | Game Analysis                                    | `007-game-analysis.md`                |
-| 008 | Move Classification                              | `008-move-classification.md`          |
-| 009 | Tactical Detection                               | `009-tactical-detection.md`           |
-| 010 | Tactical Puzzle Generation                       | `010-puzzle-generation.md`            |
-| 011 | Puzzle Training                                  | `011-puzzle-training.md`              |
-| 012 | Spaced Repetition                                | `012-spaced-repetition.md`            |
-| 013 | Game Analysis History & Statistics               | `013-game-history-statistics.md`      |
-| 014 | Dashboard                                        | `014-dashboard.md`                    |
-| 015 | Synchronization                                  | `015-synchronization.md`              |
+| #   | Feature                                    | Spec                                  |
+| --- | ------------------------------------------ | ------------------------------------- |
+| 001 | Foundation                                 | `001-foundation.md`                   |
+| 002 | Chessboard & Chess Interaction             | `002-chessboard-chess-interaction.md` |
+| 003 | Chess/Game Domain & Deterministic Fixtures | `003-chess-domain.md`                 |
+| 004 | Local Game Storage                         | `004-local-storage.md`                |
+| 005 | Stockfish                                  | `005-stockfish.md`                    |
+| 006 | Game Import                                | `006-game-import.md`                  |
+| 007 | Game Analysis                              | `007-game-analysis.md`                |
+| 008 | Move Classification                        | `008-move-classification.md`          |
+| 009 | Tactical Detection                         | `009-tactical-detection.md`           |
+| 010 | Tactical Puzzle Generation                 | `010-puzzle-generation.md`            |
+| 011 | Puzzle Training                            | `011-puzzle-training.md`              |
+| 012 | Spaced Repetition                          | `012-spaced-repetition.md`            |
+| 013 | Game Analysis History & Statistics         | `013-game-history-statistics.md`      |
+| 014 | Dashboard                                  | `014-dashboard.md`                    |
+| 015 | Synchronization                            | `015-synchronization.md`              |
 
 Features should be implemented in this order. The current active and
 next feature are tracked by `.opencode/commands/status.md` and should

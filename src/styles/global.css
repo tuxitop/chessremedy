@@ -1,0 +1,14 @@
+@import './reset.css';
+@import './tokens.css';
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+#root {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
