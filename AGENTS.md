@@ -168,6 +168,11 @@ Statistics calculation belongs to Feature 013 (Game Analysis History
 that consumes the statistics service read-only; it must not perform
 domain or statistical calculations itself.
 
+Per-move accuracy uses the Lichess accuracy formula (ADR-024).
+Move classification uses the WDL-derived `wpLoss` thresholds
+(ADR-023). Puzzle difficulty uses the formula in ADR-025. Tactical
+detection runs the two-stage pipeline in ADR-026.
+
 ---
 
 ## Puzzle generation

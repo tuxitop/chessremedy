@@ -22,6 +22,12 @@ Reject weak/ambiguous candidates.
 Tactical-motif labeling (forks, pins, skewers, etc.) is **not** a V1
 requirement. See `specs/domain/tactics.md`.
 
+The two-stage candidate-generation + verification pipeline is
+defined in:
+
+- `specs/research/tactical-detection.md`
+- ADR-026 (Tactical Verification Pipeline)
+
 ## Acceptance Criteria
 
 Verified candidates contain:
@@ -31,3 +37,4 @@ Verified candidates contain:
 - solution
 - tactical objective
 - verification metadata
+- `detectionVersion`

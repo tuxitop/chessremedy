@@ -184,6 +184,13 @@ Game:
       ↓
     Puzzle
 
+The classification step uses ADR-023 (move-classification thresholds).
+The tactical-detection step runs as a two-stage pipeline defined in
+ADR-026 (tactical verification pipeline). The puzzle generator and
+verification step use the engine profiles defined in ADR-012
+(Stockfish WASM build) and the position-keyed cache defined in
+ADR-018 (engine analysis cache).
+
 ---
 
 ## 6a. Analytics Layer
@@ -203,6 +210,10 @@ The analytics layer is responsible for:
 
 All aggregates must respect the canonical time-control categories
 (ADR-013) and must never silently combine different time controls.
+
+Per-move and per-game accuracy use the Lichess accuracy formula
+defined in ADR-024 (move accuracy formula). Per-puzzle difficulty
+uses the formula defined in ADR-025 (puzzle difficulty formula).
 
 ## 7. Storage
 

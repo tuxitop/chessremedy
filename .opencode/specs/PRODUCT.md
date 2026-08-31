@@ -77,6 +77,7 @@ Analysis must be resumable.
 
 ChessRemedy distinguishes:
 
+- best move
 - good move
 - inaccuracy
 - mistake
@@ -86,8 +87,11 @@ ChessRemedy distinguishes:
 Classification is contextual.
 
 A difference from the engine's top move is not automatically a mistake.
-
-The exact methodology is defined in the domain specifications.
+The exact methodology is defined in `specs/research/move-classification.md`
+and ADR-023. A `best` move is played when it matches the engine's top
+choice; `good` allows for a small WDL-derived swing; `inaccuracy`,
+`mistake` and `blunder` are bucketed by `wpLoss` thresholds of 2, 10
+and 20 percentage points.
 
 ---
 

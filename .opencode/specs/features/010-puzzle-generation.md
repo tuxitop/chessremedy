@@ -89,7 +89,14 @@ The initial V1 difficulty model may use measurable properties such as:
 - evaluation swing
 - material involved
 
-The exact formula should be documented and deterministic.
+The exact formula is documented and deterministic. See:
+
+- `specs/research/puzzle-generation.md` §8
+- ADR-025 (Puzzle Difficulty Formula)
+
+Difficulty is a single integer in `[0, 100]`, persisted on every
+puzzle, and bucketed as Trivial (0–14), Easy (15–34), Medium (35–59),
+Hard (60–79), Expert (80–100).
 
 ## Duplicate detection
 

@@ -2,24 +2,30 @@
 
 Classification categories:
 
+- best
 - good
 - inaccuracy
 - mistake
 - blunder
 
-Missed tactical opportunity is a separate classification/attribute.
+Missed tactical opportunity is a separate classification/attribute
+owned by Feature 009 (see `specs/domain/tactics.md` and
+`specs/research/tactical-detection.md`).
 
-Classification must not rely exclusively on centipawn loss.
+Classification does not rely exclusively on centipawn loss. It uses
+the WDL-derived `wpLoss` metric defined in
+`specs/research/move-accuracy.md` and the thresholds fixed in
+ADR-023.
 
-The final algorithm must be defined after research.
+It accounts for:
 
-It must account for:
+- evaluation change (centipawns)
+- WDL where available (ADR-019)
+- forced moves (`legalMovesCount == 1`)
+- tactical context (missed-tactic flag from Feature 009)
+- game phase (only for the centipawn fallback used by the `fast`
+  profile)
+- position outcome (mate sign flip)
 
-- evaluation change
-- WDL
-- forced moves
-- tactical context
-- game phase
-- position outcome
-
-Classification versions must be persisted.
+Classification versions must be persisted (see ADR-023 and
+ARCHITECTURE.md §9).
