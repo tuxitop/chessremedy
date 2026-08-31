@@ -308,10 +308,12 @@ pure math logic).
    different difficulty characteristics. Initial implementation should use
    defaults and collect data before tuning.
 
-2. **Rating mapping**: ChessRemedy puzzle ratings (solved correctly with
-   difficulty rating, solved incorrectly, skipped) need to map to FSRS
-   ratings (Again/Hard/Good/Easy). This mapping requires a domain decision
-   in the puzzle scheduling specification.
+2. **Rating mapping**: **Resolved.** See ADR-022. The four ChessRemedy
+   puzzle outcomes map to the four FSRS ratings as follows: incorrect
+   → Again; solved with hint/retry/extra attempts → Hard; solved on
+   first attempt without hints → Good; solved quickly without hints →
+   Easy. Abandoned puzzles count as Again; queue skips produce no
+   review event.
 
 3. **Optimizer integration**: The `@open-spaced-repetition/binding` package
    provides WASM-based parameter optimization. This is a build-time concern
@@ -319,6 +321,5 @@ pure math logic).
    added in a future iteration if ChessRemedy accumulates enough review data
    for personalized parameters.
 
-4. **Fuzz behavior**: ts-fsrs supports `enable_fuzz` which adds random
-   interval jitter. This should be enabled to prevent synchronized review
-   spikes when many puzzles are scheduled together.
+4. **Fuzz behavior**: **Resolved.** See ADR-021. V1 enables
+   `enable_fuzz: true` on the `ts-fsrs` scheduler.

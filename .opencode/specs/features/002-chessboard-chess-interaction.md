@@ -82,28 +82,84 @@ Provide a development-only Chessboard Playground.
 The playground must allow the board to be exercised without requiring real
 games or database records.
 
-It should provide deterministic positions including at minimum:
+### Route
 
-1. Starting position
-2. Position containing a legal tactical move
-3. Position involving check
-4. Position involving capture
-5. Position suitable for demonstrating arrows
-6. Position suitable for demonstrating highlights
-7. Endgame position
-8. Position with non-standard FEN
+The playground is accessible at `/playground`.
 
-The playground should provide controls for:
+### Layout
 
-- reset position
-- load fixture position
-- flip board
-- clear arrows
-- toggle interaction
-- change orientation
+The playground page displays:
+
+1. A Chessboard component rendered at the top of the page.
+2. A control panel below the board with the controls listed in the
+   "Controls" section.
+
+### Fixture positions
+
+The playground must provide the following deterministic chess positions.
+Each position exercises specific Chessboard behaviors. The set is
+intentionally small but covers every category listed in the original
+abstract requirement.
+
+| # | Label                       | FEN                                                                              | Interactive | Exercises                                      |
+|---|-----------------------------|----------------------------------------------------------------------------------|-------------|------------------------------------------------|
+| 1 | Starting position           | `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`                       | yes         | Piece rendering, legal move dests              |
+| 2 | Tactical / Scholar's Mate   | `r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4`             | yes         | Tactical move execution, position updates      |
+| 3 | Check                       | `rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 3`                  | yes         | Check highlighting, forced moves                |
+| 4 | Capture                     | `r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4`           | yes         | Capture interaction, piece removal              |
+| 5 | Arrows + highlights         | `rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1`                       | yes         | Arrow rendering, square highlighting           |
+| 6 | Promotion                   | `8/P7/8/8/8/8/8/4K2k w - - 0 1`                                                  | yes         | Pawn promotion interaction                     |
+| 7 | Endgame (K+Q vs K)          | `4k3/8/8/8/8/8/4Q3/4K3 w - - 0 1`                                                | yes         | Simplified endgame, few legal moves            |
+| 8 | Non-standard FEN            | `r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1`           | yes         | Tricky castling rights, complex legal moves    |
+
+Default arrows for fixture 5: `[{ from: 'd8', to: 'h4', color: 'red' }]`.
+Default highlights for fixture 5: `[{ square: 'e4', color: 'yellow' }]`.
+
+Selecting a fixture from the position selector immediately updates the
+board. When a fixture is selected, all controls reset to their default
+values for that fixture. The reset button restores the board to the
+fixture's initial FEN without resetting the other controls. Moves made
+on interactive fixtures update the board; the position selector reflects
+that the board is no longer at the fixture's initial position (visual
+indicator only, no enforcement).
+
+### Controls
+
+The control panel must include:
+
+- Position selector (dropdown listing the 8 fixtures)
+- Orientation toggle (white / black)
+- Coordinates toggle (on / off)
+- Show dests toggle (on / off)
+- Animation toggle (on / off)
+- Drawable toggle (on / off)
+- Board theme selector (brown / blue / green / purple / wood)
+- Piece theme selector (cburnett / merida / alpha / chess7 / spatial)
+- Clear arrows button
+- Toggle interaction button
+- Reset button (returns the board to the current fixture's initial FEN)
+
+### Separation from production data
 
 The playground must not insert fixture data into the user's persistent
-database.
+database. Fixtures are a constant array in the playground module and
+do not touch IndexedDB. The board size preference is the only state
+persisted (via the existing `useBoardSize` hook), per the chessboard
+component's behaviour.
+
+### Test coverage
+
+Automated tests must cover the playground in addition to the
+Chessboard component tests in the "Tests" section above:
+
+- All fixture FENs are valid (parseable by `chess.js`).
+- Selecting a fixture updates the rendered position.
+- The reset button restores the initial fixture FEN.
+- Switching fixtures while pieces are mid-drag does not crash.
+- The non-interactive fixture (or interaction toggle) disables piece
+  movement.
+- An automated end-to-end test navigates to `/playground`, selects a
+  fixture, makes a legal move, and verifies the rendered FEN changes.
 
 ## Responsive behavior
 

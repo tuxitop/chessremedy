@@ -155,6 +155,11 @@ Engine jobs must support:
 - failure
 - resumability
 
+A FEN-keyed analysis cache (ADR-018) lives in IndexedDB. The
+classification domain (Feature 008) consumes `MoveAnalysis` records
+that may carry WDL (ADR-019). Engine version upgrades follow a
+lazy, opt-in policy (ADR-020).
+
 ---
 
 ## 6. Analysis Pipeline

@@ -589,21 +589,22 @@ go depth 30
    verification?** The lite build may miss some deep tactical nuances,
    but this is unlikely for positions within human play range.
 
-3. **How should analysis results be cached?** The same position may be
-   analyzed multiple times (e.g., during import and later during review).
-   A position hash -> analysis cache in IndexedDB would avoid redundant
-   computation.
+3. **How should analysis results be cached?** **Resolved.** See
+   ADR-018. A FEN-keyed IndexedDB cache, with entries scoped to the
+   producing `(profile, engineName, engineVersion, engineBuild)`
+   tuple, is invalidated implicitly on engine upgrade.
 
 4. **What is the maximum concurrent Workers supported on mobile?** iOS
    Safari may limit the number of Web Workers. Testing required.
 
-5. **Should WDL be stored alongside centipawn evaluation?** WDL provides
-   more intuitive win/draw/loss assessment but requires storage of
-   three additional values per position.
+5. **Should WDL be stored alongside centipawn evaluation?** **Resolved.**
+   See ADR-019. WDL is persisted on every `MoveAnalysis` produced by
+   a profile that sets `UCI_ShowWDL true`; the `fast` bulk profile
+   leaves WDL `null`.
 
-6. **How to handle engine version upgrades?** When Stockfish 19 is released,
-   should existing analyses be re-run? The architecture spec calls for
-   versioning engine name/version, but re-analysis is expensive.
+6. **How to handle engine version upgrades?** **Resolved.** See
+   ADR-020. Re-analysis is lazy, opt-in, and user-controlled; existing
+   analyses remain valid for the engine that produced them.
 
 7. **License implications:** GPLv3 requires source disclosure for distributed
    binaries. If ChessRemedy is distributed as a web app, the WASM files
