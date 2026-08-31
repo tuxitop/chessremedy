@@ -7,6 +7,7 @@ import { AnalysisPage } from '@/pages/AnalysisPage';
 import { PuzzlesPage } from '@/pages/PuzzlesPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { PlaygroundPage } from '@/pages/PlaygroundPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 // react-router-dom@7 enables v7 future flags by default; no `future` option
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
       { path: 'puzzles', element: <PuzzlesPage /> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'settings', element: <SettingsPage /> },
+      { path: 'playground', element: <PlaygroundPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

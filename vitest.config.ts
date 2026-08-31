@@ -16,5 +16,13 @@ export default defineConfig({
     exclude: ['node_modules', 'dist', '.opencode'],
     css: false,
     reporters: ['default'],
+    server: {
+      // `@lichess-org/pgn-viewer` ships ESM with a `exports` map that
+      // Vitest's module resolution cannot traverse. Force Vite to
+      // transform it on the fly rather than passing through.
+      deps: {
+        inline: ['@lichess-org/pgn-viewer'],
+      },
+    },
   },
 });

@@ -92,6 +92,13 @@ Foundation must not install `chess.js`, `@lichess-org/chessground`,
 `stockfish`, `recharts`, or `ts-fsrs`. These belong to later features.
 A guard script is documented in `.opencode/plans/001-foundation.md` §15.
 
+## License
+
+ChessRemedy is licensed under the **GNU General Public License v3 or
+later** ([GPL-3.0-or-later](./LICENSE)). See [ADR-027](./.opencode/specs/decisions/ADR-027-license-gpl.md)
+for the rationale (the relicense was forced by adopting
+`@lichess-org/pgn-viewer` for the move-list renderer).
+
 ## Spec workspace
 
 The canonical product, architecture, decision and research documents

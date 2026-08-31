@@ -1,0 +1,37 @@
+.bar {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
+  border-radius: 4px;
+  background: var(--color-surface, white);
+  color: var(--color-text, inherit);
+  font-family: inherit;
+  font-size: 0.95em;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled),
+.button:focus-visible {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+  border-color: var(--color-border-strong, rgba(0, 0, 0, 0.4));
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-focus, #2563eb);
+  outline-offset: 1px;
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

@@ -1,4 +1,4 @@
-# Feature 009 — Tactical Detection
+# Feature 010 — Tactical Detection
 
 ## Goal
 

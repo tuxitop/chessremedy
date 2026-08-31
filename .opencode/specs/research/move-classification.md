@@ -141,7 +141,7 @@ A *missed tactical opportunity* is defined separately
 For classification purposes:
 
 - The `MoveAnalysis` record carries a `missedTactic: boolean` flag
-  populated by Feature 009.
+  populated by Feature 010.
 - If `missedTactic == true`, the move's classification is **not**
   downgraded (a missed tactic may already be a `blunder` or
   `mistake`); the flag is an additional attribute, not a replacement
@@ -192,7 +192,7 @@ Position: equal middlegame, `evalCpBefore = +30`, `evalCpAfter = -120`,
 - No mate change → no special-case override.
 
 Final classification: `mistake`. Missed-tactic flag set separately by
-Feature 009.
+Feature 010.
 
 ### 10. Edge cases and what V1 does not classify
 
@@ -216,8 +216,8 @@ The classifier does not assign a category to:
   cost (one extra `go` query is not needed; the move list can be
   derived from the existing analysis by replaying the engine's
   dests).
-- The "missed tactical opportunity" flag is owned by Feature 009 and
-  cannot be set until Feature 009 is implemented. Until then,
+- The "missed tactical opportunity" flag is owned by Feature 010 and
+  cannot be set until Feature 010 is implemented. Until then,
   `missedTactic` defaults to `false`.
 
 ## Recommendation

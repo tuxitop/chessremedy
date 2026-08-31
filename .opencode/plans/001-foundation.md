@@ -26,7 +26,7 @@ The deliverable satisfies the seven acceptance criteria of Feature 001:
 It must not implement any feature explicitly listed as a non-goal of
 001 (game importing, Stockfish, puzzle generation, dashboard
 implementation), and it must not pull in libraries that belong to those
-later features (`chess.js`, `@lichess-org/chessground`, `stockfish`,
+later features (`chessops`, `@lichess-org/chessground`, `stockfish`,
 `recharts`, FSRS, etc.).
 
 ---
@@ -51,11 +51,11 @@ In scope (from `001-foundation.md`):
 
 Out of scope (explicit non-goals of 001, or owned by later features):
 
-- Chess logic (`chess.js`, FEN helpers) — Feature 003
+- Chess logic (`chessops`, FEN helpers) — Feature 003
 - Chessboard component (`@lichess-org/chessground`) — Feature 002
 - Stockfish worker, UCI, engine cache — Feature 005
-- Game import, adapters for Chess.com / Lichess — Feature 006
-- Game analysis pipeline — Feature 007
+- Game import, adapters for Chess.com / Lichess — Feature 007
+- Game analysis pipeline — Feature 008
 - Move classification, tactical detection, puzzle generation, puzzle
   training, SRS, statistics, dashboard, synchronization — Features
   008–015
@@ -153,10 +153,10 @@ src/
 │
 ├── pages/
 │   ├── HomePage.tsx               # Brief intro + links to other sections; composes <Hero />
-│   ├── GamesPage.tsx              # Placeholder for Feature 006; shows "Coming in Feature 006" badge
+│   ├── GamesPage.tsx              # Placeholder for Feature 007; shows "Coming in Feature 007" badge
 │   ├── AnalysisPage.tsx           # Placeholder for Features 007/008; shows "Coming in Features 007/008" badge
 │   ├── PuzzlesPage.tsx            # Placeholder for Features 010/011; shows "Coming in Features 010/011" badge
-│   ├── DashboardPage.tsx          # Placeholder for Feature 014; shows "Coming in Feature 014" badge
+│   ├── DashboardPage.tsx          # Placeholder for Feature 015; shows "Coming in Feature 015" badge
 │   ├── SettingsPage.tsx           # Composes <ThemePicker /> (real); other settings placeholders
 │   ├── NotFoundPage.tsx           # 404 fallback
 │   └── PlaceholderPanel.tsx       # Shared placeholder layout: heading + description + "Coming in Feature XXX" badge
@@ -334,10 +334,10 @@ All UI is new. There is no prior UI to modify.
   through a shared `PlaceholderPanel` component that shows a heading,
   a short description, and a visible **"Coming in Feature XXX"**
   badge naming the feature that will own the page:
-  - `GamesPage` → "Coming in Feature 006 — Game Import"
+  - `GamesPage` → "Coming in Feature 007 — Game Import"
   - `AnalysisPage` → "Coming in Features 007 / 008 — Game Analysis & Move Classification"
   - `PuzzlesPage` → "Coming in Features 010 / 011 — Puzzle Generation & Training"
-  - `DashboardPage` → "Coming in Feature 014 — Dashboard"
+  - `DashboardPage` → "Coming in Feature 015 — Dashboard"
 
   The badge makes each placeholder self-documenting rather than
   ambiguous, satisfying the D12 clarification.
@@ -465,7 +465,7 @@ Foundation dependency surface:
 - Types: `@types/react`, `@types/react-dom`, `@types/node`
 
 `msw` is **not** installed in Foundation; it lands with its first
-consumer feature (Feature 006 Game Import).
+consumer feature (Feature 007 Game Import).
 
 Storybook is deferred.
 
@@ -488,7 +488,7 @@ acceptance criteria in code.
 - Extends `expect` with `@testing-library/jest-dom` matchers.
 - Sets up an MSW server (`setupServer`) with `beforeAll` /
   `afterAll` / `afterEach` handlers. Foundation declares no handlers
-  but the pattern is in place for Feature 006.
+  but the pattern is in place for Feature 007.
 - Calls `indexedDB.deleteDatabase` (or equivalent fake-indexeddb reset)
   between tests so Dexie does not leak state.
 
@@ -534,7 +534,7 @@ A single Playwright spec validates the production build end-to-end:
 - No chess logic tests — none exists in Foundation.
 - No domain tests — Foundation has no domain code.
 - No engine tests — Feature 005.
-- No game import tests — Feature 006.
+- No game import tests — Feature 007.
 
 ---
 
@@ -743,7 +743,7 @@ ls dist/assets/ | head
 npm run test -- src/infrastructure/db/database.test.ts
 
 # 9. Confirm no forbidden dependencies snuck in
-node -e "const p=require('./package.json'); const forbid=['chess.js','@lichess-org/chessground','stockfish','recharts','ts-fsrs']; const all={...p.dependencies,...p.devDependencies}; for(const f of forbid){ if(all[f]){console.error('forbidden dep:',f); process.exit(1);} }"
+node -e "const p=require('./package.json'); const forbid=['chess.js','chessops','@lichess-org/chessground','stockfish','recharts','ts-fsrs']; const all={...p.dependencies,...p.devDependencies}; for(const f of forbid){ if(all[f]){console.error('forbidden dep:',f); process.exit(1);} }"
 ```
 
 If every command exits 0 and the manual smoke test confirms the
@@ -754,7 +754,7 @@ expected UI behavior, Feature 001 is complete.
 ## 16. Notes for the Reviewer
 
 - This plan deliberately does **not** install `chess.js` or
-  `@lichess-org/chessground`. They are owned by Features 002 and 003.
+  `@lichess-org/chessground`. They are owned by Features 002 and 003. (As of Feature 002/003 the project adopted `chessops@^0.15.1` instead of `chess.js`; see ADR-028.)
   Adding them in Foundation would couple Foundation to later feature
   decisions.
 - The Dexie v1 schema is intentionally minimal (one table). Feature

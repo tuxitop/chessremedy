@@ -6,7 +6,7 @@ export function GamesPage(): React.JSX.Element {
     <PlaceholderPanel
       heading="Your games"
       description="Connect a Chess.com or Lichess account and import your rated games. Until the importer lands, this page shows where it will live."
-      badge="Coming in Feature 006 — Game Import"
+      badge="Coming in Feature 007 — Game Import"
     />
   );
 }

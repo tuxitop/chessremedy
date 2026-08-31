@@ -5,6 +5,7 @@ export const ROUTES = {
   puzzles: '/puzzles',
   dashboard: '/dashboard',
   settings: '/settings',
+  playground: '/playground',
 } as const;
 
 export type RoutePath = (typeof ROUTES)[keyof typeof ROUTES];

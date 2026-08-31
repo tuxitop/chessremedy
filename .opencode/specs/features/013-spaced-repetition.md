@@ -1,4 +1,4 @@
-# Feature 012 — Spaced Repetition
+# Feature 013 — Spaced Repetition
 
 ## Goal
 

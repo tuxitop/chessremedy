@@ -194,7 +194,7 @@ The puzzle interface supports:
 - next
 - start
 - end
-- engine analysis after completion
+- engine analysis after completion (see Feature 012 — Post-Solve Analysis, built on the Live Analysis Board primitive in Feature 006)
 
 If a user plays a wrong move:
 
@@ -244,10 +244,11 @@ analytics. It renders charts and summary cards but does not calculate
 statistics itself.
 
 All numbers shown in the dashboard are produced by the statistics
-service (Feature 013 — Game Analysis History & Statistics) and consumed
+service (Feature 014 — Game Analysis History & Statistics) and consumed
 read-only.
 
-The dashboard surfaces:
+The dashboard surfaces (rendered by Feature 015 — Dashboard, sourced
+from Feature 014 — Statistics):
 
 ### Rating
 
@@ -284,7 +285,8 @@ Charts must expose the selected platform/time-control filters.
 
 Charts must obey the V1 sample-size rule from
 `specs/domain/statistics.md` (minimum aggregate sample size 5; below
-that threshold an "insufficient data" placeholder is shown).
+that threshold an "insufficient data" placeholder is shown; rendered
+by Feature 015 — Dashboard using statistics computed by Feature 014).
 
 Empty and insufficient-data states must be rendered explicitly and must
 not be replaced by a literal zero.

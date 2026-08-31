@@ -15,7 +15,7 @@ ChessRemedy V1 uses the following testing stack:
   `// @vitest-environment jsdom`)
 - **IndexedDB testing:** fake-indexeddb
 - **Network mocking:** MSW (Node); installed only by the feature
-  that uses it (initially Feature 006 Game Import)
+  that uses it (initially Feature 007 Game Import)
 - **Browser integration tests:** Playwright
 - **Coverage:** @vitest/coverage-v8
 

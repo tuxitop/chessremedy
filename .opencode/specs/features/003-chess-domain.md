@@ -21,6 +21,10 @@ The domain must define models for at least:
 - GameResult
 - Analysis
 - MoveAnalysis
+- `MoveList` — the tree-structured PGN representation consumed by the
+  move-list UI. Wraps chessops's `PgnNode` tree (see ADR-028) so the
+  domain, the live analysis board, the move list, and the per-game
+  review share a single position representation.
 
 The model must preserve provider-specific identifiers and source information
 without making the rest of the application dependent on Chess.com or Lichess
@@ -54,7 +58,12 @@ where time control is relevant.
 
 The domain must be able to represent imported chess games from valid PGN.
 
-PGN parsing should use an established chess library rather than a custom parser.
+PGN parsing must use **chessops** (`chessops/pgn`) rather than a custom
+parser. chessops exposes a true `PgnNode` tree with comments, variations,
+and NAGs. The domain's `Game` model wraps a chessops `PgnNode` (or the
+relevant sub-tree) directly so the move-list UI, the live analysis
+board, and the per-game review surface share a single position
+representation without any translation layer.
 
 ## Move representation
 
@@ -108,6 +117,8 @@ These fixtures will later be consumed by statistics and dashboard tests.
 Test:
 
 - PGN parsing
+- PGN parsing of nested variations (chessops `PgnNode` tree)
+- comment / NAG round-trip
 - game reconstruction
 - move reconstruction
 - time-control normalization

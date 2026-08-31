@@ -23,7 +23,7 @@ five user-visible buckets:
 
 | Symbol | Property             | Source                                                   |
 |--------|----------------------|----------------------------------------------------------|
-| `L`    | Solution length in plies | Multi-move extension (Feature 010)                  |
+| `L`    | Solution length in plies | Multi-move extension (Feature 011)                  |
 | `C`    | Number of accepted candidate first moves | MultiPV result            |
 | `F`    | Tactical forcingness (%) | `(checks + captures) / (2 * L) * 100`                |
 | `E`    | Evaluation swing (centipawns) | `|evalCpAfterBestLine − evalCpStart|`          |
@@ -84,7 +84,7 @@ will compute; the underlying score stored on the puzzle is the
   once V1 has a corpus of puzzles and player solves. Tuning
   requires a new ADR; the previous `puzzleGeneratorVersion`'s
   stored scores are not retroactively re-mapped.
-- Tactical-detection (Feature 009) rejects candidates with a
+- Tactical-detection (Feature 010) rejects candidates with a
   difficulty estimate below 15 (the "Easy" bucket minimum). This
   is the quality filter that prevents the puzzle database from
   being flooded with trivial one-move tactics.

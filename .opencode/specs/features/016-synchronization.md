@@ -1,4 +1,4 @@
-# Feature 015 — Synchronization
+# Feature 016 — Synchronization
 
 ## Goal
 

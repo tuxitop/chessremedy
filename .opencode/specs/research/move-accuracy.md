@@ -148,7 +148,7 @@ phase. Empirical evidence (Lichess blog post; independent observation)
 suggests that an arithmetically unweighted mean per move is the least
 surprising choice and matches the public Lichess behaviour, so V1
 should adopt it. Phase-specific breakdown is a per-game aggregate
-("accuracy by phase") exposed through Feature 013 statistics.
+("accuracy by phase") exposed through Feature 014 statistics.
 
 ### 7. Aggregate accuracy vs per-game accuracy
 

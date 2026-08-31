@@ -7,7 +7,7 @@ Accepted
 ## Decision
 
 V1 implements tactical detection as a **two-stage pipeline** that
-runs after the per-game analysis (Feature 007) has been completed.
+runs after the per-game analysis (Feature 008) has been completed.
 
 ### Stage 1 — Candidate generation (cheap, no new engine work)
 
@@ -52,7 +52,7 @@ For each raw candidate:
    - Reject if the difficulty estimate (ADR-025) is below 15.
 
 A candidate that survives all guards becomes a `puzzleCandidate`
-passed to Feature 010. Unverified raw candidates are discarded
+passed to Feature 011. Unverified raw candidates are discarded
 after the run.
 
 ### Output
@@ -68,7 +68,7 @@ metadata used for verification (`engineName`, `engineVersion`,
 - Engine failure during Stage 2 (worker crash, network drop in
   sync context). The raw candidate is retained as
   `verificationStatus: 'failed'` and retried on the next
-  verification job. Feature 010 does not see the candidate until
+  verification job. Feature 011 does not see the candidate until
   verification succeeds.
 - Engine-version change (ADR-020). Existing verified candidates
   remain valid for the engine that verified them. A future
@@ -93,11 +93,11 @@ metadata used for verification (`engineName`, `engineVersion`,
 ## Consequences
 
 - Stage 1 is fast (it is just a filter on existing data). It runs
-  immediately after Feature 007 finishes a game.
+  immediately after Feature 008 finishes a game.
 - Stage 2 is the dominant cost. Per game with ~5 candidates, expect
   ~5 × 15 s = ~75 s of tactical-profile analysis on a desktop, more
   on mobile.
-- The pipeline depends on Feature 005 (Stockfish), Feature 007
+- The pipeline depends on Feature 005 (Stockfish), Feature 008
   (game analysis), and ADR-018 (cache). It cannot run before those
   exist.
 - The `detectionVersion` field is incremented whenever the pipeline
@@ -111,8 +111,8 @@ metadata used for verification (`engineName`, `engineVersion`,
 - `specs/domain/tactics.md`
 - `specs/domain/analysis-model.md`
 - `specs/domain/puzzle-model.md`
-- `specs/features/009-tactical-detection.md`
-- `specs/features/010-puzzle-generation.md`
+- `specs/features/010-tactical-detection.md`
+- `specs/features/011-puzzle-generation.md`
 - `specs/research/tactical-detection.md`
 - `specs/research/puzzle-generation.md`
 - `specs/research/browser-stockfish.md`

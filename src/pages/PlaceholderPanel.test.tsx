@@ -9,10 +9,10 @@ describe('PlaceholderPanel', () => {
       <PlaceholderPanel
         heading="Games"
         description="Import your games."
-        badge="Coming in Feature 006"
+        badge="Coming in Feature 007"
       />,
     );
-    expect(screen.getByTestId('placeholder-badge')).toHaveTextContent('Coming in Feature 006');
+    expect(screen.getByTestId('placeholder-badge')).toHaveTextContent('Coming in Feature 007');
     expect(screen.getByRole('heading', { level: 1, name: 'Games' })).toBeInTheDocument();
     expect(screen.getByText('Import your games.')).toBeInTheDocument();
   });

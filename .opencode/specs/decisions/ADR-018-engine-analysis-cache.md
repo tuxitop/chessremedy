@@ -50,8 +50,8 @@ per ARCHITECTURE.md §9.
 ## Reasons
 
 - The same position is analyzed multiple times across the lifetime of a
-  game: once during initial bulk analysis (Feature 007), again during
-  tactical detection (Feature 009), and again during puzzle generation
+  game: once during initial bulk analysis (Feature 008), again during
+  tactical detection (Feature 010), and again during puzzle generation
   and review.
 - Stockfish WASM evaluation is the most expensive operation in
   ChessRemedy. Re-running it for an unchanged position wastes both CPU
@@ -73,7 +73,7 @@ per ARCHITECTURE.md §9.
   to reclaim space.
 - The cache must not be exposed in the application UI; it is an
   implementation detail of the engine service.
-- Sync (Feature 015) must not sync the cache. It is derived state and
+- Sync (Feature 016) must not sync the cache. It is derived state and
   is regenerated cheaply on each device.
 
 ## Sources

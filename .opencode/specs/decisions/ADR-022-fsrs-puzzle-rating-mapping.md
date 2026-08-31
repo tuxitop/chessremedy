@@ -50,7 +50,7 @@ V1.
 
 ## Consequences
 
-- Feature 011 (Puzzle Training) and Feature 012 (Spaced Repetition) must
+- Feature 012 (Puzzle Training) and Feature 013 (Spaced Repetition) must
   agree on the per-outcome counts recorded in `ReviewLog`:
   `attempts`, `hintsUsed`, `responseTimeMs`, `solved`.
 - The spaced-repetition service computes the FSRS rating from the

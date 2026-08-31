@@ -1,4 +1,4 @@
-# Feature 008 — Move Classification
+# Feature 009 — Move Classification
 
 ## Goal
 

@@ -17,12 +17,12 @@ const SETTINGS_PLACEHOLDERS: SettingPlaceholder[] = [
   {
     title: 'Hint behaviour',
     description: 'Configure when the four progressive puzzle hints become available.',
-    badge: 'Coming in Feature 011 — Puzzle Training',
+    badge: 'Coming in Feature 012 — Puzzle Training',
   },
   {
     title: 'Synchronization',
     description: 'Optionally connect Dropbox to sync your library across devices.',
-    badge: 'Coming in Feature 015 — Synchronization',
+    badge: 'Coming in Feature 016 — Synchronization',
   },
 ];
 

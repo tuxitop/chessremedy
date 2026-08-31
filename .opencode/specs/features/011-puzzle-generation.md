@@ -1,4 +1,4 @@
-# Feature 010 — Tactical Puzzle Generation
+# Feature 011 — Tactical Puzzle Generation
 
 ## Goal
 

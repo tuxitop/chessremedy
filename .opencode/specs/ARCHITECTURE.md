@@ -34,8 +34,11 @@ Core:
 
 Chess:
 
-- `chess.js`
-- `@lichess-org/chessground@10.1.1` or higher version
+- `chessops@^0.15.1` (rules, position, FEN, PGN — including
+  variations, NAGs, and comments; ADR-028)
+- `@lichess-org/chessground@10.1.1` or higher version (board
+  rendering; ADR-002, ADR-014)
+- `@lichess-org/pgn-viewer@^2.6.4` (move-list renderer; ADR-029)
 
 Engine:
 
@@ -127,7 +130,7 @@ Chessground is wrapped by a reusable component.
 Application code should interact with the wrapper rather than directly
 constructing Chessground instances throughout the application.
 
-`chess.js` is responsible for legal chess state.
+`chessops` is responsible for legal chess state and PGN parsing.
 
 Chessground is responsible for visual interaction.
 
@@ -157,7 +160,7 @@ Engine jobs must support:
 - resumability
 
 A FEN-keyed analysis cache (ADR-018) lives in IndexedDB. The
-classification domain (Feature 008) consumes `MoveAnalysis` records
+classification domain (Feature 009) consumes `MoveAnalysis` records
 that may carry WDL (ADR-019). Engine version upgrades follow a
 lazy, opt-in policy (ADR-020).
 
@@ -196,9 +199,9 @@ ADR-018 (engine analysis cache).
 
 ## 6a. Analytics Layer
 
-Statistics are calculated in the **domain** layer (Feature 013 — Game
+Statistics are calculated in the **domain** layer (Feature 014 — Game
 Analysis History & Statistics) and consumed read-only by the dashboard
-(Feature 014). The dashboard must not perform statistical
+(Feature 015). The dashboard must not perform statistical
 calculations.
 
 The analytics layer is responsible for:

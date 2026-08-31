@@ -83,7 +83,7 @@ change to the algorithm or thresholds increments the version
   classified by the centipawn fallback. Statistics that aggregate
   across profiles must distinguish them (or only include WDL-
   classified moves).
-- The `missedTactic: boolean` flag is set by Feature 009
+- The `missedTactic: boolean` flag is set by Feature 010
   independently of the classification. It is *not* a replacement
   classification.
 - Phase-dependent fallback thresholds are documented here. They

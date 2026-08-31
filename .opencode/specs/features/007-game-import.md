@@ -1,4 +1,4 @@
-# Feature 006 — Game Import
+# Feature 007 — Game Import
 
 ## Goal
 

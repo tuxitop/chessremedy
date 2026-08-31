@@ -6,7 +6,7 @@ export function DashboardPage(): React.JSX.Element {
     <PlaceholderPanel
       heading="Dashboard"
       description="Rating trends, accuracy, blunders and missed tactics — separated by time control and platform. The dashboard is a presentation layer over the statistics service."
-      badge="Coming in Feature 014 — Dashboard"
+      badge="Coming in Feature 015 — Dashboard"
     />
   );
 }

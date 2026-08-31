@@ -6,7 +6,7 @@ export function PuzzlesPage(): React.JSX.Element {
     <PlaceholderPanel
       heading="Puzzles"
       description="Solve personalised tactical puzzles generated from your own games. Spaced repetition schedules the right puzzle at the right time."
-      badge="Coming in Features 010 / 011 — Puzzle Generation & Training"
+      badge="Coming in Features 011 / 012 — Puzzle Generation & Training"
     />
   );
 }

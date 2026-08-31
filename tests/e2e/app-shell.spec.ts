@@ -16,7 +16,7 @@ test.describe('App shell (production build)', () => {
     await page.getByTestId('nav-games').click();
     await expect(page.getByTestId('placeholder-panel')).toBeVisible();
     await expect(page.getByTestId('placeholder-badge')).toContainText(
-      'Coming in Feature 006 — Game Import',
+      'Coming in Feature 007 — Game Import',
     );
   });
 

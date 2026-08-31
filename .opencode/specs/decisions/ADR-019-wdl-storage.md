@@ -40,7 +40,7 @@ request WDL.
 - Stockfish returns WDL as a free by-product of any UCI search that
   sets `UCI_ShowWDL true`. The cost is a few extra integers per
   `info …` line and a small storage increase.
-- The classification domain (Feature 008) already references WDL as a
+- The classification domain (Feature 009) already references WDL as a
   classification input (`specs/domain/classification.md`, ADR-005).
   Persisting it on `MoveAnalysis` keeps the classifier pure and
   reproducible.
@@ -53,7 +53,7 @@ request WDL.
 - `MoveAnalysis` records grow by approximately 24 bytes (three small
   integers) per analyzed position. This is negligible relative to the
   size of the position FEN and the principal variation.
-- The classifier (Feature 008) and statistics layer (Feature 013) may
+- The classifier (Feature 009) and statistics layer (Feature 014) may
   treat `wdl === null` as "not available" and fall back to centipawn
   evaluation. They must never treat `null` as `{ w: 0, d: 0, l: 0 }`.
 - Engine upgrades (ADR-020) and profile changes (ADR-012) can change

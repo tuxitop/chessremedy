@@ -362,7 +362,7 @@ The recommended set is:
   `// @vitest-environment jsdom`)
 - `fake-indexeddb` (IndexedDB in Node)
 - `msw` (network mocking — installed when its consumer feature lands,
-  initially Feature 006 Game Import)
+  initially Feature 007 Game Import)
 - `@playwright/test` (browser integration)
 
 ## Impact on ChessRemedy

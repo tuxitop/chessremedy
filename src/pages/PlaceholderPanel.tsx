@@ -4,7 +4,7 @@ import styles from './PlaceholderPanel.module.css';
 export interface PlaceholderPanelProps {
   heading: string;
   description: string;
-  /** Badge text shown above the heading, e.g. "Coming in Feature 006". */
+  /** Badge text shown above the heading, e.g. "Coming in Feature 007". */
   badge: string;
 }
 

@@ -9,7 +9,7 @@ Classification categories:
 - blunder
 
 Missed tactical opportunity is a separate classification/attribute
-owned by Feature 009 (see `specs/domain/tactics.md` and
+owned by Feature 010 (see `specs/domain/tactics.md` and
 `specs/research/tactical-detection.md`).
 
 Classification does not rely exclusively on centipawn loss. It uses
@@ -22,7 +22,7 @@ It accounts for:
 - evaluation change (centipawns)
 - WDL where available (ADR-019)
 - forced moves (`legalMovesCount == 1`)
-- tactical context (missed-tactic flag from Feature 009)
+- tactical context (missed-tactic flag from Feature 010)
 - game phase (only for the centipawn fallback used by the `fast`
   profile)
 - position outcome (mate sign flip)

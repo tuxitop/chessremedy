@@ -54,7 +54,7 @@ Three sources are eligible in V1 (ADR-006):
 1. **Blunders** where the user dropped significant material or
    forced mate against themselves. The best line is the engine's
    recovery (if any).
-2. **Missed tactical opportunities** detected by Feature 009. The
+2. **Missed tactical opportunities** detected by Feature 010. The
    best line is the tactic the user missed.
 3. **Mistakes with a tactical consequence.** A move that is a
    "mistake" classification but whose best response is a tactic.
@@ -260,7 +260,7 @@ is no clock, no PRNG, and no global state in the generator.
                     │
                     ▼
         ┌────────────────────────┐
-        │  Candidate generator   │   ← Feature 010 step 1
+        │  Candidate generator   │   ← Feature 011 step 1
         │  (per source position) │
         └───────────┬────────────┘
                     │
@@ -272,7 +272,7 @@ is no clock, no PRNG, and no global state in the generator.
                     │
                     ▼
         ┌────────────────────────┐
-        │  Multi-move extension  │   ← Feature 010 step 2
+        │  Multi-move extension  │   ← Feature 011 step 2
         │  + alternative sols    │
         └───────────┬────────────┘
                     │

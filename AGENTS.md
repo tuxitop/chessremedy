@@ -1,5 +1,8 @@
 # ChessRemedy — Agent Instructions
 
+ChessRemedy is licensed under **GPL-3.0-or-later** (see
+`LICENSE` and [ADR-027](.opencode/specs/decisions/ADR-027-license-gpl.md)).
+
 ## Project
 
 ChessRemedy is a local-first chess training SPA.
@@ -33,16 +36,17 @@ shipping order is:
 | 003 | Chess/Game Domain & Deterministic Fixtures | `003-chess-domain.md`                 |
 | 004 | Local Game Storage                         | `004-local-storage.md`                |
 | 005 | Stockfish                                  | `005-stockfish.md`                    |
-| 006 | Game Import                                | `006-game-import.md`                  |
-| 007 | Game Analysis                              | `007-game-analysis.md`                |
-| 008 | Move Classification                        | `008-move-classification.md`          |
-| 009 | Tactical Detection                         | `009-tactical-detection.md`           |
-| 010 | Tactical Puzzle Generation                 | `010-puzzle-generation.md`            |
-| 011 | Puzzle Training                            | `011-puzzle-training.md`              |
-| 012 | Spaced Repetition                          | `012-spaced-repetition.md`            |
-| 013 | Game Analysis History & Statistics         | `013-game-history-statistics.md`      |
-| 014 | Dashboard                                  | `014-dashboard.md`                    |
-| 015 | Synchronization                            | `015-synchronization.md`              |
+| 006 | Live Analysis Board                        | `006-live-analysis-board.md`          |
+| 007 | Game Import                                | `007-game-import.md`                  |
+| 008 | Game Analysis                              | `008-game-analysis.md`                |
+| 009 | Move Classification                        | `009-move-classification.md`          |
+| 010 | Tactical Detection                         | `010-tactical-detection.md`           |
+| 011 | Tactical Puzzle Generation                 | `011-puzzle-generation.md`            |
+| 012 | Puzzle Training                            | `012-puzzle-training.md`              |
+| 013 | Spaced Repetition                          | `013-spaced-repetition.md`            |
+| 014 | Game Analysis History & Statistics         | `014-game-history-statistics.md`      |
+| 015 | Dashboard                                  | `015-dashboard.md`                    |
+| 016 | Synchronization                            | `016-synchronization.md`              |
 
 Features should be implemented in this order. The current active and
 next feature are tracked by `.opencode/commands/status.md` and should
@@ -101,7 +105,7 @@ Do not implement multiple unrelated features in one change.
 - Expensive chess-engine analysis must not block the UI.
 - Stockfish runs in Web Workers.
 - Chessground is wrapped by our own chessboard component.
-- Chess rules/state are handled by `chess.js`.
+- Chess rules/state are handled by `chessops` (ADR-028).
 - Spaced repetition uses FSRS.
 - Synchronization is an infrastructure concern, not a domain concern.
 
@@ -163,8 +167,8 @@ platform and time-control dimensions.
 
 ## Analytics split
 
-Statistics calculation belongs to Feature 013 (Game Analysis History
-& Statistics). The dashboard (Feature 014) is a presentation layer
+Statistics calculation belongs to Feature 014 (Game Analysis History
+& Statistics). The dashboard (Feature 015) is a presentation layer
 that consumes the statistics service read-only; it must not perform
 domain or statistical calculations itself.
 
@@ -227,6 +231,16 @@ following applies:
 2. The user has explicitly pinned a version for a specific reason.
 3. The latest stable is incompatible with another required
    dependency and no alternative exists.
+
+**License compatibility.** Dependencies must use a license compatible
+with ChessRemedy's GPL-3.0-or-later posture (ADR-027). Acceptable:
+MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, MPL-2.0,
+GPL-2.0-or-later, GPL-3.0-or-later. Forbidden: LGPL-3.0-or-later
+(imposes source-distribution obligations that the project does not
+intend to take on), AGPL-3.0-or-later (network-copyleft reaches end
+users, incompatible with the local-first / private-game-data
+posture), and any proprietary / source-available license. Any new
+copyleft dependency requires an ADR.
 
 When (3) applies, the agent must stop, surface the blocker, list the
 alternatives considered (pin, replace, drop, force-install with

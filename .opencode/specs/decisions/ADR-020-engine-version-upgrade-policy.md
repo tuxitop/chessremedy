@@ -46,7 +46,7 @@ Specifically:
   retained unless the user explicitly chooses to delete it. This
   preserves the option to roll back if a newer engine version is
   later found to mis-evaluate a class of positions.
-- Statistics (Feature 013) must continue to distinguish analyses by
+- Statistics (Feature 014) must continue to distinguish analyses by
   engine version. Aggregates that mix engine versions must be either
   hidden or explicitly labeled.
 

@@ -63,12 +63,12 @@ tutorial trainers.
 Per ADR-005 / ADR-006 / `specs/features/009-tactical-detection.md`,
 tactical detection has two stages:
 
-**Stage 1 — Candidate generation** (Feature 009, runs on every
+**Stage 1 — Candidate generation** (Feature 010, runs on every
 analyzed game).
 
 For each analyzed ply *p* in the user's games:
 
-1. Read `MoveAnalysis[p]` from the bulk analysis (Feature 007).
+1. Read `MoveAnalysis[p]` from the bulk analysis (Feature 008).
 2. Compute `wpLoss = wpBefore - wpAfterUserMove` (see
    `move-accuracy.md`).
 3. If `wpLoss ≥ 10` (the "mistake" or worse band, per
@@ -87,7 +87,7 @@ mistake/blunder. Most of these are not actually tactical (the
 engine's best line may be a quiet improvement), so they need to be
 filtered.
 
-**Stage 2 — Verification** (Feature 009, on each raw candidate).
+**Stage 2 — Verification** (Feature 010, on each raw candidate).
 
 For each raw candidate:
 
@@ -121,7 +121,7 @@ For each raw candidate:
    - or the line requires > 8 plies.
 
 A candidate that survives all four checks is a **verified
-candidate**. It is handed off to Feature 010 (puzzle generation),
+candidate**. It is handed off to Feature 011 (puzzle generation),
 which extends it with alternatives, opponent responses, difficulty
 and persistence.
 
@@ -167,7 +167,7 @@ their evaluation loss is large.
 ### 6. Engine profile and depth
 
 - Stage 1 (candidate generation) consumes the existing bulk
-  analysis from Feature 007. No additional engine work is needed
+  analysis from Feature 008. No additional engine work is needed
   for the first pass — every blunder/mistake from the user's games
   is already in `MoveAnalysis[]`.
 - Stage 2 (verification) requires a fresh engine run at the
@@ -254,7 +254,7 @@ A verified tactical candidate is persisted with:
 }
 ```
 
-The `puzzleId` is added by Feature 010 when the candidate is
+The `puzzleId` is added by Feature 011 when the candidate is
 extended into a full puzzle.
 
 ## Limitations
@@ -263,7 +263,7 @@ extended into a full puzzle.
   improvements are excluded by design.
 - The 8-ply cap and the difficulty-≥-15 cap will silently drop
   legitimate but hard-to-classify missed tactics. They will still
-  be classified as `mistake` / `blunder` by Feature 008; only the
+  be classified as `mistake` / `blunder` by Feature 009; only the
   missed-tactic flag is dropped.
 - The `tactical`-profile depth (22) is sufficient for most
   tactical vision at human level but may miss deep positional
@@ -273,7 +273,7 @@ extended into a full puzzle.
 ## Recommendation
 
 Implement the V1 tactical-detection pipeline as described. Pair it
-with the puzzle-generation pipeline in Feature 010. Persist the
+with the puzzle-generation pipeline in Feature 011. Persist the
 detection version on every candidate so the pipeline is
 reproducible across engine upgrades (ADR-020). See ADR-026 (Tactical
 Verification Pipeline).
