@@ -1,23 +1,42 @@
 /*
- * ChessRemedy chessboard: coordinate text override.
+ * ChessRemedy chessboard: coordinate label contrast.
  *
- * Chessground 10 renders the file/rank coordinates in elements outside
- * the board (`cg-coords coords coord`). Give the labels a consistent,
- * legible look against the page background in both app themes and ensure
- * they never sit unreadable on the board frame.
+ * Chessground 10 draws file/rank labels in thin strips over the board
+ * edges (ranks overlay the left file column, files overlay the bottom
+ * rank). Their colour must contrast with the square beneath: light text
+ * on dark squares, dark text on light squares.
+ *
+ * With algebraic orientation the bottom-left square a1 is DARK, so the
+ * rank numbers that overlay the a-file alternate: odd ranks (1,3,5,7)
+ * sit on dark squares and need light text, even ranks sit on light
+ * squares and need dark text. With Black at the bottom the whole board
+ * is mirrored, so the pattern flips. The theme CSS shipped with
+ * Chessground gets this backwards for ranks; these rules correct it.
+ * The file letters already read correctly and are left to the theme.
+ *
+ * Per-square coordinates (coordinatesOnSquares) use the dedicated
+ * coord-light / coord-dark classes.
  */
-.cg-wrap cg-coords coords coord {
-  color: rgba(0, 0, 0, 0.72);
-  text-shadow: 0 0 2px rgba(255, 255, 255, 0.55);
+.cg-wrap.orientation-white coords.ranks coord:nth-child(odd) {
+  color: rgba(255, 255, 255, 0.92);
 }
 
-/* High-contrast variant used when coordinates are rendered per square. */
+.cg-wrap.orientation-white coords.ranks coord:nth-child(even) {
+  color: rgba(30, 30, 30, 0.88);
+}
+
+.cg-wrap.orientation-black coords.ranks coord:nth-child(odd) {
+  color: rgba(30, 30, 30, 0.88);
+}
+
+.cg-wrap.orientation-black coords.ranks coord:nth-child(even) {
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .cg-wrap coords.squares coord.coord-light {
   color: rgba(0, 0, 0, 0.85);
-  text-shadow: none;
 }
 
 .cg-wrap coords.squares coord.coord-dark {
   color: rgba(255, 255, 255, 0.9);
-  text-shadow: none;
 }

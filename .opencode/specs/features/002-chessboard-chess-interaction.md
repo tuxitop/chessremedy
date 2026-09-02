@@ -421,9 +421,12 @@ Adding another theme or piece set requires only adding a CSS file
 plus an enum value plus a class — no JS changes.
 
 The coordinate labels are legible in both app themes via
-`board-coordinate-contrast.css`, which targets Chessground 10's real
-coordinate DOM (`cg-coords coords coord` and per-square
-`coords.squares coord.coord-light/dark`).
+`board-coordinate-contrast.css`. Rank labels overlay the a-file squares,
+so their colour alternates with the squares underneath (light text on
+the dark a1/a3/… squares, dark text on the light squares), reversing
+when the board is flipped to Black at the bottom; file letters and
+per-square coordinates (`coords.squares coord.coord-light/dark`) keep
+the same convention.
 
 ## Tests
 
