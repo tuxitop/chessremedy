@@ -407,11 +407,6 @@ export function MoveList({ tree, path, onSeek }: MoveListProps): React.JSX.Eleme
           })()}
         </Fragment>
       ))}
-      {!isEmpty && tree.result ? (
-        <div className={styles.result} data-testid="move-result">
-          {tree.result}
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -5,12 +5,12 @@ import styles from './SquareBadges.module.css';
 export interface SquareBadgeItem {
   /** Board square (`a1`-`h8`) the badge anchors to. */
   square: string;
-  /** Glyph text (a NAG glyph, `#`, ...). */
+  /** Glyph text (a NAG glyph, `#`, `½`, ...). */
   text: string;
   /** Fill colour. */
   color: string;
-  /** Visual style: NAG glyphs vs. a checkmate marker. */
-  kind?: 'nag' | 'mate';
+  /** Visual style: NAG / checkmate / draw chips all render the same way. */
+  kind?: 'nag' | 'mate' | 'draw';
   /** Extra test id. */
   testId?: string;
 }
@@ -27,9 +27,10 @@ function squareColRank(square: string): { col: number; rank: number } {
 }
 
 /**
- * Small circular badges anchored to the top-right corner of board squares
- * (NAG glyphs, `#` on a checkmated king). The overlay is measured so the
- * badges scale with the board (including the fluid mobile board).
+ * Small circular chips anchored to the top-right corner of board squares
+ * (NAG glyphs, `#` on a mated king, `½` on a drawn game). The overlay is
+ * measured so the chips scale with the board (including the fluid mobile
+ * board).
  */
 export function SquareBadges({ orientation, items }: SquareBadgesProps): React.JSX.Element | null {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -66,21 +67,22 @@ export function SquareBadges({ orientation, items }: SquareBadgesProps): React.J
         const whiteBottom = orientation === 'white';
         const xCol = whiteBottom ? col : 7 - col;
         const yRow = whiteBottom ? 7 - rank : rank;
-        // Chip sits in the square's top-right corner, just inside it.
-        const sizePx = sqPx * 0.5;
-        const margin = sqPx * 0.05;
+        // Small chip tucked into the square's top-right corner.
+        const diameter = sqPx * 0.46;
+        const margin = sqPx * 0.06;
+        const left = xCol * sqPx + sqPx - margin - diameter;
+        const top = yRow * sqPx + margin;
         return (
           <span
             key={`${item.square}-${item.text}-${item.kind ?? ''}`}
-            className={`${styles.badge} ${item.kind === 'mate' ? styles.mate : ''}`}
+            className={styles.badge}
             style={{
-              backgroundColor: item.color,
-              left: xCol * sqPx + sqPx - margin,
-              top: yRow * sqPx + margin,
-              height: sizePx,
-              minWidth: sizePx,
-              paddingLeft: sqPx * 0.12,
-              paddingRight: sqPx * 0.12,
+              backgroundColor: `${item.color}e6`,
+              left,
+              top,
+              width: diameter,
+              height: diameter,
+              fontSize: sqPx * 0.3,
             }}
             data-testid={item.testId ?? 'square-badge'}
             data-square={item.square}

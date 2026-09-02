@@ -12,40 +12,32 @@ export interface NavigationProps {
   onNavigate?: (target: NavigationTarget) => void;
 }
 
-function ChevronIcon({ double = false, flip = false }: { double?: boolean; flip?: boolean }) {
-  const dir = flip ? -1 : 1;
-  const path = double ? (
+function ChevronIcon({ double = false, back = false }: { double?: boolean; back?: boolean }) {
+  const chevrons = double ? (
     <>
-      <path
-        d={`M${dir * 7} 5 L1 12 L${dir * 7} 19`}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d={`M${dir * 15} 5 L${dir * 9} 12 L${dir * 15} 19`}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M4 6l6 6-6 6" />
+      <path d="M13 6l6 6-6 6" />
     </>
   ) : (
-    <path
-      d={`M${dir * 5} 5 L${dir * 11} 12 L${dir * 5} 19`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
+    <path d="M8 6l6 6-6 6" />
   );
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      {path}
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      style={back ? { transform: 'rotate(180deg)' } : undefined}
+    >
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {chevrons}
+      </g>
     </svg>
   );
 }
@@ -75,7 +67,7 @@ export function Navigation(props: NavigationProps): React.JSX.Element {
         disabled={atStart}
         data-testid="nav-first"
       >
-        <ChevronIcon double flip />
+        <ChevronIcon double back />
       </button>
       <button
         type="button"
@@ -85,7 +77,7 @@ export function Navigation(props: NavigationProps): React.JSX.Element {
         disabled={atStart}
         data-testid="nav-prev"
       >
-        <ChevronIcon flip />
+        <ChevronIcon back />
       </button>
       <button
         type="button"

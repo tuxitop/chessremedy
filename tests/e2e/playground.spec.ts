@@ -37,10 +37,18 @@ test.describe('Chessboard Playground', () => {
     await expect(page.getByTestId('playground-page')).toBeVisible();
   });
 
-  test('renders 16 fixtures in the position selector', async ({ page }) => {
+  test('renders 17 fixtures in the position selector', async ({ page }) => {
     const select = page.getByTestId('fixture-select');
     await expect(select).toBeVisible();
-    await expect(select.locator('option')).toHaveCount(16);
+    await expect(select.locator('option')).toHaveCount(17);
+  });
+
+  test('a drawn (insufficient material) position shows 1/2 chips and locks input', async ({
+    page,
+  }) => {
+    await page.getByTestId('fixture-select').selectOption('insufficient-material');
+    await expect(page.getByTestId('draw-badge')).toHaveCount(2);
+    await expect(page.getByTestId('game-outcome')).toHaveText('Draw');
   });
 
   test('selecting a fixture updates the exercises line', async ({ page }) => {
@@ -91,10 +99,10 @@ test.describe('Chessboard Playground', () => {
     await expect(move).toBeVisible();
   });
 
-  test('a checkmated fixture shows the mate badge and the result', async ({ page }) => {
+  test('a checkmated fixture shows the mate badge and Checkmate label', async ({ page }) => {
     await page.getByTestId('fixture-select').selectOption('white-to-move-and-lose');
     await expect(page.getByTestId('mate-badge')).toHaveText('#');
-    await expect(page.getByTestId('move-result')).toHaveText('0-1');
+    await expect(page.getByTestId('game-outcome')).toHaveText('Checkmate');
   });
 
   test('seeking to a NAG move shows the glyph badge', async ({ page }) => {

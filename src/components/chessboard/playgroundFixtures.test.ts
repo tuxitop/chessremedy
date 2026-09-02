@@ -13,7 +13,7 @@ describe('playground fixtures', () => {
   it('has unique ids and stable labels', () => {
     const ids = PLAYGROUND_FIXTURES.map((f) => f.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(PLAYGROUND_FIXTURES.length).toBe(16);
+    expect(PLAYGROUND_FIXTURES.length).toBe(17);
     for (const f of PLAYGROUND_FIXTURES) {
       expect(f.label.length).toBeGreaterThan(0);
       expect(findFixture(f.id as (typeof PLAYGROUND_FIXTURES)[number]['id']).id).toBe(f.id);

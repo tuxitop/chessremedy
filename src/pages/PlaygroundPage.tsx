@@ -35,7 +35,7 @@ import {
   type MoveTree,
   type Path,
 } from '@/components/chessboard/positionTree';
-import { kingSquare } from '@/components/chessboard/chessopsAdapter';
+import { hasLegalMoves, kingSquare } from '@/components/chessboard/chessopsAdapter';
 import { nagMeta } from '@/components/chessboard/pgnAnnotations';
 import styles from './PlaygroundPage.module.css';
 
@@ -179,7 +179,10 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
     [activePly],
   );
 
-  const isMate = position.isCheckmate();
+  const isCheckmate = position.isCheckmate();
+  const isStalemate = position.isStalemate();
+  const isDraw = isStalemate || position.isInsufficientMaterial() || position.halfmoves >= 100;
+  const finished = isCheckmate || isDraw || !hasLegalMoves(position);
 
   const badges = useMemo<SquareBadgeItem[]>(() => {
     const items: SquareBadgeItem[] = [];
@@ -195,18 +198,50 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
         });
       }
     }
-    if (isMate) {
+    if (isCheckmate) {
       const king = kingSquare(position, position.turn);
       if (king) {
-        items.push({ square: king, text: '#', color: '#c33', kind: 'mate', testId: 'mate-badge' });
+        items.push({
+          square: king,
+          text: '#',
+          color: '#c4261c',
+          kind: 'mate',
+          testId: 'mate-badge',
+        });
+      }
+    } else if (isDraw) {
+      // Show a grey draw chip above both kings (stalemate / insufficient
+      // material / fifty-move).
+      const white = kingSquare(position, 'white');
+      const black = kingSquare(position, 'black');
+      if (white) {
+        items.push({
+          square: white,
+          text: '\u00bd',
+          color: '#6b7280',
+          kind: 'draw',
+          testId: 'draw-badge',
+        });
+      }
+      if (black) {
+        items.push({
+          square: black,
+          text: '\u00bd',
+          color: '#6b7280',
+          kind: 'draw',
+          testId: 'draw-badge',
+        });
       }
     }
     return items;
-  }, [activePly, isMate, position]);
+  }, [activePly, isCheckmate, isDraw, position]);
 
   const handleMove = useCallback(
     (from: string, to: string) => {
       setMoveError(null);
+      if (finished) {
+        return;
+      }
       const result = playMove(tree, path, from, to);
       if (result.error) {
         setMoveError(result.error);
@@ -215,7 +250,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
       setTree(result.tree);
       setPath(result.path);
     },
-    [tree, path],
+    [tree, path, finished],
   );
 
   const handlePromotionRequired = useCallback((pending: { from: string; to: string }) => {
@@ -333,7 +368,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
             animation={settings.animation}
             drawable={settings.drawable}
             interactive={settings.interactive}
-            moving={pendingPromotion === null}
+            moving={pendingPromotion === null && !finished}
             boardTheme={settings.boardTheme}
             pieceSet={settings.pieceSet}
             lastMove={lastMove as readonly [Key, Key] | null}
@@ -412,12 +447,13 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
               onNavigate={handleNavigate}
             />
             <span className={styles.meta}>
-              <span>
-                <strong data-testid="side-to-move">{sideToMove}</strong> to move
-              </span>
-              <span>
-                Board: <strong data-testid="board-size">{boardSizePx}</strong>px
-              </span>
+              {finished ? (
+                <strong data-testid="game-outcome">{isCheckmate ? 'Checkmate' : 'Draw'}</strong>
+              ) : (
+                <span>
+                  <strong data-testid="side-to-move">{sideToMove}</strong> to move
+                </span>
+              )}
             </span>
           </div>
         </aside>

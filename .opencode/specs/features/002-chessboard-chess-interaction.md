@@ -121,8 +121,10 @@ the move list update (`a8=Q+`).
 - `%cal` arrows and `%csl` square highlights from the node's comments are
   drawn on the board (comment text itself is hidden from the list).
 - When the current position is checkmate, a circular `#` badge is drawn on
-  the mated king and the game result line is shown at the end of the move
-  list.
+  the mated king. A drawn game (stalemate, insufficient material or the
+  fifty-move rule) shows a grey `½` chip above **both** kings.
+- The input is locked on finished positions (mate / draw / no legal
+  moves): no piece may be moved and no error is raised.
 - Overlay geometry is shared (square→pixel mapping) so later analysis
   features (engine evaluations, custom shapes, saved comments) reuse it.
 
@@ -296,10 +298,11 @@ the landing position; PGNs may carry their own `[FEN]` start header).
 | 10 | Scholar's Mate game                | PGN: `1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6?? 4. Qxf7#`                                                                                       | (mate)                          | Move list, end-of-game, navigation                                   |
 | 11 | Variation tree (Italian)           | PGN: `1. e4 e5 2. Nf3 Nc6 3. Bb5 (3. Bc4) a6 4. Ba4`                                                                                    | White                           | Variation rendering, click-to-seek into variation                    |
 | 12 | Pin tactic (Fried Liver / Lolli)   | PGN: `1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Ng5 d5 5. exd5 Nxd5 6. Nxf7! Kxf7 7. Qf3+`                                                     | White                           | Sacrifice, NAG `!` badge and move colour                             |
-| 13 | White to move and lose             | PGN headers `[SetUp "1"] [FEN "8/8/8/8/8/1k6/3q4/QK6 w - - 0 1"]`, moves `1. Qa4+ Kxa4 2. Ka1 Ka3 3. Kb1 Qb2# 0-1`                      | (mate)                          | Header-carrying PGN, checkmate `#` badge, result line                |
+| 13 | White to move and lose             | PGN headers `[SetUp "1"] [FEN "8/8/8/8/8/1k6/3q4/QK6 w - - 0 1"]`, moves `1. Qa4+ Kxa4 2. Ka1 Ka3 3. Kb1 Qb2# 0-1`                      | (mate)                          | Header-carrying PGN, checkmate `#` badge                            |
 | 14 | NAG annotations (inline glyphs)    | PGN: `1. e4! e5 2. Nf3!! Nc6? 3. Bb5?! a6!? 4. Ba4 Nf6??`                                                                               | White                           | Inline NAG glyphs and move colouring                                 |
 | 15 | NAG annotations (numeric `$N`)     | PGN: `1. e4 $1 e5 $2 2. Nf3 $3 Nc6 $4 3. Bb5 $5 a6 $6`                                                                                  | White                           | Numeric NAG glyphs and move colouring                                |
 | 16 | Comments                           | PGN: `1. e4 {The King's Pawn opening} e5 {A solid response} 2. Nf3 {Developing the knight toward the center} Nc6`                        | White                           | Readable PGN comments in the move list                               |
+| 17 | Insufficient material (draw)       | FEN: `4k3/8/8/8/8/8/8/4K3 w - - 0 1`                                                                                                     | White                           | Draw `½` chips over both kings, input freeze                          |
 
 Selecting a fixture updates the board immediately to its landing position;
 the move list shows the full sequence. Selecting a fixture whose landing
@@ -380,7 +383,8 @@ Chessboard component tests in the "Tests" section above:
 - Changing any setting in the cog popover does NOT reset the
   position.
 - Drawing an arrow and clicking "Clear arrows" removes the arrow.
-- Checkmated positions show the `#` badge and result line.
+- Checkmated positions show the `#` badge; drawn positions show grey
+  `½` chips over both kings; finished positions lock the input.
 
 ## Responsive behavior
 
@@ -454,7 +458,7 @@ Automated tests must cover:
 - NAG colour mapping incl. the `$9`/`X` miss marker
 - Board theme CSS: every theme is two-tone with valid embedded assets
 - end-to-end: drag a piece → board + move list update; promote a pawn;
-  seek into a variation; checkmate `#` badge + result; NAG badge;
+  seek into a variation; checkmate `#` badge; draw `½` chips; NAG badge;
   resize persistence & Escape-cancel
 
 At least one browser-level test must verify the board can be interacted with

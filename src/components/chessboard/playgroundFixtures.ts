@@ -145,6 +145,13 @@ export const PLAYGROUND_FIXTURES: readonly PlaygroundFixture[] = [
     pgn: "1. e4 {The King's Pawn opening} e5 {A solid response} 2. Nf3 {Developing the knight toward the center} Nc6",
     exercises: 'Readable PGN comments in the move list',
   },
+  {
+    id: 'insufficient-material',
+    kind: 'fen',
+    label: 'Insufficient material (draw)',
+    fen: '4k3/8/8/8/8/8/8/4K3 w - - 0 1',
+    exercises: 'Draw chip over both kings, input freeze',
+  },
 ] as const;
 
 export type PlaygroundFixtureId = (typeof PLAYGROUND_FIXTURES)[number]['id'];

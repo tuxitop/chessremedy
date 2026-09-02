@@ -58,6 +58,11 @@ export function chessgroundDestsFromPosition(position: Position): Dests {
   return out;
 }
 
+/** True when the side to move still has at least one legal move. */
+export function hasLegalMoves(position: Position): boolean {
+  return chessgroundDests(position).size > 0;
+}
+
 /**
  * Apply a chessground move (`from` + `to` + optional promotion) to a
  * chessops position. Returns the new position, or `null` if the move
