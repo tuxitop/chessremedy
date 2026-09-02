@@ -26,7 +26,7 @@ import {
 } from 'chessops/pgn';
 import { parseSan, makeSan } from 'chessops/san';
 import { parseSquare } from 'chessops/util';
-import type { Move, NormalMove, Square } from 'chessops/types';
+import type { Move, NormalMove, Role, Square } from 'chessops/types';
 
 export type Color = 'white' | 'black';
 export type SquareKey = string;
@@ -45,6 +45,8 @@ export interface MovePly {
   readonly from: SquareKey;
   /** Board key of the destination square. */
   readonly to: SquareKey;
+  /** Promotion role when the move promotes a pawn (else `undefined`). */
+  readonly promotion: Role | undefined;
   readonly nags: readonly number[];
   /** Raw PGN comments attached to this move (may contain `%cal`/`%csl`). */
   readonly comments: readonly string[];
@@ -123,6 +125,7 @@ function makePly(
     fullMove: fullMoveAt(depth),
     from,
     to,
+    promotion: move.promotion,
     nags,
     comments,
     children,
@@ -272,6 +275,7 @@ function moveFor(ply: MovePly): Move {
   return {
     from: parseSquare(ply.from) as Square,
     to: parseSquare(ply.to) as Square,
+    ...(ply.promotion ? { promotion: ply.promotion } : {}),
   };
 }
 

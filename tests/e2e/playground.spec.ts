@@ -97,6 +97,11 @@ test.describe('Chessboard Playground', () => {
     await expect(page.getByTestId('promotion-dialog')).not.toBeVisible();
     const move = page.getByTestId('move-list-move').filter({ hasText: 'a8=Q' }).first();
     await expect(move).toBeVisible();
+    // The board must show the promoted queen, not a pawn. (A CSS ghost
+    // of the dragged pawn can linger; ignore `piece.ghost`.)
+    const host = page.getByTestId('chessground-host');
+    await expect(host.locator('piece.white.queen')).toHaveCount(1);
+    await expect(host.locator('piece.white.pawn:not(.ghost)')).toHaveCount(0);
   });
 
   test('a checkmated fixture shows the mate badge and Checkmate label', async ({ page }) => {

@@ -79,5 +79,14 @@ describe('positionTree', () => {
     const result = play(tree, [], 'a7', 'a8', 'queen');
     expect(result.error).toBeUndefined();
     expect(result.san).toBe('a8=Q+');
+    const position = positionAtPath(result.tree, result.path);
+    let whiteQueen = false;
+    for (const [, piece] of position.board) {
+      if (piece.role === 'queen' && piece.color === 'white') {
+        whiteQueen = true;
+      }
+    }
+    expect(whiteQueen).toBe(true);
+    expect(position.isCheck()).toBe(true);
   });
 });

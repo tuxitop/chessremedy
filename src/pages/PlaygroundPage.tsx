@@ -72,19 +72,13 @@ function buildFixtureTree(fixture: PlaygroundFixture): { tree: MoveTree; error: 
 }
 
 /**
- * Default bottom color for a fixture: Black at the bottom only when the
- * board lands on a position where Black is to move and the game is not
- * over (the classic "solve from here" orientation).
+ * Default bottom colour for a fixture. Only fixtures explicitly marked as
+ * Black-to-play exercises (autoOrientation: 'black') open with Black at
+ * the bottom. Regular games and FEN positions always open White at the
+ * bottom, regardless of who is to move.
  */
 function landingOrientation(fixture: PlaygroundFixture): Orientation {
-  const { tree } = buildFixtureTree(fixture);
-  const landing = pathToLanding(tree);
-  const position = positionAtPath(tree, landing);
-  const side = sideToMoveAt(tree, landing);
-  if (side === 'black' && !position.isEnd()) {
-    return 'black';
-  }
-  return 'white';
+  return fixture.autoOrientation === 'black' ? 'black' : 'white';
 }
 
 export function PlaygroundPage(): React.JSX.Element {
@@ -265,8 +259,12 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
       const { from, to } = pendingPromotion;
       setMoveError(null);
       const result = playMove(tree, path, from, to, role);
-      chessboardRef.current?.clearPendingPromotion();
       setPendingPromotion(null);
+      // Let the new position flush first, then unfreeze Chessground so it
+      // syncs to the promoted position (pawn -> chosen piece) in place.
+      requestAnimationFrame(() => {
+        chessboardRef.current?.clearPendingPromotion();
+      });
       if (result.error) {
         setMoveError(result.error);
         return;
@@ -416,7 +414,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
         <aside
           className={styles.sidePanel}
           aria-label="Analysis panel"
-          style={!boardSizeApi.isMobile ? { height: boardSizePx } : undefined}
+          style={!boardSizeApi.isMobile ? { height: boardSizePx, width: boardSizePx } : undefined}
         >
           <div className={styles.sideHeader}>
             <span className={styles.sideTitle}>Analysis</span>

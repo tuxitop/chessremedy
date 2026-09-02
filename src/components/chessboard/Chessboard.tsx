@@ -204,6 +204,12 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
     if (!api) {
       return;
     }
+    // While a promotion waits for a role, Chessground keeps the position
+    // it produced internally (the pawn sits on the last rank). Do not
+    // overwrite it until the caller resolves or cancels.
+    if (pendingPromotionRef.current) {
+      return;
+    }
     const p = livePropsRef.current;
     const frozen = !p.interactive || !p.moving;
     api.set({
@@ -235,6 +241,21 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
     api.setAutoShapes(p.autoShapes ? [...p.autoShapes] : []);
   };
 
+  // Freeze the board in place (dests removed, no fen change) while a
+  // promotion is waiting for a role — the pawn stays on the last rank.
+  const freezeForPromotion = (): void => {
+    const api = apiRef.current;
+    if (!api) {
+      return;
+    }
+    api.set({
+      movable: { free: false, color: 'both', showDests: false, dests: new Map() },
+      drawable: { enabled: false },
+      premovable: { enabled: false },
+      predroppable: { enabled: false },
+    });
+  };
+
   const applyStateRef = useRef(applyState);
   applyStateRef.current = applyState;
 
@@ -261,9 +282,11 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
           after: (orig: Key, dest: Key) => {
             const pos = positionRef.current;
             if (isPromotionDestination(pos, dest)) {
+              if (pendingPromotionRef.current) {
+                return;
+              }
               pendingPromotionRef.current = { from: orig, to: dest };
-              // Revert the internal move so the board waits for the role.
-              applyStateRef.current();
+              freezeForPromotion();
               onPromotionRef.current?.({ from: orig, to: dest });
               return;
             }

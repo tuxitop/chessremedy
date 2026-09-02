@@ -68,8 +68,8 @@ export function SquareBadges({ orientation, items }: SquareBadgesProps): React.J
         const xCol = whiteBottom ? col : 7 - col;
         const yRow = whiteBottom ? 7 - rank : rank;
         // Small chip tucked into the square's top-right corner.
-        const diameter = sqPx * 0.46;
-        const margin = sqPx * 0.06;
+        const diameter = sqPx * 0.4;
+        const margin = sqPx * 0.05;
         const left = xCol * sqPx + sqPx - margin - diameter;
         const top = yRow * sqPx + margin;
         return (
@@ -82,7 +82,7 @@ export function SquareBadges({ orientation, items }: SquareBadgesProps): React.J
               top,
               width: diameter,
               height: diameter,
-              fontSize: sqPx * 0.3,
+              fontSize: sqPx * 0.26,
             }}
             data-testid={item.testId ?? 'square-badge'}
             data-square={item.square}
