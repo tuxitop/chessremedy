@@ -1,0 +1,417 @@
+import { Fragment, useCallback, useMemo, useRef } from 'react';
+import type * as React from 'react';
+import type { MoveTree, MovePly, Path } from './positionTree';
+import { nagMeta } from './pgnAnnotations';
+import styles from './MoveList.module.css';
+
+/**
+ * Lichess-style move list rendered as a table with three columns:
+ * move number / White / Black. The mainline is a column table; variations
+ * take their own indented lines directly under the move they replace:
+ *
+ *   1.   e4   e5
+ *   2.   Nf3  Nc6
+ *   3.   Bb5  a6
+ *        (3. Bc4 a6 4. Ba4)
+ *
+ * NAG glyphs follow the SAN and colour the whole move. Comments render as
+ * italic paragraphs under the row they belong to. The active ply carries
+ * `aria-current="step"`.
+ */
+
+export type MovePart =
+  | { readonly t: 'move'; readonly ply: MovePly; readonly path: Path }
+  | { readonly t: 'text'; readonly text: string };
+
+export interface MoveRowCell {
+  parts: MovePart[];
+  comments: string[];
+}
+
+export interface MoveListRow {
+  readonly key: string;
+  readonly num: string | null;
+  readonly white: MoveRowCell | null;
+  readonly black: MoveRowCell | null;
+  /** Variation sub-lines rendered under the row (indented, own lines). */
+  readonly variations: readonly MovePart[][];
+}
+
+export interface MoveToken {
+  readonly ply: MovePly;
+  readonly path: Path;
+}
+
+export interface MoveListModel {
+  readonly rows: readonly MoveListRow[];
+  /** Every ply (mainline + variations) in display order. */
+  readonly tokens: readonly MoveToken[];
+}
+
+interface MainMove {
+  readonly ply: MovePly;
+  readonly path: Path;
+  /** Alternatives to `ply` (siblings at the same position node). */
+  readonly alts: readonly MovePly[];
+}
+
+function emptyCell(): MoveRowCell {
+  return { parts: [], comments: [] };
+}
+
+function commentTexts(ply: MovePly): string[] {
+  const out: string[] = [];
+  for (const comment of ply.comments) {
+    const text = comment.replace(/\[%(cal|csl)\s+[^\]]*\]/g, '').trim();
+    if (text) {
+      out.push(text);
+    }
+  }
+  return out;
+}
+
+/**
+ * Numbered, bracketed parts for one variation sub-line:
+ * `(3. Bc4 a6 4. Ba4)`. Numbers are included because variations have no
+ * number column of their own.
+ */
+function variationParts(alt: MovePly, altPath: Path): MovePart[] {
+  const parts: MovePart[] = [{ t: 'text', text: '(' }];
+  let lastFullMove = -1;
+  let lastWasWhite = false;
+  let started = false;
+
+  const pushSpaceAfterMove = (): void => {
+    if (parts.length > 0 && parts[parts.length - 1]!.t === 'move') {
+      parts.push({ t: 'text', text: ' ' });
+    }
+  };
+
+  const write = (ply: MovePly, path: Path): void => {
+    const needsNumber =
+      !started || !(ply.color === 'black' && lastWasWhite && lastFullMove === ply.fullMove);
+    if (needsNumber) {
+      parts.push({
+        t: 'text',
+        text: ply.color === 'white' ? `${ply.fullMove}. ` : `${ply.fullMove}... `,
+      });
+    } else {
+      pushSpaceAfterMove();
+    }
+    parts.push({ t: 'move', ply, path });
+    lastFullMove = ply.fullMove;
+    lastWasWhite = ply.color === 'white';
+    started = true;
+  };
+
+  const walkPosition = (children: readonly MovePly[], prefix: Path): void => {
+    if (children.length === 0) {
+      return;
+    }
+    const main = children[0]!;
+    const mainPath = [...prefix, main];
+    write(main, mainPath);
+    for (const childAlt of children.slice(1)) {
+      const childAltPath = [...prefix, childAlt];
+      pushSpaceAfterMove();
+      for (const part of variationParts(childAlt, childAltPath)) {
+        parts.push(part);
+      }
+    }
+    walkPosition(main.children, mainPath);
+  };
+
+  write(alt, altPath);
+  walkPosition(alt.children, altPath);
+  parts.push({ t: 'text', text: ')' });
+  return parts;
+}
+
+function collectMainline(rootChildren: readonly MovePly[]): readonly MainMove[] {
+  const out: MainMove[] = [];
+  const prefix: MovePly[] = [];
+  let children = rootChildren;
+  while (children.length > 0) {
+    const main = children[0]!;
+    const mainPath = [...prefix, main];
+    out.push({ ply: main, path: mainPath, alts: children.slice(1) });
+    prefix.push(main);
+    children = main.children;
+  }
+  return out;
+}
+
+/** Pure model builder — shared by the component and its tests. */
+export function buildMoveListModel(tree: MoveTree): MoveListModel {
+  const rows: MoveListRow[] = [];
+  const tokens: MoveToken[] = [];
+  const mainline = collectMainline(tree.rootChildren);
+  let rowId = 0;
+
+  let openRow: {
+    num: string;
+    white: MoveRowCell | null;
+    black: MoveRowCell | null;
+    variations: MovePart[][];
+  } | null = null;
+
+  const pushVariations = (path: Path, alts: readonly MovePly[]): void => {
+    if (!openRow) {
+      return;
+    }
+    for (const alt of alts) {
+      const altPath = path.slice(0, -1).concat(alt);
+      const parts = variationParts(alt, altPath);
+      for (const part of parts) {
+        if (part.t === 'move') {
+          tokens.push({ ply: part.ply, path: part.path });
+        }
+      }
+      openRow.variations.push(parts);
+    }
+  };
+
+  const flushRow = (): void => {
+    if (openRow) {
+      rows.push({
+        key: `row-${rowId++}`,
+        num: openRow.num,
+        white: openRow.white,
+        black: openRow.black,
+        variations: openRow.variations,
+      });
+      openRow = null;
+    }
+  };
+
+  for (const { ply, path, alts } of mainline) {
+    const cell = (): MoveRowCell => {
+      const c = emptyCell();
+      tokens.push({ ply, path });
+      c.parts.push({ t: 'move', ply, path });
+      c.comments.push(...commentTexts(ply));
+      return c;
+    };
+
+    if (ply.color === 'white') {
+      flushRow();
+      openRow = { num: `${ply.fullMove}.`, white: cell(), black: null, variations: [] };
+      pushVariations(path, alts);
+    } else {
+      if (openRow && openRow.black === null) {
+        openRow.black = cell();
+        pushVariations(path, alts);
+        flushRow();
+      } else {
+        flushRow();
+        openRow = { num: `${ply.fullMove}...`, white: null, black: cell(), variations: [] };
+        pushVariations(path, alts);
+        flushRow();
+      }
+    }
+  }
+  flushRow();
+  return { rows, tokens };
+}
+
+export interface MoveListProps {
+  tree: MoveTree;
+  /** Currently selected line (the position shown on the board). */
+  path: Path;
+  /** Fired when the user clicks/seeks a move. */
+  onSeek?: (path: Path) => void;
+}
+
+export function MoveList({ tree, path, onSeek }: MoveListProps): React.JSX.Element {
+  const model = useMemo(() => buildMoveListModel(tree), [tree]);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const activeId = path.length > 0 ? path[path.length - 1]!.id : null;
+  const { rows, tokens } = model;
+
+  const moveToIndex = useCallback((buttons: HTMLButtonElement[], index: number): void => {
+    if (buttons.length === 0) {
+      return;
+    }
+    const target = buttons[((index % buttons.length) + buttons.length) % buttons.length];
+    target?.focus();
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const root = listRef.current;
+      if (!root) {
+        return;
+      }
+      const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-token-index]'));
+      if (buttons.length === 0) {
+        return;
+      }
+      const focused = document.activeElement as HTMLElement | null;
+      const index = buttons.findIndex((b) => b === focused);
+
+      if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        event.preventDefault();
+        const idAttr = focused?.getAttribute('data-ply-id');
+        const currentId = idAttr ? Number.parseInt(idAttr, 10) : Number.NaN;
+        const current = tokens.find((t) => t.ply.id === currentId);
+        if (!current) {
+          return;
+        }
+        const parentKey = current.path
+          .slice(0, -1)
+          .map((p) => p.id)
+          .join(',');
+        const currentIdStr = String(currentId);
+        const siblings = tokens
+          .map((token, i) => ({ token, i }))
+          .filter(
+            ({ token }) =>
+              token.path
+                .slice(0, -1)
+                .map((p) => p.id)
+                .join(',') === parentKey && String(token.ply.id) !== currentIdStr,
+          );
+        if (siblings.length === 0) {
+          return;
+        }
+        const currentPos = index;
+        const delta = event.key === 'ArrowRight' ? 1 : -1;
+        const targetIndex = Math.min(currentPos, buttons.length - 1);
+        const targetButton = buttons[(targetIndex + delta + buttons.length) % buttons.length];
+        const targetId = targetButton?.getAttribute('data-ply-id');
+        const target = siblings.find((s) => String(s.token.ply.id) === targetId) ?? siblings[0];
+        if (target) {
+          onSeek?.(target.token.path);
+        }
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveToIndex(buttons, index + 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveToIndex(buttons, index - 1);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        moveToIndex(buttons, 0);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        moveToIndex(buttons, buttons.length - 1);
+      }
+    },
+    [tokens, onSeek, moveToIndex],
+  );
+
+  const renderParts = (
+    rowKey: string,
+    parts: readonly MovePart[],
+    indexRef: { n: number },
+  ): React.JSX.Element => (
+    <>
+      {parts.map((part, i) => {
+        if (part.t === 'text') {
+          return (
+            <span className={styles.textToken} key={`${rowKey}-text-${i}`}>
+              {part.text}
+            </span>
+          );
+        }
+        const isActive = part.ply.id === activeId;
+        const color = part.ply.nags.length > 0 ? nagMeta(part.ply.nags[0]!)?.color : undefined;
+        return (
+          <button
+            type="button"
+            key={`${rowKey}-m-${part.ply.id}`}
+            className={`${styles.move} ${isActive ? styles.moveActive : ''}`}
+            style={color ? { color } : undefined}
+            onClick={() => onSeek?.(part.path)}
+            data-token-index={indexRef.n++}
+            data-testid="move-list-move"
+            data-san={part.ply.san}
+            data-ply-id={part.ply.id}
+            aria-current={isActive ? 'step' : undefined}
+            aria-selected={isActive}
+            role="treeitem"
+          >
+            {part.ply.san}
+            {part.ply.nags.map((nag) => {
+              const meta = nagMeta(nag);
+              return meta ? (
+                <span
+                  className={styles.nag}
+                  key={`${rowKey}-nag-${part.ply.id}-${nag}`}
+                  data-testid="nag-glyph"
+                  data-nag={meta.nag}
+                >
+                  {meta.glyph}
+                </span>
+              ) : null;
+            })}
+          </button>
+        );
+      })}
+    </>
+  );
+
+  const isEmpty = rows.length === 0;
+  const indexRef = { n: 0 };
+
+  return (
+    <div
+      className={styles.list}
+      ref={listRef}
+      role="tree"
+      aria-label="Moves"
+      tabIndex={0}
+      data-testid="move-list"
+      onKeyDown={handleKeyDown}
+    >
+      {isEmpty && (
+        <div className={styles.empty} data-testid="move-list-empty">
+          No moves yet — play on the board to build a line.
+        </div>
+      )}
+      {rows.map((row) => (
+        <Fragment key={row.key}>
+          <div className={styles.row} role="group">
+            <span className={styles.numCol} data-testid="move-num">
+              {row.num}
+            </span>
+            <div className={styles.cell}>
+              {row.white ? renderParts(row.key, row.white.parts, indexRef) : null}
+            </div>
+            <div className={styles.cell}>
+              {row.black ? renderParts(row.key, row.black.parts, indexRef) : null}
+            </div>
+          </div>
+          {row.variations.map((parts, v) => (
+            <div className={styles.variation} role="group" key={`${row.key}-variation-${v}`}>
+              <span className={styles.variationMarker} aria-hidden="true" />
+              {renderParts(`${row.key}-v${v}`, parts, indexRef)}
+            </div>
+          ))}
+          {(() => {
+            const comments = [...(row.white?.comments ?? []), ...(row.black?.comments ?? [])];
+            if (comments.length === 0) {
+              return null;
+            }
+            return (
+              <div className={styles.commentBlock} key={`${row.key}-comments`}>
+                {comments.map((c, i) => (
+                  <p className={styles.comment} key={`${row.key}-c-${i}`}>
+                    {c}
+                  </p>
+                ))}
+              </div>
+            );
+          })()}
+        </Fragment>
+      ))}
+      {!isEmpty && tree.result ? (
+        <div className={styles.result} data-testid="move-result">
+          {tree.result}
+        </div>
+      ) : null}
+    </div>
+  );
+}

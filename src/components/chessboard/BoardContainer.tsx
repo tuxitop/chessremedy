@@ -1,56 +1,62 @@
 import type * as React from 'react';
-import { useBoardSize } from './useBoardSize';
+import { useBoardSize, type UseBoardSize } from './useBoardSize';
 import { MOBILE_BREAKPOINT_PX } from './boardSize';
 import styles from './BoardContainer.module.css';
 
 export interface BoardContainerProps {
   children: React.ReactNode;
-  /** Optional ref to the host element (so Chessground can mount into it). */
-  hostRef?: React.RefObject<HTMLDivElement | null>;
+  /** Optional content overlaid above the board (e.g. NAG/checkmate badges). */
+  overlay?: React.ReactNode;
   /** Optional `aria-label` for the board region. */
   ariaLabel?: string;
+  /** Shared board-size API. When omitted the container owns its own. */
+  boardSize?: UseBoardSize;
 }
 
 /**
  * Wraps a Chessground host element with the resize primitive
- * (corner drag handle) and layout containment.
+ * (invisible bottom-right corner hit region) and layout containment.
  *
- * Children render into the chessboard region; the host `<div>` (the
- * first child the consumer puts into `hostRef`) sits inside this
- * wrapper.
+ * The hit region is intentionally invisible — only the cursor shape
+ * changes to `nwse-resize` on hover. The wrapper sets `aspect-ratio: 1 / 1`
+ * so it stays square at any chosen size.
  */
-export function BoardContainer({ children, ariaLabel }: BoardContainerProps): React.JSX.Element {
-  const board = useBoardSize();
-  const handleResizePointerDown = (event: React.PointerEvent<HTMLButtonElement>): void => {
+export function BoardContainer({
+  children,
+  overlay,
+  ariaLabel,
+  boardSize: sharedBoardSize,
+}: BoardContainerProps): React.JSX.Element {
+  const ownBoard = useBoardSize();
+  const board = sharedBoardSize ?? ownBoard;
+
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (board.isMobile) {
       return;
     }
     event.preventDefault();
-    const button = event.currentTarget;
-    button.setPointerCapture(event.pointerId);
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
     board.beginDrag();
 
     const startY = event.clientY;
+    const startX = event.clientX;
     const startSize = board.size;
 
     const handlePointerMove = (moveEvent: PointerEvent): void => {
-      const delta = moveEvent.clientY - startY;
-      const next = startSize + delta;
-      board.updateDrag(next);
+      const delta = Math.max(moveEvent.clientY - startY, moveEvent.clientX - startX);
+      board.updateDrag(startSize + delta);
     };
 
-    const handlePointerUp = (upEvent: PointerEvent): void => {
-      button.removeEventListener('pointermove', handlePointerMove);
-      button.removeEventListener('pointerup', handlePointerUp);
-      button.removeEventListener('pointercancel', handlePointerUp);
-      if (upEvent.pointerId !== event.pointerId) {
-        button.releasePointerCapture(upEvent.pointerId);
-      } else {
-        try {
-          button.releasePointerCapture(event.pointerId);
-        } catch {
-          /* ignore */
-        }
+    const finish = (upEvent: PointerEvent): void => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      window.removeEventListener('keydown', handleEscape);
+      try {
+        handle.releasePointerCapture(upEvent.pointerId);
+      } catch {
+        /* ignore */
       }
       board.endDrag();
     };
@@ -59,55 +65,56 @@ export function BoardContainer({ children, ariaLabel }: BoardContainerProps): Re
       if (escEvent.key !== 'Escape') {
         return;
       }
-      button.removeEventListener('pointermove', handlePointerMove);
-      button.removeEventListener('pointerup', handlePointerUp);
-      button.removeEventListener('pointercancel', handlePointerUp);
-      button.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      window.removeEventListener('keydown', handleEscape);
       try {
-        button.releasePointerCapture(event.pointerId);
+        handle.releasePointerCapture(event.pointerId);
       } catch {
         /* ignore */
       }
       board.cancelDrag();
     };
 
-    button.addEventListener('pointermove', handlePointerMove);
-    button.addEventListener('pointerup', handlePointerUp);
-    button.addEventListener('pointercancel', handlePointerUp);
-    button.addEventListener('keydown', handleEscape);
+    // Attach on window so Escape works even though the handle never
+    // receives keyboard focus (it is aria-hidden / not focusable).
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    window.addEventListener('keydown', handleEscape);
   };
 
   return (
     <div
-      className={styles.container}
+      className={`${styles.container} ${board.isMobile ? styles.mobile : ''}`}
       data-testid="board-container"
       data-dragging={board.isDragging ? 'true' : 'false'}
+      data-board-size={board.size}
       aria-label={ariaLabel ?? 'Chessboard'}
-      style={{
-        width: board.size,
-        height: board.size,
-      }}
+      style={
+        board.isMobile
+          ? undefined
+          : {
+              width: board.size,
+              height: board.size,
+            }
+      }
     >
       <div className={styles.host}>{children}</div>
+      {overlay !== undefined && (
+        <div className={styles.overlay} data-testid="board-overlay">
+          {overlay}
+        </div>
+      )}
       {!board.isMobile && (
-        <button
-          type="button"
+        <div
           className={styles.handle}
-          aria-label="Resize board"
-          aria-describedby="board-resize-hint"
+          role="presentation"
+          aria-hidden="true"
           onPointerDown={handleResizePointerDown}
           data-testid="board-resize-handle"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-            <path
-              d="M3 13L13 3M3 13L8 13M3 13L3 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              fill="none"
-            />
-          </svg>
-        </button>
+        />
       )}
     </div>
   );

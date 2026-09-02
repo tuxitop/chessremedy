@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyChessgroundMove,
+  applyChessgroundMoveWithSan,
   applySan,
   chessgroundDestsFromPosition,
   positionFromFen,
@@ -82,6 +83,31 @@ describe('chessopsAdapter', () => {
       const fenBefore = positionToFen(pos);
       applyChessgroundMove(pos, 'e2', 'e4');
       expect(positionToFen(pos)).toBe(fenBefore);
+    });
+  });
+
+  describe('applyChessgroundMoveWithSan', () => {
+    it('returns the new position and the SAN string', () => {
+      const pos = startingPosition();
+      const result = applyChessgroundMoveWithSan(pos, 'e2', 'e4');
+      expect(result).not.toBeNull();
+      expect(result!.san).toBe('e4');
+      expect(positionToFen(result!.position)).toBe(
+        'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
+      );
+    });
+
+    it('returns null for an illegal move', () => {
+      const pos = startingPosition();
+      expect(applyChessgroundMoveWithSan(pos, 'e2', 'e5')).toBeNull();
+    });
+
+    it('encodes the promotion role in the SAN', () => {
+      const pos = positionFromFen('8/P7/8/8/8/8/8/4K2k w - - 0 1');
+      const result = applyChessgroundMoveWithSan(pos, 'a7', 'a8', 'queen');
+      expect(result).not.toBeNull();
+      // The black king ends up in check, so chessops appends `+`.
+      expect(result!.san).toBe('a8=Q+');
     });
   });
 

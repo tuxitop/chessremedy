@@ -1,0 +1,12 @@
+/*
+ * Piece set: cburnett (default).
+ * CSS ships with `@lichess-org/chessground` as `chessground.cburnett.css`
+ * and is imported separately by the Chessboard wrapper. This file is
+ * a no-op that exists for symmetry with the other piece-set files and
+ * to anchor the `.piece-cburnett` scope class on the wrapper. Future
+ * overrides (e.g., dim white-on-white squares) can be added here
+ * without touching the chessground import.
+ */
+.piece-cburnett cg-board piece {
+  /* cburnett ships pre-styled by `@lichess-org/chessground`; no overrides. */
+}

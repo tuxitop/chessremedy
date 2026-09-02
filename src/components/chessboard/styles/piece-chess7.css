@@ -1,0 +1,42 @@
+/*
+ * Piece set: chess7.
+ * Sourced from https://lichess1.org/assets/piece/chess7/<color><role>.svg
+ * (GPL-3.0-or-later). Pieces are loaded from `public/vendor/pieces/chess7/`
+ * (see `scripts/fetch-piece-assets.mjs`).
+ */
+.piece-chess7 piece.pawn.white {
+  background-image: url('/vendor/pieces/chess7/pawn-w.svg');
+}
+.piece-chess7 piece.pawn.black {
+  background-image: url('/vendor/pieces/chess7/pawn-b.svg');
+}
+.piece-chess7 piece.knight.white {
+  background-image: url('/vendor/pieces/chess7/knight-w.svg');
+}
+.piece-chess7 piece.knight.black {
+  background-image: url('/vendor/pieces/chess7/knight-b.svg');
+}
+.piece-chess7 piece.bishop.white {
+  background-image: url('/vendor/pieces/chess7/bishop-w.svg');
+}
+.piece-chess7 piece.bishop.black {
+  background-image: url('/vendor/pieces/chess7/bishop-b.svg');
+}
+.piece-chess7 piece.rook.white {
+  background-image: url('/vendor/pieces/chess7/rook-w.svg');
+}
+.piece-chess7 piece.rook.black {
+  background-image: url('/vendor/pieces/chess7/rook-b.svg');
+}
+.piece-chess7 piece.queen.white {
+  background-image: url('/vendor/pieces/chess7/queen-w.svg');
+}
+.piece-chess7 piece.queen.black {
+  background-image: url('/vendor/pieces/chess7/queen-b.svg');
+}
+.piece-chess7 piece.king.white {
+  background-image: url('/vendor/pieces/chess7/king-w.svg');
+}
+.piece-chess7 piece.king.black {
+  background-image: url('/vendor/pieces/chess7/king-b.svg');
+}

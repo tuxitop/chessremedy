@@ -1,0 +1,42 @@
+/*
+ * Piece set: merida.
+ * Sourced from https://lichess1.org/assets/piece/merida/<color><role>.svg
+ * (GPL-3.0-or-later). Pieces are loaded from `public/vendor/pieces/merida/`
+ * (see `scripts/fetch-piece-assets.mjs`).
+ */
+.piece-merida piece.pawn.white {
+  background-image: url('/vendor/pieces/merida/pawn-w.svg');
+}
+.piece-merida piece.pawn.black {
+  background-image: url('/vendor/pieces/merida/pawn-b.svg');
+}
+.piece-merida piece.knight.white {
+  background-image: url('/vendor/pieces/merida/knight-w.svg');
+}
+.piece-merida piece.knight.black {
+  background-image: url('/vendor/pieces/merida/knight-b.svg');
+}
+.piece-merida piece.bishop.white {
+  background-image: url('/vendor/pieces/merida/bishop-w.svg');
+}
+.piece-merida piece.bishop.black {
+  background-image: url('/vendor/pieces/merida/bishop-b.svg');
+}
+.piece-merida piece.rook.white {
+  background-image: url('/vendor/pieces/merida/rook-w.svg');
+}
+.piece-merida piece.rook.black {
+  background-image: url('/vendor/pieces/merida/rook-b.svg');
+}
+.piece-merida piece.queen.white {
+  background-image: url('/vendor/pieces/merida/queen-w.svg');
+}
+.piece-merida piece.queen.black {
+  background-image: url('/vendor/pieces/merida/queen-b.svg');
+}
+.piece-merida piece.king.white {
+  background-image: url('/vendor/pieces/merida/king-w.svg');
+}
+.piece-merida piece.king.black {
+  background-image: url('/vendor/pieces/merida/king-b.svg');
+}

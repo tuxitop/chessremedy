@@ -1,0 +1,42 @@
+/*
+ * Piece set: spatial.
+ * Sourced from https://lichess1.org/assets/piece/spatial/<color><role>.svg
+ * (GPL-3.0-or-later). Pieces are loaded from `public/vendor/pieces/spatial/`
+ * (see `scripts/fetch-piece-assets.mjs`).
+ */
+.piece-spatial piece.pawn.white {
+  background-image: url('/vendor/pieces/spatial/pawn-w.svg');
+}
+.piece-spatial piece.pawn.black {
+  background-image: url('/vendor/pieces/spatial/pawn-b.svg');
+}
+.piece-spatial piece.knight.white {
+  background-image: url('/vendor/pieces/spatial/knight-w.svg');
+}
+.piece-spatial piece.knight.black {
+  background-image: url('/vendor/pieces/spatial/knight-b.svg');
+}
+.piece-spatial piece.bishop.white {
+  background-image: url('/vendor/pieces/spatial/bishop-w.svg');
+}
+.piece-spatial piece.bishop.black {
+  background-image: url('/vendor/pieces/spatial/bishop-b.svg');
+}
+.piece-spatial piece.rook.white {
+  background-image: url('/vendor/pieces/spatial/rook-w.svg');
+}
+.piece-spatial piece.rook.black {
+  background-image: url('/vendor/pieces/spatial/rook-b.svg');
+}
+.piece-spatial piece.queen.white {
+  background-image: url('/vendor/pieces/spatial/queen-w.svg');
+}
+.piece-spatial piece.queen.black {
+  background-image: url('/vendor/pieces/spatial/queen-b.svg');
+}
+.piece-spatial piece.king.white {
+  background-image: url('/vendor/pieces/spatial/king-w.svg');
+}
+.piece-spatial piece.king.black {
+  background-image: url('/vendor/pieces/spatial/king-b.svg');
+}

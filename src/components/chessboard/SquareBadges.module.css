@@ -1,0 +1,31 @@
+.root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.badge {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--sq, 60px) * 0.42);
+  min-width: calc(var(--sq, 60px) * 0.42);
+  padding: 0 calc(var(--sq, 60px) * 0.07);
+  box-sizing: border-box;
+  border-radius: 999px;
+  font-size: calc(var(--sq, 60px) * 0.26);
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  transform: translate(-50%, 0);
+  font-style: normal;
+}
+
+.mate {
+  font-size: calc(var(--sq, 60px) * 0.3);
+}

@@ -91,10 +91,58 @@ export function applySan(position: Position, san: string): Position | null {
   return next;
 }
 
+/**
+ * Apply a chessground move and return both the resulting position AND
+ * the SAN string for the move. The SAN is the canonical representation
+ * the UI displays in the move list; the position is the post-move
+ * chessops state.
+ */
+export function applyChessgroundMoveWithSan(
+  position: Position,
+  from: Key,
+  to: Key,
+  promotion?: 'queen' | 'rook' | 'bishop' | 'knight',
+): { position: Position; san: string } | null {
+  const move: Move = {
+    from: parseSquare(from as string) as Square,
+    to: parseSquare(to as string) as Square,
+    ...(promotion ? { promotion } : {}),
+  };
+  if (!position.isLegal(move)) {
+    return null;
+  }
+  const san = makeSan(position, move);
+  const next = position.clone();
+  next.play(move);
+  return { position: next, san };
+}
+
 export function sanOf(position: Position, move: Parameters<typeof makeSan>[1]): string {
   return makeSan(position, move);
 }
 
 export function turnColor(position: Position): Color {
   return position.turn;
+}
+
+/** Chessground key (`a1`-`h8`) for a chessops square index. */
+export function squareKey(square: Square): Key {
+  const file = square & 7;
+  const rank = square >> 3;
+  return `${'abcdefgh'[file]}${rank + 1}` as Key;
+}
+
+/** Board square index for a Chessground key. */
+export function parseSquareKey(key: Key): Square {
+  return parseSquare(key) as Square;
+}
+
+/** Square of the given color's king, or `null` when absent. */
+export function kingSquare(position: Position, color: Color): Key | null {
+  for (const [square, piece] of position.board) {
+    if (piece.role === 'king' && piece.color === color) {
+      return squareKey(square);
+    }
+  }
+  return null;
 }

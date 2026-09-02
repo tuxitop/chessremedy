@@ -1,0 +1,42 @@
+/*
+ * Piece set: alpha.
+ * Sourced from https://lichess1.org/assets/piece/alpha/<color><role>.svg
+ * (GPL-3.0-or-later). Pieces are loaded from `public/vendor/pieces/alpha/`
+ * (see `scripts/fetch-piece-assets.mjs`).
+ */
+.piece-alpha piece.pawn.white {
+  background-image: url('/vendor/pieces/alpha/pawn-w.svg');
+}
+.piece-alpha piece.pawn.black {
+  background-image: url('/vendor/pieces/alpha/pawn-b.svg');
+}
+.piece-alpha piece.knight.white {
+  background-image: url('/vendor/pieces/alpha/knight-w.svg');
+}
+.piece-alpha piece.knight.black {
+  background-image: url('/vendor/pieces/alpha/knight-b.svg');
+}
+.piece-alpha piece.bishop.white {
+  background-image: url('/vendor/pieces/alpha/bishop-w.svg');
+}
+.piece-alpha piece.bishop.black {
+  background-image: url('/vendor/pieces/alpha/bishop-b.svg');
+}
+.piece-alpha piece.rook.white {
+  background-image: url('/vendor/pieces/alpha/rook-w.svg');
+}
+.piece-alpha piece.rook.black {
+  background-image: url('/vendor/pieces/alpha/rook-b.svg');
+}
+.piece-alpha piece.queen.white {
+  background-image: url('/vendor/pieces/alpha/queen-w.svg');
+}
+.piece-alpha piece.queen.black {
+  background-image: url('/vendor/pieces/alpha/queen-b.svg');
+}
+.piece-alpha piece.king.white {
+  background-image: url('/vendor/pieces/alpha/king-w.svg');
+}
+.piece-alpha piece.king.black {
+  background-image: url('/vendor/pieces/alpha/king-b.svg');
+}

@@ -1,0 +1,23 @@
+/*
+ * ChessRemedy chessboard: coordinate text override.
+ *
+ * Chessground 10 renders the file/rank coordinates in elements outside
+ * the board (`cg-coords coords coord`). Give the labels a consistent,
+ * legible look against the page background in both app themes and ensure
+ * they never sit unreadable on the board frame.
+ */
+.cg-wrap cg-coords coords coord {
+  color: rgba(0, 0, 0, 0.72);
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
+/* High-contrast variant used when coordinates are rendered per square. */
+.cg-wrap coords.squares coord.coord-light {
+  color: rgba(0, 0, 0, 0.85);
+  text-shadow: none;
+}
+
+.cg-wrap coords.squares coord.coord-dark {
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: none;
+}

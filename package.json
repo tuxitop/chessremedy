@@ -19,12 +19,11 @@
     "typecheck": "tsc -b --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "copy-vendor-assets": "node scripts/copy-vendor-assets.mjs",
-    "postinstall": "node scripts/copy-vendor-assets.mjs"
+    "fetch-piece-assets": "node scripts/fetch-piece-assets.mjs",
+    "postinstall": "node scripts/fetch-piece-assets.mjs"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
-    "@lichess-org/pgn-viewer": "^2.6.4",
     "chessops": "^0.15.1",
     "dexie": "^4.0.0",
     "react": "^19.0.0",

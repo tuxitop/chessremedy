@@ -1,0 +1,100 @@
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { MoveList } from './MoveList';
+import { buildTreeFromPgn, pathToLanding } from './positionTree';
+import { nagMeta } from './pgnAnnotations';
+import type { MoveTree, Path } from './positionTree';
+
+function treeOf(pgn: string): MoveTree {
+  const built = buildTreeFromPgn(pgn);
+  if (built.error) {
+    throw new Error(built.error);
+  }
+  return built.tree;
+}
+
+function sansOf(pgn: string): string[] {
+  const tree = treeOf(pgn);
+  const moves = screen.getAllByTestId('move-list-move');
+  void tree;
+  return moves.map((m) => m.getAttribute('data-san') ?? '');
+}
+
+describe('MoveList', () => {
+  it('renders move numbers once per pair (not per ply)', () => {
+    render(<MoveList tree={treeOf('1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6?? 4. Qxf7#')} path={[]} />);
+    const nums = screen.getAllByTestId('move-num').map((n) => n.textContent);
+    expect(nums).toEqual(['1.', '2.', '3.', '4.']);
+    const sans = screen.getAllByTestId('move-list-move').map((m) => m.getAttribute('data-san'));
+    expect(sans).toEqual(['e4', 'e5', 'Bc4', 'Nc6', 'Qh5', 'Nf6', 'Qxf7#']);
+  });
+
+  it('renders variations inline as (3. Bc4) and keeps them clickable', () => {
+    const onSeek = vi.fn();
+    const tree = treeOf('1. e4 e5 2. Nf3 Nc6 3. Bb5 (3. Bc4) a6 4. Ba4');
+    render(<MoveList tree={tree} path={[]} onSeek={onSeek} />);
+    const sans = sansOf('1. e4 e5 2. Nf3 Nc6 3. Bb5 (3. Bc4) a6 4. Ba4');
+    expect(sans).toContain('Bb5');
+    expect(sans).toContain('Bc4');
+    expect(sans).toContain('a6');
+    const bc4 = screen
+      .getAllByTestId('move-list-move')
+      .find((m) => m.getAttribute('data-san') === 'Bc4');
+    expect(bc4).toBeTruthy();
+    if (bc4) {
+      fireEvent.click(bc4);
+      expect(onSeek).toHaveBeenCalledTimes(1);
+      const path = onSeek.mock.calls[0]![0] as Path;
+      expect(path[path.length - 1]?.san).toBe('Bc4');
+    }
+  });
+
+  it('renders the number column text 3. Bb5 (3. Bc4) like Lichess text', () => {
+    render(<MoveList tree={treeOf('1. e4 e5 2. Nf3 Nc6 3. Bb5 (3. Bc4) a6 4. Ba4')} path={[]} />);
+    const list = screen.getByTestId('move-list');
+    expect(list.textContent).toContain('Bb5');
+    expect(list.textContent).toContain('(3. Bc4)');
+  });
+
+  it('marks exactly one ply as aria-current when a path is given', () => {
+    const tree = treeOf('1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6?? 4. Qxf7#');
+    const landing = pathToLanding(tree);
+    render(<MoveList tree={tree} path={landing} />);
+    const active = screen
+      .getAllByTestId('move-list-move')
+      .filter((m) => m.getAttribute('aria-current') === 'step');
+    expect(active).toHaveLength(1);
+    expect(active[0]).toHaveAttribute('data-san', 'Qxf7#');
+  });
+
+  it('renders NAG glyphs with the move and colors the move text', () => {
+    render(<MoveList tree={treeOf('1. e4 $1 e5 $2 2. Nf3 $3 Nc6 $4')} path={[]} />);
+    const glyphs = screen.getAllByTestId('nag-glyph');
+    expect(glyphs.map((g) => g.textContent)).toEqual(['!', '?', '!!', '??']);
+    const move = screen
+      .getAllByTestId('move-list-move')
+      .find((m) => m.getAttribute('data-san') === 'e4');
+    expect(move).toBeTruthy();
+    if (move) {
+      expect(move.getAttribute('style')).toContain(nagMeta(1)?.color);
+    }
+  });
+
+  it('renders readable comments under their move', () => {
+    render(
+      <MoveList
+        tree={treeOf("1. e4 {The King's Pawn opening} e5 {A solid response} 2. Nf3")}
+        path={[]}
+      />,
+    );
+    expect(screen.getByText("The King's Pawn opening")).toBeInTheDocument();
+    expect(screen.getByText('A solid response')).toBeInTheDocument();
+  });
+
+  it('renders an empty state when the tree has no moves', () => {
+    const built = buildTreeFromPgn('[FEN "4k3/8/8/8/8/8/8/4K3 w - - 0 1"]');
+    expect(built.error).toBeUndefined();
+    render(<MoveList tree={built.tree} path={[]} />);
+    expect(screen.getByTestId('move-list-empty')).toBeInTheDocument();
+  });
+});

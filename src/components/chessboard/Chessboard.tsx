@@ -1,28 +1,54 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type * as React from 'react';
 import { Chessground } from '@lichess-org/chessground';
 import type { Api } from '@lichess-org/chessground/api';
 import type { Config } from '@lichess-org/chessground/config';
-import type { Dests, Key, Piece, Color, SquareClasses } from '@lichess-org/chessground/types';
+import type { DrawShape, DrawBrushes } from '@lichess-org/chessground/draw';
+import type { Dests, Key, Piece, Color } from '@lichess-org/chessground/types';
 import '@lichess-org/chessground/assets/chessground.base.css';
 import '@lichess-org/chessground/assets/chessground.brown.css';
 import '@lichess-org/chessground/assets/chessground.cburnett.css';
+import './styles/board-brown.css';
+import './styles/board-blue.css';
+import './styles/board-green.css';
+import './styles/board-purple.css';
+import './styles/board-wood.css';
+import './styles/piece-cburnett.css';
+import './styles/piece-merida.css';
+import './styles/piece-alpha.css';
+import './styles/piece-chess7.css';
+import './styles/piece-spatial.css';
+import './styles/board-coordinate-contrast.css';
 import { BoardContainer } from './BoardContainer';
+import type { UseBoardSize } from './useBoardSize';
 import {
   chessgroundDestsFromPosition,
   positionToFen,
   type ChessOpsPosition,
 } from './chessopsAdapter';
+import { ANNOTATION_COLORS } from './pgnAnnotations';
+import { DEFAULT_BOARD_THEME, DEFAULT_PIECE_SET, type BoardTheme, type PieceSet } from './themes';
 
-export type BoardTheme = 'brown' | 'blue' | 'green' | 'purple' | 'wood';
+export type { BoardTheme, PieceSet };
 
-export const SUPPORTED_BOARD_THEMES: readonly BoardTheme[] = [
-  'brown',
-  'blue',
-  'green',
-  'purple',
-  'wood',
-];
+/** Chessground brushes needed by PGN `%cal` / `%csl` annotation colors. */
+const ANNOTATION_BRUSHES: DrawBrushes = {
+  green: { key: 'g', color: ANNOTATION_COLORS.G.color, opacity: 1, lineWidth: 10 },
+  red: { key: 'r', color: ANNOTATION_COLORS.R.color, opacity: 1, lineWidth: 10 },
+  blue: { key: 'b', color: ANNOTATION_COLORS.B.color, opacity: 1, lineWidth: 10 },
+  yellow: { key: 'y', color: ANNOTATION_COLORS.Y.color, opacity: 1, lineWidth: 10 },
+  orange: { key: 'o', color: ANNOTATION_COLORS.O.color, opacity: 1, lineWidth: 10 },
+  purple: { key: 'p', color: ANNOTATION_COLORS.P.color, opacity: 1, lineWidth: 10 },
+};
+
+export interface ChessboardHandle {
+  /** Clear all arrows drawn on the board (manual + automatic). */
+  clearArrows(): void;
+  /** Clear a pending promotion and restore the controlled position. */
+  clearPendingPromotion(): void;
+  /** (Re-)select a square on the board (used when promotion is cancelled). */
+  selectSquare(key: Key | null): void;
+}
 
 export interface ChessboardProps {
   /** The chessops position to render. The wrapper re-renders on identity change. */
@@ -32,205 +58,288 @@ export interface ChessboardProps {
   /** Whether to show coordinates around the board. Defaults to `true`. */
   coordinates?: boolean;
   /** Whether to highlight legal destinations on piece selection. Defaults to `true`. */
-  showDests?: boolean;
+  showLegalMoves?: boolean;
   /** Whether piece movement animations play. Defaults to `true`. */
   animation?: boolean;
   /** Whether arrow drawing is enabled. Defaults to `false`. */
   drawable?: boolean;
+  /**
+   * When `false` piece input is frozen (no legal destinations). Used
+   * while the promotion dialog is open so the board cannot change
+   * underneath it.
+   */
+  moving?: boolean;
   /** `'white'` (bottom) or `'black'` (bottom). */
   orientation?: Color;
   /** Board theme. Defaults to `'brown'`. */
-  theme?: BoardTheme;
+  boardTheme?: BoardTheme;
+  /** Piece set. Defaults to `'cburnett'`. */
+  pieceSet?: PieceSet;
   /** Optional last-move highlight (`[from, to]`). */
-  lastMove?: readonly [Key, Key];
+  lastMove?: readonly [Key, Key] | null;
   /** Optional square highlights (`Map<square, cssClass>`). */
   customSquareClasses?: ReadonlyMap<Key, string>;
+  /** Shapes always drawn above the board (from `%cal`/`%csl` comments). */
+  autoShapes?: readonly DrawShape[];
+  /** Overlay content above the board (NAG / checkmate badges). */
+  overlay?: React.ReactNode;
+  /** Shared board-size API (from the owning surface). */
+  boardSize?: UseBoardSize;
   /** Fired when the user plays a legal move. */
   onMove?: (from: Key, to: Key, capturedPiece?: Piece) => void;
-  /** Fired when the user changes the orientation. */
-  onOrientationChange?: (orientation: Color) => void;
+  /**
+   * Fired when a pawn reaches the back rank. The wrapper has reverted
+   * the Chessground-internal move and frozen input; the caller must
+   * play the move (with a promotion role) through its position model,
+   * or cancel.
+   */
+  onPromotionRequired?: (pending: { from: Key; to: Key }) => void;
+}
+
+interface LiveProps {
+  fen: string;
+  turnColor: Color;
+  check: Color | false;
+  orientation: Color;
+  coordinates: boolean;
+  interactive: boolean;
+  moving: boolean;
+  showLegalMoves: boolean;
+  animation: boolean;
+  drawable: boolean;
+  dests: Dests;
+  lastMove: readonly [Key, Key] | null;
+  customSquareClasses: ReadonlyMap<Key, string> | undefined;
+  autoShapes: readonly DrawShape[] | undefined;
+}
+
+/** True when the move lands a pawn on the opponent's back rank. */
+function isPromotionDestination(position: ChessOpsPosition, dest: Key): boolean {
+  const rank = dest[1];
+  return position.turn === 'white' ? rank === '8' : rank === '1';
 }
 
 /**
  * Chessboard wrapper around `@lichess-org/chessground`.
  *
- * Owns the Chessground lifecycle (mount into a host `<div>`, destroy
- * on unmount), the resize primitive (via `BoardContainer`), and the
- * chessops ↔ Chessground adapter.
+ * Owns the Chessground lifecycle, the resize primitive (via
+ * `BoardContainer`), and the chessops ↔ Chessground adapter. It is a
+ * controlled component: the caller owns the position and hands it down.
+ *
+ * Promotion: when a pawn is dragged/clicked to the back rank the move is
+ * reverted internally and input is frozen, then `onPromotionRequired` is
+ * fired. The caller resolves by playing the real move (with a role)
+ * through its own position model — the resulting `position` prop update
+ * pushes the promoted board — or cancels via the handle.
  */
-export function Chessboard({
-  position,
-  interactive = true,
-  coordinates = true,
-  showDests = true,
-  animation = true,
-  drawable = false,
-  orientation = 'white',
-  theme = 'brown',
-  lastMove,
-  customSquareClasses,
-  onMove,
-  onOrientationChange,
-}: ChessboardProps): React.JSX.Element {
+export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function Chessboard(
+  {
+    position,
+    interactive = true,
+    coordinates = true,
+    showLegalMoves = true,
+    animation = true,
+    drawable = false,
+    moving = true,
+    orientation = 'white',
+    boardTheme = DEFAULT_BOARD_THEME,
+    pieceSet = DEFAULT_PIECE_SET,
+    lastMove,
+    customSquareClasses,
+    autoShapes,
+    overlay,
+    boardSize,
+    onMove,
+    onPromotionRequired,
+  },
+  ref,
+): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<Api | null>(null);
-  const onMoveRef = useRef<typeof onMove>(onMove);
-  const onOrientationRef = useRef<typeof onOrientationChange>(onOrientationChange);
+  const pendingPromotionRef = useRef<{ from: Key; to: Key } | null>(null);
+  const livePropsRef = useRef<LiveProps>({
+    fen: '',
+    turnColor: 'white',
+    check: false,
+    orientation,
+    coordinates,
+    interactive,
+    moving,
+    showLegalMoves,
+    animation,
+    drawable,
+    dests: new Map(),
+    lastMove: lastMove ?? null,
+    customSquareClasses,
+    autoShapes,
+  });
+  const positionRef = useRef(position);
+  positionRef.current = position;
 
-  // Capture latest callbacks in refs so the Chessground `events` block
-  // doesn't need to be rebuilt every render.
-  useEffect(() => {
-    onMoveRef.current = onMove;
-  }, [onMove]);
-  useEffect(() => {
-    onOrientationRef.current = onOrientationChange;
-  }, [onOrientationChange]);
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
+  const onPromotionRef = useRef(onPromotionRequired);
+  onPromotionRef.current = onPromotionRequired;
 
-  const fen = useMemo(() => positionToFen(position), [position]);
-  const dests = useMemo<Dests>(() => chessgroundDestsFromPosition(position), [position]);
+  livePropsRef.current = {
+    fen: positionToFen(position),
+    turnColor: position.turn === 'white' ? 'white' : 'black',
+    check: position.isCheck() ? (position.turn === 'white' ? 'white' : 'black') : false,
+    orientation,
+    coordinates,
+    interactive,
+    moving,
+    showLegalMoves,
+    animation,
+    drawable,
+    dests: chessgroundDestsFromPosition(position),
+    lastMove: lastMove ?? null,
+    customSquareClasses,
+    autoShapes,
+  };
 
-  const customSquareClassesMap = useMemo<SquareClasses | undefined>(() => {
-    if (!customSquareClasses) {
-      return undefined;
+  // Push the current props into Chessground.
+  const applyState = (): void => {
+    const api = apiRef.current;
+    if (!api) {
+      return;
     }
-    return new Map(customSquareClasses.entries());
-  }, [customSquareClasses]);
+    const p = livePropsRef.current;
+    const frozen = !p.interactive || !p.moving;
+    api.set({
+      fen: p.fen,
+      turnColor: p.turnColor,
+      check: p.check,
+      orientation: p.orientation,
+      coordinates: p.coordinates,
+      viewOnly: !p.interactive,
+      ...(p.interactive
+        ? {
+            movable: {
+              free: false,
+              color: 'both',
+              showDests: p.showLegalMoves && !frozen,
+              dests: frozen ? new Map() : p.dests,
+            },
+          }
+        : {}),
+      drawable: { enabled: p.drawable, brushes: ANNOTATION_BRUSHES },
+      animation: { enabled: p.animation },
+      highlight: {
+        lastMove: Boolean(p.lastMove),
+        check: true,
+        ...(p.customSquareClasses ? { custom: new Map(p.customSquareClasses.entries()) } : {}),
+      },
+      ...(p.lastMove ? { lastMove: [...p.lastMove] as Key[] } : {}),
+    });
+    api.setAutoShapes(p.autoShapes ? [...p.autoShapes] : []);
+  };
 
-  // Mount Chessground once on mount; destroy on unmount.
+  const applyStateRef = useRef(applyState);
+  applyStateRef.current = applyState;
+
+  // Mount Chessground once; updates flow through `applyState`.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) {
       return undefined;
     }
-    const initialConfig: Config = {
-      fen,
-      orientation,
-      coordinates,
-      viewOnly: !interactive,
-      ...(interactive
-        ? {
-            movable: {
-              free: false,
-              color: 'both',
-              showDests,
-              dests,
-              events: {
-                after: (orig: Key, dest: Key) => {
-                  onMoveRef.current?.(orig, dest);
-                },
-              },
-            },
-          }
-        : {}),
-      drawable: {
-        enabled: drawable,
-      },
-      animation: {
-        enabled: animation,
-      },
-      highlight: {
-        lastMove: Boolean(lastMove),
-        ...(customSquareClassesMap ? { custom: customSquareClassesMap } : {}),
-      },
-      ...(lastMove ? { lastMove: [...lastMove] as Key[] } : {}),
-      events: {
-        change: () => {
-          const api = apiRef.current;
-          if (!api) {
-            return;
-          }
-          onOrientationRef.current?.(api.state.orientation);
+    const p = livePropsRef.current;
+    const config: Config = {
+      fen: p.fen,
+      turnColor: p.turnColor,
+      check: p.check,
+      orientation: p.orientation,
+      coordinates: p.coordinates,
+      viewOnly: !p.interactive,
+      movable: {
+        free: false,
+        color: 'both',
+        showDests: p.showLegalMoves,
+        dests: p.dests,
+        events: {
+          after: (orig: Key, dest: Key) => {
+            const pos = positionRef.current;
+            if (isPromotionDestination(pos, dest)) {
+              pendingPromotionRef.current = { from: orig, to: dest };
+              // Revert the internal move so the board waits for the role.
+              applyStateRef.current();
+              onPromotionRef.current?.({ from: orig, to: dest });
+              return;
+            }
+            onMoveRef.current?.(orig, dest);
+          },
         },
       },
+      drawable: { enabled: p.drawable, brushes: ANNOTATION_BRUSHES },
+      animation: { enabled: p.animation },
+      highlight: { lastMove: Boolean(p.lastMove), check: true },
     };
-    const api = Chessground(host, initialConfig);
+    const api = Chessground(host, config);
     apiRef.current = api;
+    applyStateRef.current();
     return () => {
       api.destroy();
       apiRef.current = null;
     };
-    // We deliberately exclude the position/options here: Chessground is
-    // updated imperatively via `api.set(...)` below. Re-mounting on
-    // every prop change would destroy piece state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Push prop updates into Chessground.
+  // Keep Chessground in sync with the latest props.
   useEffect(() => {
-    const api = apiRef.current;
-    if (!api) {
-      return;
-    }
-    api.set({
-      fen,
-      orientation,
-      coordinates,
-      viewOnly: !interactive,
-      ...(interactive
-        ? {
-            movable: {
-              free: false,
-              color: 'both',
-              showDests,
-              dests,
-            },
-          }
-        : {}),
-      drawable: {
-        enabled: drawable,
-      },
-      animation: {
-        enabled: animation,
-      },
-      highlight: {
-        lastMove: Boolean(lastMove),
-        ...(customSquareClassesMap ? { custom: customSquareClassesMap } : {}),
-      },
-      ...(lastMove ? { lastMove: [...lastMove] } : {}),
-    });
+    applyStateRef.current();
   }, [
-    fen,
-    dests,
+    position,
     interactive,
-    showDests,
+    coordinates,
+    showLegalMoves,
     animation,
     drawable,
+    moving,
     orientation,
-    coordinates,
     lastMove,
-    customSquareClassesMap,
+    customSquareClasses,
+    autoShapes,
   ]);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      clearArrows: () => {
+        const api = apiRef.current;
+        if (!api) {
+          return;
+        }
+        api.setShapes([]);
+        api.setAutoShapes([]);
+      },
+      clearPendingPromotion: () => {
+        pendingPromotionRef.current = null;
+        applyStateRef.current();
+      },
+      selectSquare: (key) => {
+        apiRef.current?.selectSquare(key);
+      },
+    }),
+    [],
+  );
+
+  const wrapperClass = `cg-wrap board-${boardTheme} piece-${pieceSet}`;
+
   return (
-    <BoardContainer ariaLabel="Chessboard">
+    <BoardContainer
+      ariaLabel="Chessboard"
+      {...(overlay !== undefined ? { overlay } : {})}
+      {...(boardSize !== undefined ? { boardSize } : {})}
+    >
       <div
         ref={hostRef}
-        className={`cg-wrap ${themeClass(theme)}`}
+        className={wrapperClass}
         data-testid="chessground-host"
+        data-board-theme={boardTheme}
+        data-piece-set={pieceSet}
+        data-orientation={orientation}
         style={{ width: '100%', height: '100%' }}
       />
     </BoardContainer>
   );
-}
-
-function themeClass(theme: BoardTheme): string {
-  // `cg-brown` is the only theme class that ships pre-styled with
-  // `@lichess-org/chessground@10.1.1`. The other themes (`blue`,
-  // `green`, `purple`, `wood`) are reserved for future slice-in
-  // stylesheets; for V1 they all render with the default
-  // brown-style colors so the playground never breaks.
-  switch (theme) {
-    case 'brown':
-      return 'cg-brown';
-    case 'blue':
-      return 'cg-blue';
-    case 'green':
-      return 'cg-green';
-    case 'purple':
-      return 'cg-purple';
-    case 'wood':
-      return 'cg-wood';
-    default:
-      return 'cg-brown';
-  }
-}
+});
