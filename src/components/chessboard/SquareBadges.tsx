@@ -35,8 +35,16 @@ function squareColRank(square: string): { col: number; rank: number } {
 export function SquareBadges({ orientation, items }: SquareBadgesProps): React.JSX.Element | null {
   const ref = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState(0);
+  const hasItems = items.length > 0;
 
   useLayoutEffect(() => {
+    // The overlay is only mounted once the first badge appears. Re-run this
+    // effect when the overlay becomes visible so the ResizeObserver is
+    // attached to the freshly-mounted element (a board may otherwise grow
+    // without the chips following it).
+    if (!hasItems) {
+      return undefined;
+    }
     const el = ref.current;
     if (!el) {
       return undefined;
@@ -51,7 +59,7 @@ export function SquareBadges({ orientation, items }: SquareBadgesProps): React.J
     return () => {
       ro.disconnect();
     };
-  }, []);
+  }, [hasItems]);
 
   if (items.length === 0) {
     return null;
