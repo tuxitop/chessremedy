@@ -20,8 +20,6 @@ export interface FenFixture {
   readonly label: string;
   readonly fen: string;
   readonly exercises: string;
-  /** Force a bottom colour on selection (used for Black-to-play exercises). */
-  readonly autoOrientation?: 'white' | 'black';
 }
 
 export interface PgnFixture {
@@ -30,8 +28,6 @@ export interface PgnFixture {
   readonly label: string;
   readonly pgn: string;
   readonly exercises: string;
-  /** Force a bottom colour on selection (used for Black-to-play exercises). */
-  readonly autoOrientation?: 'white' | 'black';
 }
 
 export type PlaygroundFixture = FenFixture | PgnFixture;
@@ -98,7 +94,6 @@ export const PLAYGROUND_FIXTURES: readonly PlaygroundFixture[] = [
     kind: 'pgn',
     label: 'Italian Game \u2014 Black to play',
     pgn: '1. e4 e5 2. Nf3 Nc6 3. Bc4',
-    autoOrientation: 'black',
     exercises: 'Black-to-move landing, orientation auto-flip',
   },
   {

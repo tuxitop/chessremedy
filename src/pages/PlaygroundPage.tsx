@@ -72,13 +72,20 @@ function buildFixtureTree(fixture: PlaygroundFixture): { tree: MoveTree; error: 
 }
 
 /**
- * Default bottom colour for a fixture. Only fixtures explicitly marked as
- * Black-to-play exercises (autoOrientation: 'black') open with Black at
- * the bottom. Regular games and FEN positions always open White at the
- * bottom, regardless of who is to move.
+ * Default bottom colour for a fixture: Black at the bottom when the board
+ * lands on a position where Black is to move and the game is not over
+ * (the classic "solve from here" orientation). Positions where White is to
+ * move, and finished positions, always open White at the bottom.
  */
 function landingOrientation(fixture: PlaygroundFixture): Orientation {
-  return fixture.autoOrientation === 'black' ? 'black' : 'white';
+  const { tree } = buildFixtureTree(fixture);
+  const landing = pathToLanding(tree);
+  const position = positionAtPath(tree, landing);
+  const side = sideToMoveAt(tree, landing);
+  if (side === 'black' && !position.isEnd()) {
+    return 'black';
+  }
+  return 'white';
 }
 
 export function PlaygroundPage(): React.JSX.Element {
@@ -356,7 +363,11 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
       </header>
 
       <div className={styles.layout}>
-        <section className={styles.boardColumn} aria-label="Chessboard">
+        <section
+          className={styles.boardColumn}
+          aria-label="Chessboard"
+          style={!boardSizeApi.isMobile ? { width: boardSizePx } : undefined}
+        >
           <Chessboard
             ref={chessboardRef}
             position={position}

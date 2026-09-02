@@ -274,9 +274,11 @@ chessboard (with fixture controls below it) on the left, and a right-hand
 - the **board / move controls** at the bottom of the panel.
 
 The whole right panel is sized to match the board height on desktop so the
-move list and board are always the same height. On mobile (< 768 px) the
-columns stack and the panel takes its natural height with an internal
-scroll cap.
+move list and board are always the same height. Both the board column and
+the right panel use a fixed width equal to the board size, so switching
+fixtures never reflows the columns (the panel neither moves nor changes
+width). On mobile (< 768 px) the columns stack and the panel takes its
+natural height with an internal scroll cap.
 
 ### Fixture positions
 
@@ -369,7 +371,8 @@ Chessboard component tests in the "Tests" section above:
 - An automated end-to-end test navigates to `/playground`, selects a
   fixture, makes a legal move, and verifies the move list updates.
 - Selecting Fixture 9 (Italian Game — Black to play) auto-flips the
-  orientation; game fixtures never auto-flip.
+  orientation; any fixture whose landing side is Black and not over does
+  the same (finished positions stay White at the bottom).
 - Selecting Fixture 10 (Scholar's Mate game) and clicking any move in
   the move list updates the board to that ply.
 - Pressing `Home` / `End` jumps to start / end of the mainline.
