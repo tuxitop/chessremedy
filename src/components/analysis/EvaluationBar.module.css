@@ -1,0 +1,34 @@
+.bar {
+  position: relative;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 100%;
+  min-height: 200px;
+  border-radius: 7px;
+  background: linear-gradient(to top, #00000022, #00000011);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
+  overflow: hidden;
+  background-color: var(--color-surface-evalbar, rgba(0, 0, 0, 0.35));
+}
+
+/* Fill grows from the bottom of the bar upward. */
+.fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to top, #78992233, #789922cc 70%);
+}
+
+/* Fixed marker at the equal point (middle of the bar). */
+.centerMark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--color-text, #222);
+  opacity: 0.85;
+  z-index: 1;
+}

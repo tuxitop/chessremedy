@@ -1,10 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Real-engine browser tests for Feature 005 (spec §19/§22). These run the
- * shipped Stockfish WASM inside a Web Worker through the playground UI and
- * assert engine *characteristics* (mate vs numeric evaluation, metadata,
- * interactivity) rather than exact evaluation numbers (spec §16).
+ * Real-engine browser tests for Feature 005 (spec §19/§22) driven through the
+ * Feature 006 engine chrome on the playground. These run the shipped Stockfish
+ * WASM inside a Web Worker through the playground UI and assert engine
+ * *characteristics* (mate vs numeric evaluation, metadata, interactivity)
+ * rather than exact evaluation numbers (spec §16).
  */
 
 async function squareCenter(page: Page, square: string): Promise<{ x: number; y: number }> {
@@ -29,6 +30,18 @@ async function playMove(page: Page, from: string, to: string): Promise<void> {
   await page.mouse.click(end.x, end.y);
 }
 
+async function enableEngine(page: Page, profile: 'fast' | 'normal' | 'tactical' | 'deep' = 'fast') {
+  const gear = page.getByTestId('engine-settings-gear');
+  await gear.click();
+  await page.getByTestId('setting-profile').selectOption(profile);
+  await page.keyboard.press('Escape');
+  // Engine off by default on the playground; turn it on.
+  const toggle = page.getByTestId('engine-toggle');
+  if ((await toggle.getAttribute('aria-checked')) === 'false') {
+    await toggle.click();
+  }
+}
+
 const LONG = 120_000;
 const RESULT_TIMEOUT = 60_000;
 
@@ -41,11 +54,11 @@ test.describe('Stockfish engine playground', () => {
     async ({ page }) => {
       await page.goto('/playground');
       await page.getByTestId('fixture-select').selectOption('engine-quiet-start');
-      await page.getByTestId('engine-start').click();
+      await enableEngine(page, 'fast');
       await expect(page.getByTestId('engine-result')).toBeVisible({ timeout: RESULT_TIMEOUT });
       const evalText = await page.getByTestId('engine-eval').textContent();
       expect(evalText).toMatch(/^[+-]?\d+\.\d\d$/);
-      await expect(page.getByTestId('engine-meta')).toContainText('stockfish');
+      await expect(page.getByTestId('engine-version')).toContainText('stockfish');
       await expect(page.getByTestId('engine-status')).toContainText('Ready');
     },
   );
@@ -56,7 +69,7 @@ test.describe('Stockfish engine playground', () => {
     async ({ page }) => {
       await page.goto('/playground');
       await page.getByTestId('fixture-select').selectOption('engine-mate-in-1');
-      await page.getByTestId('engine-start').click();
+      await enableEngine(page, 'fast');
       await expect(page.getByTestId('engine-result')).toBeVisible({ timeout: RESULT_TIMEOUT });
       await expect(page.getByTestId('engine-eval')).toHaveText(/^M\d+$/, {
         timeout: RESULT_TIMEOUT,
@@ -69,22 +82,24 @@ test.describe('Stockfish engine playground', () => {
     await page.goto('/playground');
     for (const id of ['engine-en-passant', 'engine-castling']) {
       await page.getByTestId('fixture-select').selectOption(id);
-      await page.getByTestId('engine-start').click();
+      await enableEngine(page, 'fast');
       await expect(page.getByTestId('engine-result')).toBeVisible({ timeout: RESULT_TIMEOUT });
       const evalText = await page.getByTestId('engine-eval').textContent();
       expect(evalText?.length ?? 0).toBeGreaterThan(0);
+      // Toggle off so the next fixture starts from a clean state.
+      await page.getByTestId('engine-toggle').click();
     }
   });
 
   test('can cancel an active analysis', { timeout: LONG }, async ({ page }) => {
     await page.goto('/playground');
     await page.getByTestId('fixture-select').selectOption('engine-quiet-start');
-    await page.getByTestId('engine-profile').selectOption('deep');
-    await page.getByTestId('engine-start').click();
-    await expect(page.getByTestId('engine-stop')).toBeVisible();
-    await page.getByTestId('engine-stop').click();
-    await expect(page.getByTestId('engine-cancelled')).toBeVisible();
-    await expect(page.getByTestId('engine-start')).toBeVisible();
+    await enableEngine(page, 'deep');
+    await expect(page.getByTestId('engine-cancel')).toBeVisible();
+    await page.getByTestId('engine-cancel').click();
+    // Cancel returns to the pre-analysis state.
+    await expect(page.getByTestId('position-eval')).toHaveText('\u2014');
+    await expect(page.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'true');
   });
 
   test(
@@ -92,14 +107,14 @@ test.describe('Stockfish engine playground', () => {
     { timeout: LONG },
     async ({ page }) => {
       await page.goto('/playground');
-      await page.getByTestId('engine-profile').selectOption('deep');
-      await page.getByTestId('engine-start').click();
-      await expect(page.getByTestId('engine-stop')).toBeVisible();
+      await page.getByTestId('fixture-select').selectOption('engine-quiet-start');
+      await enableEngine(page, 'deep');
+      await expect(page.getByTestId('engine-cancel')).toBeVisible();
       // Play e2e-e4 while analysis is running.
       await playMove(page, 'e2', 'e4');
       const moved = page.getByTestId('move-list-move').filter({ hasText: 'e4' }).first();
       await expect(moved).toBeVisible();
-      await page.getByTestId('engine-stop').click();
+      await page.getByTestId('engine-toggle').click();
     },
   );
 });

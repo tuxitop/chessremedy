@@ -17,6 +17,12 @@ const PlaygroundPage = lazy(() =>
   import('@/pages/PlaygroundPage').then((m) => ({ default: m.PlaygroundPage })),
 );
 
+// The live-analysis board drives the Stockfish engine and is the busiest page
+// in the app; keep it out of the initial bundle.
+const LiveAnalysisPage = lazy(() =>
+  import('@/pages/LiveAnalysisPage').then((m) => ({ default: m.LiveAnalysisPage })),
+);
+
 // react-router-dom@7 enables v7 future flags by default; no `future` option
 // is needed (and the option is no longer accepted in v7).
 export const router = createBrowserRouter([
@@ -27,6 +33,14 @@ export const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: 'games', element: <GamesPage /> },
       { path: 'analysis', element: <AnalysisPage /> },
+      {
+        path: 'analysis/live',
+        element: (
+          <Suspense fallback={null}>
+            <LiveAnalysisPage />
+          </Suspense>
+        ),
+      },
       { path: 'puzzles', element: <PuzzlesPage /> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'settings', element: <SettingsPage /> },

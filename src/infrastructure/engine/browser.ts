@@ -10,6 +10,7 @@
 import { fetchEngineAssets, workerScriptUrl } from './engineBuild';
 import { readBrowserCapabilities } from './capabilities';
 import { createEngineService } from './engineService';
+import { createCachedEngineService } from './cache';
 import { createStockfishWorkerTransport } from './workerTransport';
 import type { EngineService } from './types';
 
@@ -36,4 +37,18 @@ let browserEngineServicePromise: Promise<EngineService> | null = null;
 export function getBrowserEngineService(): Promise<EngineService> {
   browserEngineServicePromise ??= createBrowserEngineService();
   return browserEngineServicePromise;
+}
+
+let cachedEngineServicePromise: Promise<EngineService> | null = null;
+
+/**
+ * Lazily-created session-cached engine service (Feature 006): the shared
+ * browser service wrapped with the position-keyed session cache so repeated
+ * positions on the live board are served without re-running the worker.
+ */
+export function getCachedBrowserEngineService(): Promise<EngineService> {
+  cachedEngineServicePromise ??= getBrowserEngineService().then((service) =>
+    createCachedEngineService(service),
+  );
+  return cachedEngineServicePromise;
 }

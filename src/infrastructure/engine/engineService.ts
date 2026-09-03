@@ -17,7 +17,10 @@ import { parsePositionFen, type EngineMetadata } from '@/domain/chess';
 import { engineBuildToken, engineMetadataFor, type EngineAssets } from './engineBuild';
 import type { EngineCapabilities } from './capabilities';
 import { resolveProfileConfig } from './engineProfiles';
+import type { UciOptionSetting } from './engineProfiles';
+import type { EngineBuildId } from './types';
 import {
+  goCombinedCommand,
   goDepthCommand,
   goMovetimeCommand,
   isMeaningfulInfo,
@@ -65,10 +68,31 @@ const DEFAULT_STALL_TIMEOUT_MS = 60_000;
 const DEFAULT_CANCEL_TIMEOUT_MS = 5_000;
 const DEFAULT_PROFILE = 'normal' as const;
 
+/** Feature 006 MultiPV cap (spec: default 3, max 5). */
+export const MAX_MULTIPV = 5;
+
+/** Clamp a requested MultiPV into `[1, MAX_MULTIPV]`. */
+export function clampMultipv(multipv: number): number {
+  return Math.min(MAX_MULTIPV, Math.max(1, Math.round(multipv)));
+}
+
+/** Clamp a requested hash (MB) into `[1, hashCapMb]` (ADR-012 caps). */
+export function clampHashMb(hashMb: number, hashCapMb: number): number {
+  return Math.min(Math.max(1, Math.round(hashMb)), hashCapMb);
+}
+
+/** Clamp a requested thread count into `[1, threadCap]`. */
+export function clampThreads(threads: number, threadCap: number): number {
+  return Math.min(Math.max(1, Math.round(threads)), threadCap);
+}
+
 export interface JobOptions {
   readonly profile: 'fast' | 'normal' | 'tactical' | 'deep';
   readonly maxDepth?: number;
   readonly movetimeMs?: number;
+  readonly multipv?: number;
+  readonly hashMb?: number;
+  readonly threads?: number;
 }
 
 interface SearchLine {
@@ -93,6 +117,31 @@ function toEngineJobError(err: unknown, fallbackReason: EngineJobError['reason']
     reason: fallbackReason,
     message: err instanceof Error ? err.message : String(err),
   };
+}
+
+/**
+ * Apply per-job overrides (Feature 006 live analysis) on top of the resolved
+ * profile options. The single-threaded build has no `Threads` option (the
+ * profile omits it), so a threads override is only applied when the resolved
+ * option set already carries `Threads`.
+ */
+function applyProfileOverrides(
+  options: readonly UciOptionSetting[],
+  job: Pick<JobOptions, 'multipv' | 'hashMb' | 'threads'>,
+  build: EngineBuildId,
+): readonly UciOptionSetting[] {
+  return options.map((option) => {
+    if (option.name === 'MultiPV' && job.multipv !== undefined) {
+      return { ...option, value: String(clampMultipv(job.multipv)) };
+    }
+    if (option.name === 'Hash' && job.hashMb !== undefined) {
+      return { ...option, value: String(job.hashMb) };
+    }
+    if (option.name === 'Threads' && job.threads !== undefined && build === 'lite') {
+      return { ...option, value: String(job.threads) };
+    }
+    return option;
+  });
 }
 
 let jobSequence = 0;
@@ -220,6 +269,13 @@ export class EngineServiceImpl implements EngineService {
       profile,
       ...(options?.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
       ...(options?.movetimeMs !== undefined ? { movetimeMs: options.movetimeMs } : {}),
+      ...(options?.multipv !== undefined ? { multipv: clampMultipv(options.multipv) } : {}),
+      ...(options?.hashMb !== undefined
+        ? { hashMb: clampHashMb(options.hashMb, this.capabilities.hashCapMb) }
+        : {}),
+      ...(options?.threads !== undefined
+        ? { threads: clampThreads(options.threads, this.capabilities.threads) }
+        : {}),
     };
     const onCancel = (job: AnalysisJobHandle): void => this.cancel(job.id);
 
@@ -540,14 +596,20 @@ export class EngineServiceImpl implements EngineService {
     const depth = job.options.maxDepth ?? resolved.depth;
 
     try {
-      for (const option of resolved.options) {
+      const options = applyProfileOverrides(resolved.options, job.options, this.capabilities.build);
+      for (const option of options) {
         this.send(setoptionCommand(option.name, option.value));
       }
       this.send(positionFenCommand(job.fen));
+      // Live analysis (Feature 006) may bound the search by time and depth
+      // simultaneously; Stockfish stops at whichever it reaches first.
+      // Other callers keep their existing single-limit behaviour.
       this.send(
-        job.options.movetimeMs !== undefined
-          ? goMovetimeCommand(job.options.movetimeMs)
-          : goDepthCommand(depth),
+        job.options.movetimeMs !== undefined && job.options.maxDepth !== undefined
+          ? goCombinedCommand(depth, job.options.movetimeMs)
+          : job.options.movetimeMs !== undefined
+            ? goMovetimeCommand(job.options.movetimeMs)
+            : goDepthCommand(depth),
       );
 
       const searchLine = await this.waitForBestmove();

@@ -1,0 +1,141 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggleOn,
+.toggleOff {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.25));
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+  transition: background 0.15s;
+}
+
+.toggleOn {
+  background: var(--color-accent, #15781b);
+}
+
+.toggleOff {
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.15));
+}
+
+.toggleKnob {
+  position: absolute;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+
+.toggleOn .toggleKnob {
+  left: 20px;
+}
+
+.toggleOff .toggleKnob {
+  left: 3px;
+}
+
+.eval {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.status {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary, #666);
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.06));
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.engineVersion {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary, #666);
+  white-space: nowrap;
+}
+
+.depthRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.depth {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary, #666);
+  font-variant-numeric: tabular-nums;
+}
+
+.stop {
+  font-size: 0.78rem;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-error, #c33);
+  color: var(--color-text-error, #c33);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--color-text-secondary, #888);
+}
+
+.error {
+  font-size: 0.78rem;
+  color: var(--color-text-error, #c33);
+  border: 1px solid var(--color-border-error, #c33);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.lineEval {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.linePv {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

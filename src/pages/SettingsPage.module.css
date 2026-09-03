@@ -56,3 +56,17 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
+
+.engineDefaults {
+  flex-shrink: 0;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.engineLoading {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  font-style: italic;
+}

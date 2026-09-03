@@ -6,6 +6,7 @@ export const DEFAULT_THEME: 'light' | 'dark' = 'light';
 
 export const SETTINGS_KEYS = {
   theme: 'theme',
+  engineDefaults: 'engine.defaults',
 } as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS];
 

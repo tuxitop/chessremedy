@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  goCombinedCommand,
   parseUciLine,
   positionFenCommand,
   goDepthCommand,
@@ -16,6 +17,9 @@ describe('uciProtocol formatting', () => {
     );
     expect(goDepthCommand(10)).toBe('go depth 10');
     expect(goMovetimeCommand(500)).toBe('go movetime 500');
+    expect(goCombinedCommand(12, 5000)).toBe('go depth 12 movetime 5000');
+    expect(goCombinedCommand(undefined, 2000)).toBe('go movetime 2000');
+    expect(goCombinedCommand(8)).toBe('go depth 8');
   });
 });
 

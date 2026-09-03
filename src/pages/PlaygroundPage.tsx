@@ -4,7 +4,11 @@ import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Color, Key } from '@lichess-org/chessground/types';
 import { fenOf } from '@/domain/chess';
 import { ENGINE_POSITIONS } from '@/infrastructure/engine/fixtures/enginePositions';
-import { BrowserEnginePanel } from '@/components/engine/BrowserEnginePanel';
+import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
+import { useAnalysisController } from '@/components/analysis/useAnalysisController';
+import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
+import { EvaluationBar } from '@/components/analysis/EvaluationBar';
+import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import {
   Chessboard,
   type BoardTheme,
@@ -195,6 +199,16 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
   const position = useMemo(() => positionAtPath(tree, path), [tree, path]);
   const currentFen = useMemo(() => fenOf(position), [position]);
   const sideToMove = useMemo<Orientation>(() => sideToMoveAt(tree, path), [tree, path]);
+
+  const engine = useBrowserAnalysisEngine();
+  const { defaults, isReady } = useEngineDefaults();
+  const engineController = useAnalysisController({
+    service: engine.service,
+    fen: currentFen,
+    capabilities: engine.capabilities,
+    autoStart: false,
+    defaults: isReady ? defaults : null,
+  });
   const activePly = path.length > 0 ? path[path.length - 1]! : null;
   const lastMove = useMemo<readonly [string, string] | null>(
     () => (activePly ? [activePly.from, activePly.to] : null),
@@ -448,25 +462,41 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
           )}
         </section>
 
+        <div
+          className={styles.evalBar}
+          style={!boardSizeApi.isMobile ? { height: boardSizePx } : undefined}
+        >
+          <EvaluationBar
+            evaluation={
+              engineController.result && engineController.result.lines.length > 0
+                ? engineController.result.lines[0]!.evaluation
+                : null
+            }
+            bottomColor={settings.orientation}
+            sideToMove={sideToMove}
+          />
+        </div>
+
         <aside
           className={styles.sidePanel}
           aria-label="Analysis panel"
           style={!boardSizeApi.isMobile ? { height: boardSizePx, width: boardSizePx } : undefined}
         >
-          <div className={styles.sideHeader}>
-            <span className={styles.sideTitle}>Analysis</span>
-            <SettingsPopover
-              state={settingsForPopover}
-              onChange={onSettingsChange}
-              onResetBoardSize={handleResetBoardSize}
-              onClearArrows={handleClearArrows}
-              boardSize={boardSizePx}
-            />
-          </div>
-
-          <div className={styles.engineLines} aria-label="Engine lines">
-            <BrowserEnginePanel fen={currentFen} />
-          </div>
+          <AnalysisPanel
+            controller={engineController}
+            capabilities={engine.capabilities}
+            bottomColor={settings.orientation}
+            sideToMove={sideToMove}
+            rightSlot={
+              <SettingsPopover
+                state={settingsForPopover}
+                onChange={onSettingsChange}
+                onResetBoardSize={handleResetBoardSize}
+                onClearArrows={handleClearArrows}
+                boardSize={boardSizePx}
+              />
+            }
+          />
 
           <div className={styles.moveListArea} aria-label="Moves">
             <MoveList tree={tree} path={path} onSeek={handleSeek} />

@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  max-width: 1500px;
+  max-width: 1600px;
   margin: 0 auto;
   color: var(--color-text, inherit);
 }
@@ -25,66 +25,35 @@
   font-size: 0.9rem;
 }
 
-.layout {
+.fenRow {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.evalBar {
-  flex: 0 0 14px;
-  width: 14px;
-  display: flex;
-  align-items: stretch;
-}
-
-.boardColumn {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: flex-start;
-  flex: 0 0 auto;
-}
-
-.fixtureControls {
-  display: flex;
-  flex-direction: row;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px;
-  width: 100%;
-  min-width: 320px;
 }
 
-.field {
+.fenLabel {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 0.85rem;
+  flex: 1 1 420px;
+  min-width: 320px;
 }
 
-.field select {
+.fenInput {
   padding: 6px 8px;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
   border-radius: 6px;
   background: var(--color-surface, white);
   color: inherit;
-  font-family: inherit;
-  font-size: 0.9rem;
-  min-width: 260px;
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-size: 0.85rem;
+  width: 100%;
 }
 
-.exercises {
-  margin: 0;
-  flex-basis: 100%;
-  font-size: 0.82rem;
-  color: var(--color-text-secondary, #555);
-  font-style: italic;
-}
-
+.fenButton,
 .actionButton {
-  align-self: flex-end;
   padding: 6px 12px;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
   border-radius: 6px;
@@ -95,82 +64,61 @@
   color: inherit;
 }
 
+.fenButton:hover,
 .actionButton:hover {
   background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
 }
 
-.positionError {
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-error, #c33);
-  border-radius: 6px;
+.fenError {
   color: var(--color-text-error, #c33);
-  background: var(--color-surface-error, rgba(255, 0, 0, 0.04));
-  max-width: 480px;
-}
-
-.errorMessage {
-  margin: 4px 0 0 0;
-  white-space: pre-wrap;
-  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
   font-size: 0.8rem;
 }
 
-/*
- * Right "analysis" panel: header / engine lines / move list / controls.
- * Height is set inline to match the board height on desktop.
- */
+.layout {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.boardColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  flex: 0 0 auto;
+}
+
+.resetRow {
+  display: flex;
+  gap: 8px;
+}
+
+.evalBarColumn {
+  flex: 0 0 14px;
+  display: flex;
+  align-items: stretch;
+}
+
+.evalBarColumn > * {
+  height: 100%;
+}
+
 .sidePanel {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 0 0 auto;
+  flex: 1 1 320px;
+  min-width: 320px;
   background: var(--color-surface, white);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
   border-radius: 8px;
   padding: 8px 10px;
 }
 
-.sideHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: 0 0 auto;
-}
-
-.sideTitle {
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
-}
-
-.engineLines {
-  flex: 0 0 auto;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--color-surface-muted, rgba(0, 0, 0, 0.03));
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.engineTitle {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-secondary, #555);
-}
-
-.engineHint {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--color-text-secondary, #555);
-  font-style: italic;
-}
-
 .moveListArea {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 120px;
   overflow: hidden;
   border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
@@ -202,17 +150,44 @@
   color: var(--color-text, inherit);
 }
 
+.positionError {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-error, #c33);
+  border-radius: 6px;
+  color: var(--color-text-error, #c33);
+  background: var(--color-surface-error, rgba(255, 0, 0, 0.04));
+  max-width: 480px;
+}
+
+.errorMessage {
+  margin: 4px 0 0 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-size: 0.8rem;
+}
+
 @media (max-width: 768px) {
   .layout {
     flex-direction: column;
+    align-items: center;
   }
   .boardColumn {
     width: 100%;
     align-items: center;
   }
+  .evalBarColumn {
+    height: 14px;
+    width: 100%;
+    max-width: 360px;
+    flex: 0 0 auto;
+  }
+  .evalBarColumn > * {
+    height: 14px;
+  }
   .sidePanel {
     width: 100%;
     min-width: 0;
     max-height: 70vh;
+    height: auto !important;
   }
 }

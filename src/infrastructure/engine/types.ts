@@ -88,6 +88,21 @@ export interface AnalysisOptions {
   readonly maxDepth?: number;
   /** Time-limited search instead of depth-limited (`go movetime`). */
   readonly movetimeMs?: number;
+  /**
+   * Override the number of principal-variation lines (default: the
+   * profile's MultiPV). Clamped to the Feature 006 cap of 1..5.
+   */
+  readonly multipv?: number;
+  /**
+   * Override the hash size in MB (default: the profile's hash). Clamped to
+   * the capability cap (ADR-012: 64 MB mobile / 256 MB desktop).
+   */
+  readonly hashMb?: number;
+  /**
+   * Override the engine thread count (default: capability-derived). Ignored
+   * for the single-threaded build, which has no `Threads` option.
+   */
+  readonly threads?: number;
 }
 
 export interface AnalysisRequest {

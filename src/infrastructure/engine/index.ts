@@ -4,6 +4,13 @@
 
 export { AnalysisJobHandle, EngineServiceImpl, createEngineService } from './engineService';
 export type { EngineServiceOptions, JobOptions } from './engineService';
+export {
+  SessionAnalysisCache,
+  analysisCacheKey,
+  canonicalFen,
+  createCachedEngineService,
+} from './cache';
+export type { EngineAnalysisCache } from './cache';
 export { createStockfishWorkerTransport } from './workerTransport';
 export type { StockfishWorkerTransportOptions } from './workerTransport';
 export { createBrowserEngineService } from './browser';

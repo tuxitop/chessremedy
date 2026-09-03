@@ -57,6 +57,25 @@ export function goMovetimeCommand(millis: number): string {
   return `go movetime ${millis}`;
 }
 
+/**
+ * Combined `go` command for live analysis (Feature 006): the engine stops at
+ * whichever limit it reaches first — the configured depth or the search
+ * time (`go depth N movetime M`). At least one limit must be provided.
+ */
+export function goCombinedCommand(depth?: number, movetimeMs?: number): string {
+  const parts = ['go'];
+  if (depth !== undefined) {
+    parts.push('depth', String(depth));
+  }
+  if (movetimeMs !== undefined) {
+    parts.push('movetime', String(movetimeMs));
+  }
+  if (parts.length === 1) {
+    throw new Error('goCombinedCommand requires a depth and/or movetime limit.');
+  }
+  return parts.join(' ');
+}
+
 function toNumber(token: string): number | undefined {
   const n = Number(token);
   return Number.isFinite(n) ? n : undefined;

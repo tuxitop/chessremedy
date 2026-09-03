@@ -153,6 +153,60 @@ describe('engine service — successful analysis', () => {
     await dispose();
   });
 
+  it('combines depth and movetime when both are set (whichever-first)', async () => {
+    const { service, transports, dispose } = createService();
+    await service.analyze(START_FEN, { profile: 'normal', maxDepth: 12, movetimeMs: 5_000 })
+      .outcome;
+    expect(transports[0]!.sent).toContain('go depth 12 movetime 5000');
+    await dispose();
+  });
+
+  it('replaces the profile MultiPV with a per-job override', async () => {
+    const { service, transports, dispose } = createService();
+    await service.analyze(START_FEN, { profile: 'normal', multipv: 3 }).outcome;
+    const sent = transports[0]!.sent;
+    expect(sent).toContain('setoption name MultiPV value 3');
+    expect(sent).not.toContain('setoption name MultiPV value 1');
+    await dispose();
+  });
+
+  it('clamps a requested MultiPV into 1..5', async () => {
+    const { service, transports, dispose } = createService();
+    await service.analyze(START_FEN, { profile: 'fast', multipv: 9 }).outcome;
+    await service.analyze(START_FEN, { profile: 'fast', multipv: -3 }).outcome;
+    const sent = transports[0]!.sent;
+    expect(sent).toContain('setoption name MultiPV value 5');
+    expect(sent).toContain('setoption name MultiPV value 1');
+    await dispose();
+  });
+
+  it('overrides hash within the capability cap', async () => {
+    const { service, transports, dispose } = createService();
+    await service.analyze(START_FEN, { profile: 'deep', hashMb: 128 }).outcome;
+    expect(transports[0]!.sent).toContain('setoption name Hash value 128');
+    await dispose();
+  });
+
+  it('overrides threads only on the multi-threaded build', async () => {
+    const { service, transports, dispose } = createService();
+    await service.analyze(START_FEN, { profile: 'normal', threads: 2 }).outcome;
+    expect(transports[0]!.sent).not.toContain('setoption name Threads');
+    await dispose();
+  });
+
+  it('applies a threads override on the multi-threaded build', async () => {
+    const liteCaps: EngineCapabilities = { ...CAPS, build: 'lite', threads: 2 };
+    const rig = createFakeEngineFactory();
+    const service = createEngineService({
+      transportFactory: rig.factory,
+      capabilities: liteCaps,
+      assets: ASSETS,
+    });
+    await service.analyze(START_FEN, { profile: 'normal', threads: 2 }).outcome;
+    expect(rig.transports[0]!.sent).toContain('setoption name Threads value 2');
+    await service.dispose();
+  });
+
   it('preserves MultiPV ordering and per-line evaluations', async () => {
     const { service, transports, dispose } = createService({
       configureTransport: (t) => {
