@@ -8,10 +8,9 @@ Required properties:
 - source
 - externalId
 - playedAt
-- whitePlayer
-- blackPlayer
-- whiteRating
-- blackRating
+- whitePlayer / blackPlayer (each a `Player` value object; the player's
+  provider rating lives on `Player.rating`, superseding the earlier
+  `whiteRating` / `blackRating` top-level fields)
 - result
 - PGN
 - timeControl
