@@ -35,3 +35,16 @@ Create the application foundation required by all later features.
 - typecheck succeeds
 - PWA foundation is functional
 - database can open successfully
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `ARCHITECTURE.md`; `decisions/ADR-001`,
+  `decisions/ADR-009`, `decisions/ADR-027`
+- Domain: none
+- Research: `research/testing-stack.md`
+
+Feature dependencies: none (base feature).

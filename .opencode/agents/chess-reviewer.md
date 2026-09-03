@@ -19,7 +19,10 @@ You specialize in:
 - game phases
 - time-control-aware statistics
 
-Read the relevant specifications before reviewing.
+Load the relevant specifications via `.opencode/CONTEXT-MAP.md` and the
+feature's `## Context` block before reviewing (e.g. `domain/tactics.md`,
+`domain/classification.md`, `domain/analysis-model.md`, ADR-023/025/026,
+`research/move-classification.md`). Do not read unrelated documents.
 
 Pay particular attention to false positives.
 

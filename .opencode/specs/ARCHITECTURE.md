@@ -1,5 +1,9 @@
 # ChessRemedy Architecture
 
+> This file is **current architecture truth**. Decision rationale and
+> history live in ADRs — current decisions are indexed in
+> `.opencode/DECISIONS.md`, superseded ones in `.opencode/specs/history/`.
+
 ## 1. Architecture Style
 
 ChessRemedy is a local-first single-page application.
@@ -38,7 +42,8 @@ Chess:
   variations, NAGs, and comments; ADR-028)
 - `@lichess-org/chessground@10.1.1` or higher version (board
   rendering; ADR-002, ADR-014)
-- `@lichess-org/pgn-viewer@^2.6.4` (move-list renderer; ADR-029)
+- Move list is a custom React component over `chessops/pgn` (ADR-030;
+  `@lichess-org/pgn-viewer` was dropped)
 
 Engine:
 

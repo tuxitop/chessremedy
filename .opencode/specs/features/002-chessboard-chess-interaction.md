@@ -8,20 +8,13 @@ ChessRemedy.
 The feature must be independently testable without imported games, Stockfish,
 the puzzle generator, or real user data.
 
-The chessboard MUST use:
+Chessboard dependencies are pinned by decisions, not restated here:
 
-@lichess-org/chessground@10.1.1 or a higher 10.x version.
-
-Do not substitute another chessboard library without an explicit
-architectural decision. The installed version must never be lower than
-10.1.1 and must remain within the 10.x major range; major-version upgrades
-require a new ADR.
-
-chessops should be used for chess rules, move validation, FEN handling,
-PGN parsing (including variations, NAGs, comments), and position trees.
-chessops is the same library that powers Lichess's own analysis UI and is
-required by `@lichess-org/pgn-viewer`'s transitive dep chain (ADR-029,
-ADR-030 — pgn-viewer was dropped). See ADR-028 for the rationale.
+- Board: `@lichess-org/chessground` — see ADR-014 (10.x, min 10.1.1)
+  and AGENTS.md "Mandatory chessboard dependency".
+- Chess rules/position/PGN: `chessops` (ADR-028). The move list is a
+  custom React component over `chessops/pgn` (ADR-030; pgn-viewer was
+  dropped).
 
 ## Chessboard capabilities
 
@@ -478,18 +471,30 @@ game.
 
 The board works on desktop and mobile-sized viewports.
 
-The dependency version is:
-
-@lichess-org/chessground@10.1.1 or a higher 10.x version (per ADR-014).
-
-The PGN move list is rendered by a custom React-only `MoveList`
-component built on `chessops/pgn` (ADR-030 supersedes ADR-029).
-
-The chess state, PGN parsing, and position trees are powered by
-`chessops@^0.15.1` (per ADR-028).
+The Chessground dependency follows ADR-014 (10.x, min 10.1.1). The PGN
+move list is rendered by a custom React-only `MoveList` component built
+on `chessops/pgn` (ADR-030 supersedes ADR-029). Chess state, PGN
+parsing, and position trees are powered by `chessops@^0.15.1`
+(ADR-028).
 
 The board size is persisted to `localStorage` under
 `chessremedy:board-size`, with one global value applied across every
 chessboard surface.
 
 No real game data is required to validate this feature.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `ARCHITECTURE.md` §4; `decisions/ADR-002`,
+  `decisions/ADR-014`, `decisions/ADR-028`, `decisions/ADR-030`,
+  `decisions/ADR-009`; `history/ADR-029` (why pgn-viewer was dropped,
+  history only)
+- Domain: `domain/game-model.md`
+- Research: `research/testing-stack.md`
+
+Feature dependencies: Features 001, 003 (domain types the move list
+wraps); optional 005 (playground engine placeholder).

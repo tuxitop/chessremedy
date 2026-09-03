@@ -57,6 +57,10 @@ meaningful tactical objective such as:
 - forcing a decisive advantage
 - another explicitly supported tactical objective
 
+Objectives reconcile with `domain/tactics.md` (winning material,
+forcing mate, decisive advantage, neutralizing a tactical threat);
+winning an exchange or a piece are forms of winning material.
+
 The first engine move alone is not sufficient to define a puzzle when the
 tactical idea requires continuation.
 
@@ -103,8 +107,7 @@ The exact formula is documented and deterministic. See:
 - ADR-025 (Puzzle Difficulty Formula)
 
 Difficulty is a single integer in `[0, 100]`, persisted on every
-puzzle, and bucketed as Trivial (0–14), Easy (15–34), Medium (35–59),
-Hard (60–79), Expert (80–100).
+puzzle, and bucketed per ADR-025.
 
 ## Duplicate detection
 
@@ -138,3 +141,19 @@ Every generated puzzle retains its source and can be traced back to the
 original game position.
 
 Generated solutions are engine-verified.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `decisions/ADR-006`, `decisions/ADR-025`,
+  `decisions/ADR-026`, `decisions/ADR-012`, `decisions/ADR-018`,
+  `decisions/ADR-031`
+- Domain: `domain/puzzle-model.md`, `domain/tactics.md`,
+  `domain/tactical-training.md`
+- Research: `research/puzzle-generation.md`,
+  `research/tactical-detection.md`
+
+Feature dependencies: Feature 010 (candidates); output feeds Feature 013.

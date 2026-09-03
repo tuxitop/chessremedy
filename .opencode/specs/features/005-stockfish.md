@@ -1,4 +1,4 @@
-# Feature 004 — Stockfish Engine Integration
+# Feature 005 — Stockfish Engine Integration
 
 ## Goal
 
@@ -94,7 +94,9 @@ Consumers should interact with a typed application-level API rather than sending
 
 Use a browser-compatible Stockfish WASM build suitable for running inside a Web Worker.
 
-The exact Stockfish build, package, version, licensing, and hosting approach MUST be defined by the applicable Stockfish ADR before implementation.
+The exact Stockfish build, package, version, licensing, and hosting
+approach are defined by ADR-012 (Stockfish WASM Build) and the
+Dependency policy in `AGENTS.md`.
 
 The selected engine version must be recorded in application metadata and in every analysis result.
 
@@ -356,6 +358,13 @@ The engine service must provide named analysis profiles.
 
 Initial profiles:
 
+> Profile names: ADR-012 defines the canonical V1 profile set
+> `fast` / `normal` / `tactical` / `deep`. The three profiles below
+> correspond to `fast`, `deep`, and `tactical`; the `normal` profile
+> (ADR-012) is the default used by Feature 006 and Feature 008.
+> The exact numerical parameters for each profile are defined in
+> ADR-012 and must be tested.
+
 ### Fast
 
 Designed for responsive interactive analysis.
@@ -416,7 +425,9 @@ The application must not blindly allocate all available CPU or memory.
 
 Default settings should favor usability on ordinary desktop and mobile devices.
 
-User-facing engine customization will be introduced through the Settings feature; this feature only establishes the configuration mechanism.
+User-facing engine customization will be introduced through a future
+settings surface (no Settings feature exists in the V1 roadmap); this
+feature only establishes the configuration mechanism.
 
 ---
 
@@ -469,7 +480,7 @@ The service must provide explicit disposal so that the application can release t
 
 # 16. Deterministic Test Fixtures
 
-Feature 004 must introduce a small set of deterministic chess positions specifically for engine verification.
+Feature 005 must introduce a small set of deterministic chess positions specifically for engine verification.
 
 Fixtures should include positions where the expected engine behavior is unambiguous, such as:
 
@@ -593,7 +604,7 @@ At minimum, automated tests must cover:
 
 ### Profiles
 
-* all three profiles produce valid configuration;
+* all profiles produce valid configuration;
 * profile configuration is deterministic;
 * profile settings are correctly passed to the engine.
 
@@ -662,8 +673,9 @@ The engine Worker must not require network access during normal analysis after t
 ### Profiles
 
 * [ ] `fast` profile exists.
+* [ ] `normal` profile exists (ADR-012 default).
 * [ ] `deep` profile exists.
-* [ ] `tactical-verification` profile exists.
+* [ ] `tactical-verification` / `tactical` profile exists.
 * [ ] Profiles produce deterministic engine configurations.
 
 ### Failure handling
@@ -695,9 +707,17 @@ The engine Worker must not require network access during normal analysis after t
 
 ---
 
-## Dependencies
+## Context
 
-### Required
+### Required reading
+
+- `ARCHITECTURE.md` §2 (Technology), §5 (Engine)
+- `decisions/ADR-004`, `decisions/ADR-012`, `decisions/ADR-018`,
+  `decisions/ADR-020`, `decisions/ADR-009`, `decisions/ADR-027`
+- `domain/analysis-model.md`
+- `research/browser-stockfish.md`
+
+### Required (features)
 
 * Feature 001 — Foundation
 * Feature 002 — Chessboard
@@ -716,7 +736,7 @@ The engine Worker must not require network access during normal analysis after t
 
 ## Outputs
 
-Feature 004 produces:
+Feature 005 produces:
 
 1. Stockfish WASM integration.
 2. Stockfish Web Worker.
@@ -724,7 +744,7 @@ Feature 004 produces:
 4. Analysis job queue.
 5. Cancellation mechanism.
 6. Progress/result/error models.
-7. Fast/deep/tactical-verification profiles.
+7. Named analysis profiles (fast/normal/tactical/deep per ADR-012).
 8. Engine metadata model.
 9. Deterministic engine test fixtures.
 10. Automated tests.

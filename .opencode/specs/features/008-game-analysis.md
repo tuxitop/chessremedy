@@ -35,7 +35,8 @@ the per-game **review** surface.
   opponent's color. (Only the user's moves are summarized; the
   opponent's moves are shown for context.)
 - Future extension (not in V1): inline move comments and engine
-  annotations are explicitly out of scope per `PRODUCT.md §17`.
+  annotations are explicitly out of scope for V1 per `specs/PRODUCT.md`
+  and `Feature 009` scope.
 
 ## Acceptance Criteria
 
@@ -52,3 +53,20 @@ For the Game Review UI:
 - Clicking a move in the move list seeks the board and updates
   `aria-current`.
 - The review works on desktop, tablet, and mobile viewports.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `decisions/ADR-012`, `decisions/ADR-018`,
+  `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`,
+  `decisions/ADR-026`, `decisions/ADR-009`
+- Domain: `domain/analysis-model.md`, `domain/classification.md`,
+  `domain/game-model.md`
+- Research: `research/browser-stockfish.md`,
+  `research/move-classification.md`
+
+Feature dependencies: Features 002, 003, 005, 006; consumes
+classification/missed-tactic output from Features 009/010.

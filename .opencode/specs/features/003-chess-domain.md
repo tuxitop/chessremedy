@@ -130,3 +130,18 @@ Test:
 
 All later application features can receive deterministic domain objects without
 requiring external APIs, IndexedDB, Stockfish or real user data.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `ARCHITECTURE.md`; `decisions/ADR-028`,
+  `decisions/ADR-013`, `decisions/ADR-001`; `history/ADR-003`
+  (history only)
+- Domain: `domain/game-model.md`
+- Research: `research/testing-stack.md`, optional
+  `research/game-import.md` (provider header shapes)
+
+Feature dependencies: Features 001, 002 (none hard).

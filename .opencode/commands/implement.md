@@ -1,6 +1,5 @@
 ---
 description: Implement an approved ChessRemedy implementation plan
-agent: build
 ---
 
 > **Always follow the `## Dependency policy` and `## Execution policy`
@@ -15,13 +14,15 @@ Implement the requested approved plan:
 
 $ARGUMENTS
 
-Before editing:
+Load context per `AGENTS.md` "Context discipline":
 
-1. Read AGENTS.md.
-2. Read the feature specification.
-3. Read the implementation plan.
-4. Read relevant architecture and ADRs.
-5. Inspect existing code.
+1. Read `AGENTS.md`.
+2. Read `.opencode/DECISIONS.md`.
+3. Read `.opencode/specs/ARCHITECTURE.md`.
+4. Read the feature specification (its `## Context` block lists the
+   ADR/domain/research docs to load).
+5. Read the implementation plan.
+6. Inspect existing code.
 
 Rules:
 
@@ -33,7 +34,8 @@ Rules:
 - Preserve backward compatibility where applicable.
 - Keep domain logic independent from UI.
 - Keep expensive operations off the UI thread.
-- Follow the Chessground version requirement exactly.
+- Follow the Chessground version requirement exactly (AGENTS.md /
+  DECISIONS.md Critical Constraints).
 
 After implementation:
 

@@ -77,18 +77,18 @@ metadata used for verification (`engineName`, `engineVersion`,
 
 ## Reasons
 
-- The two-stage split keeps the cheap filter cheap. Most analyzed
-  plies never reach Stage 2 because `wpLoss < 10` already rejects
-  the trivial moves.
-- The tactical profile (ADR-012) is the right depth/MultiPV
-  combo: deeper than `normal`, cheaper than `deep`, with enough
-  MultiPV to surface alternative lines.
-- ADR-018's position-keyed cache absorbs redundant Stage 2 runs
-  when the same position arises in multiple games (transpositions
-  are common in openings).
-- The false-positive guards (`specs/research/tactical-detection.md`
-  §5) keep the candidate-to-puzzle ratio bounded, so the puzzle
-  database growth is predictable.
+- The two-stage split keeps the cheap filter cheap: most analyzed
+  plies never reach Stage 2 because `wpLoss < 10` already rejects the
+  trivial moves.
+- The tactical profile (ADR-012) is the right depth/MultiPV combo
+  (deeper than `normal`, cheaper than `deep`), and ADR-018's
+  position-keyed cache absorbs redundant Stage 2 runs when the same
+  position arises in multiple games (transpositions are common in
+  openings).
+- The false-positive guards keep the candidate-to-puzzle ratio
+  bounded, so puzzle database growth stays predictable.
+
+Full evaluation: `specs/research/tactical-detection.md`.
 
 ## Consequences
 

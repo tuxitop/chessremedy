@@ -63,16 +63,18 @@ change to the algorithm or thresholds increments the version
 ## Reasons
 
 - Raw centipawn loss under-weights endgames and ignores mating
-  sequences. The WDL-based `wpLoss` metric is unitless and handles
-  both gracefully (`specs/research/move-classification.md`).
-- The Lichess `wpLoss` thresholds (2 / 10 / 20) are derived from the
-  inverse of Lichess' published accuracy curve and are empirically
-  the most defensible thresholds in current chess analysis tooling.
-- The Chess.com centipawn fallback keeps the classifier usable on
-  the cheap `fast` profile that does not emit WDL.
-- The special cases (mate flip, forced move, best-move tie) cover
-  the three highest-impact false-positive / false-negative cases
-  observed in published classification systems.
+  sequences; the WDL-derived `wpLoss` metric is unitless and handles
+  both gracefully.
+- The Lichess `wpLoss` thresholds (2 / 10 / 20) invert Lichess'
+  published accuracy curve and are the most defensible in current
+  chess tooling; the Chess.com phase-dependent centipawn fallback
+  keeps the classifier usable on the `fast` profile (which emits no
+  WDL).
+- The special cases (mate flip, forced move, best-move tie) cover the
+  three highest-impact false-positive / false-negative cases observed
+  in published classification systems.
+
+Full evaluation: `specs/research/move-classification.md`.
 
 ## Consequences
 

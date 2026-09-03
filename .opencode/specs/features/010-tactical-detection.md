@@ -38,3 +38,20 @@ Verified candidates contain:
 - tactical objective
 - verification metadata
 - `detectionVersion`
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `decisions/ADR-026`, `decisions/ADR-023`,
+  `decisions/ADR-025`, `decisions/ADR-012`, `decisions/ADR-018`,
+  `decisions/ADR-019`, `decisions/ADR-020`
+- Domain: `domain/tactics.md`, `domain/analysis-model.md`,
+  `domain/puzzle-model.md`
+- Research: `research/tactical-detection.md`,
+  `research/move-classification.md`
+
+Feature dependencies: Features 008, 005; output consumed by Feature
+011.

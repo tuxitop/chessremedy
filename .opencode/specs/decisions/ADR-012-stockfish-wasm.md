@@ -31,15 +31,16 @@ new Worker(
 
 ## Reasons
 
-- Tracks official Stockfish releases.
-- Chess.com sponsored, ensuring long-term maintenance.
-- Full UCI protocol support: MultiPV, WDL, Hash, Threads, stop.
-- Single-threaded build requires no SharedArrayBuffer and works on
-  iOS Safari 16+ without COOP/COEP headers.
-- Multi-threaded build available when COOP/COEP headers are present.
-- High weekly download volume; the most popular Stockfish WASM
-  package.
+- Tracks official Stockfish releases, is Chess.com-sponsored for
+  long-term maintenance, and has the highest weekly download volume of
+  the Stockfish WASM packages.
+- Full UCI protocol support (MultiPV, WDL, Hash, Threads, stop); the
+  single-threaded lite build requires no SharedArrayBuffer and runs on
+  iOS Safari 16+ without COOP/COEP headers, while the multi-threaded
+  build is available when those headers are present.
 - GPLv3 license.
+
+Full evaluation: `specs/research/browser-stockfish.md`.
 
 ## Consequences
 

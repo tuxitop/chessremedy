@@ -53,3 +53,18 @@ Empty states are handled.
 
 The dashboard performs no statistical calculations: every training or
 game value is produced by Feature 014 and consumed read-only.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `ARCHITECTURE.md` §6a; `decisions/ADR-010`,
+  `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`
+- Domain: `domain/statistics.md`, `domain/tactical-training.md`,
+  `domain/game-model.md`
+- Research: `research/charting-library.md`
+
+Feature dependencies: Feature 014 (sole read-only data source), Feature
+013 (training data).

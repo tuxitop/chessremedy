@@ -10,14 +10,11 @@ agent: architect
 
 Create or update the ChessRemedy feature specification requested by the user.
 
-Before editing:
-
-1. Read `AGENTS.md`.
-2. Read `specs/PRODUCT.md`.
-3. Read `specs/ARCHITECTURE.md`.
-4. Read relevant ADRs.
-5. Read relevant domain specifications.
-6. Inspect the existing implementation if the feature already exists.
+Load context per `AGENTS.md` "Context discipline": read `AGENTS.md`,
+`.opencode/DECISIONS.md`, `.opencode/specs/PRODUCT.md`,
+`.opencode/specs/ARCHITECTURE.md`, `.opencode/CONTEXT-MAP.md`, and only
+the ADR/domain docs relevant to the feature. Inspect the existing
+implementation if the feature already exists.
 
 The feature specification must define:
 
@@ -35,6 +32,11 @@ The feature specification must define:
 - acceptance criteria
 - testing requirements
 - dependencies
+
+Every feature specification must end with a `## Context` block listing
+its required architecture/ADR, domain, research, and feature
+dependencies (paths only, no copied content); keep `.opencode/CONTEXT-MAP.md`
+in sync when the set changes.
 
 Do not implement application code.
 

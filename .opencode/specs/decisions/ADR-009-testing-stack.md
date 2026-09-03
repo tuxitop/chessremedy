@@ -27,22 +27,17 @@ for the actual versions in use.
 ## Reasons
 
 - Vitest is Vite-native and reuses the application `vite.config.ts`
-  (path aliases, future `vite-plugin-pwa`). No parallel Babel or
-  tsconfig translation is needed.
-- ESM-first, TypeScript-first, Jest-compatible API surface.
-- `@testing-library/react` (current major) adds React 19 type
-  inference including `onCaughtError` for React 19's error-boundary
-  API, so `render`/`renderHook` type-check cleanly against React 19
-  without `@ts-expect-error`.
-- happy-dom is fast for default component tests; jsdom is available
-  on-demand for CSS/computedStyle fidelity.
-- fake-indexeddb works with Dexie unmodified in Node tests.
-- MSW v2 provides shared network fixtures between Vitest and
-  Playwright (when its consumer feature lands).
-- Playwright is the only candidate with first-class Web Worker APIs
-  (`page.workers()`) for real-browser Stockfish-in-Worker testing.
-- Two CI jobs: fast unit/component (`vitest run`) and slower browser
-  (`playwright test` against `vite preview`).
+  (path aliases, future `vite-plugin-pwa`) with no parallel Babel or
+  tsconfig translation; ESM-first, TypeScript-first, Jest-compatible.
+- happy-dom (default) plus on-demand jsdom, `fake-indexeddb` (Dexie
+  unmodified), and MSW v2 (shared fixtures) cover the Node test
+  surface; Playwright is the only candidate with first-class Web
+  Worker APIs (`page.workers()`) for real-browser Stockfish tests.
+- Two CI jobs keep fast unit/component runs (`vitest run`) separate
+  from the slower browser job (`playwright test` against `vite
+  preview`).
+
+Full evaluation: `specs/research/testing-stack.md`.
 
 ## Consequences
 

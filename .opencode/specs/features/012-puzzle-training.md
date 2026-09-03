@@ -21,8 +21,8 @@ set/cycle lifecycle, ordering and cycle results are owned by Feature
 - Each puzzle interaction produces a `PuzzleAttempt` (result, solve
   time, attempts, hints used, retries) recorded by Feature 013.
 - After completing or exiting a puzzle, the view returns to the current
-  cycle (next puzzle or cycle results), not to an independently
-  scheduled queue.
+  cycle (next puzzle or cycle results), not to a per-puzzle scheduler
+  (ADR-031).
 
 ## Requirements
 
@@ -40,18 +40,7 @@ set/cycle lifecycle, ordering and cycle results are owned by Feature
 
 Wrong moves must be identified as incorrect.
 
-Hints must progressively reveal information using exactly the four
-levels defined in `specs/PRODUCT.md` §10:
-
-1. relevant piece
-2. piece highlight
-3. destination
-4. move
-
-Each level reveals strictly more information than the previous one. The
-level at which each hint becomes available is configurable per puzzle.
-
-For V1, hints beyond level 4 are not defined.
+Hints follow the four progressive levels defined in `specs/PRODUCT.md` §10 (the authoritative definition); this feature implements those levels and the configured level at which each hint becomes available. For V1, hints beyond level 4 are not defined.
 
 ## Post-Solve Analysis
 
@@ -104,3 +93,18 @@ For the Post-Solve Analysis:
   the principal variation.
 - The "Continue" button closes the panel and returns to the current
   training cycle without losing puzzle state.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `ARCHITECTURE.md` (post-solve reuse of Feature
+  006); `decisions/ADR-031`, `decisions/ADR-023`, `decisions/ADR-018`;
+  optional `history/ADR-007/011/021/022` (history only)
+- Domain: `domain/tactical-training.md`, `domain/puzzle-model.md`
+- Research: `research/cycle-training.md`
+
+Feature dependencies: Features 006, 008, 011, 013; PRODUCT §10 (hint
+levels, authoritative).

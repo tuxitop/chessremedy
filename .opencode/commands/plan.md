@@ -12,7 +12,12 @@ Create an implementation plan for:
 
 $ARGUMENTS
 
-Read all relevant specifications before planning.
+Load context per `AGENTS.md` "Context discipline": read `AGENTS.md`,
+`.opencode/DECISIONS.md`, `.opencode/specs/ARCHITECTURE.md`,
+`.opencode/CONTEXT-MAP.md`, the requested feature specification, and
+only the ADR/domain/research documents the feature's Context block
+lists. Inspect the existing codebase before proposing new abstractions.
+Do not read unrelated features, ADRs, research, plans, or history.
 
 The plan must identify:
 
@@ -27,8 +32,6 @@ The plan must identify:
 - risks
 - acceptance criteria
 - verification commands
-
-Inspect the existing codebase before proposing new abstractions.
 
 Do not modify application source code.
 

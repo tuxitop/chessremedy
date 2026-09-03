@@ -49,18 +49,18 @@ per ARCHITECTURE.md §9.
 
 ## Reasons
 
-- The same position is analyzed multiple times across the lifetime of a
-  game: once during initial bulk analysis (Feature 008), again during
-  tactical detection (Feature 010), and again during puzzle generation
-  and review.
-- Stockfish WASM evaluation is the most expensive operation in
-  ChessRemedy. Re-running it for an unchanged position wastes both CPU
-  time and battery on mobile.
-- A FEN-keyed cache is the simplest correct cache: deterministic, small
-  (~1 kB per entry) and trivially debuggable.
-- Versioning the cache key by `(profile, engineName, engineVersion,
-  engineBuild)` preserves correctness across engine upgrades without
-  requiring eager re-analysis (see ADR-020).
+- The same position is analyzed repeatedly — bulk analysis (Feature
+  008), tactical detection (Feature 010), puzzle generation and review
+  — and Stockfish WASM evaluation is the most expensive operation in
+  ChessRemedy. Re-running it for an unchanged position wastes CPU time
+  and battery on mobile.
+- A FEN-keyed cache is the simplest correct cache (deterministic,
+  ~1 kB per entry, trivially debuggable). Scoping entries by
+  `(profile, engineName, engineVersion, engineBuild)` preserves
+  correctness across engine upgrades without eager re-analysis
+  (ADR-020).
+
+Full evaluation: `specs/research/browser-stockfish.md`.
 
 ## Consequences
 

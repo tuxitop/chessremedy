@@ -15,14 +15,15 @@ representation, FEN handling, move validation, SAN/UCI parsing, and PGN
 parsing (including variations, NAGs, and comments).
 
 chessops is the same library that powers Lichess's own analysis and study
-UI. It is already a transitive dependency of `@lichess-org/pgn-viewer`,
-so adopting it directly incurs no bundle-size penalty and removes the
-need for any chess.js ↔ chessops adapter module.
+UI.
+
+> Note: an earlier reason — "chessops is already a transitive
+> dependency of `@lichess-org/pgn-viewer`, so adopting it is free" — no
+> longer applies because pgn-viewer was dropped (ADR-030). chessops is
+> now a direct dependency, adopted on its own merits below.
 
 ## Reasons
 
-- **Already in the bundle.** `@lichess-org/pgn-viewer@^2.6.4` requires
-  `chessops@^0.15.1`. Importing chessops directly is free.
 - **Full PGN tree support.** chess.js v1.x has no native variation
   (RAV) parsing and no NAGs API. chessops's `chessops/pgn` exposes a
   true `PgnNode` tree with comments, variations, and NAGs — exactly
@@ -36,6 +37,8 @@ need for any chess.js ↔ chessops adapter module.
 - **Chessground integration.** `chessops/compat.chessgroundDests` is
   the documented path to drive Chessground's `movable.dests` from a
   chessops position.
+- **Lichess provenance.** chessops powers Lichess analysis/study; the
+  chess-domain plan (Feature 003) and move list (ADR-030) build on it.
 
 ## Consequences
 
@@ -47,9 +50,8 @@ need for any chess.js ↔ chessops adapter module.
   `chessops/compat.chessgroundDests(position)` to translate legal-move
   maps. The translation is a single helper in
   `src/components/chessboard/chessopsAdapter.ts`.
-- `chessops` is pinned to the same `^0.15.x` range as
-  `@lichess-org/pgn-viewer`'s declared dependency. A different range
-  risks a duplicate copy in the bundle.
+- The move list is a custom React component over `chessops/pgn`
+  (ADR-030); chessops is the move-list data source.
 - Future contributor who tries to add `chess.js` back is blocked by a
   CI guard (and by this ADR + the Superseded marker on ADR-003).
 
@@ -58,5 +60,6 @@ need for any chess.js ↔ chessops adapter module.
 - `AGENTS.md` "Architecture principles"
 - `ARCHITECTURE.md` §2 (technology block)
 - `ADR-027` (project license)
-- `ADR-029` (pgn-viewer)
+- `ADR-030` (drop pgn-viewer; chessops becomes a direct dependency)
+- `history/ADR-029` (superseded pgn-viewer adoption)
 - `specs/research/testing-stack.md` (general dependency policy context)

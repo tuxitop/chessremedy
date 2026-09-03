@@ -225,7 +225,7 @@ Which charting library is best suited for ChessRemedy's React SPA dashboard (fea
 
 7. **Active maintenance**: Regular releases (v3.10.1 in Jul 2025, canary v3.11.0 in Aug 2025). Active contributor community with 27.5k GitHub stars. The canary release introduces a formal theming system.
 
-8. **MIT license**: Fully compatible with ChessRemedy's open-source model.
+8. **MIT license**: Fully compatible with ChessRemedy's GPL-3.0-or-later posture (ADR-027); MIT is on the allowed-dependency list in `AGENTS.md`.
 
 9. **Vite compatibility**: ESM output, `sideEffects: false`, works with Vite's tree-shaking out of the box.
 

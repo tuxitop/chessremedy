@@ -8,7 +8,8 @@ Accepted
 
 Use:
 
-`@lichess-org/chessground@10.1.1 or a higher version`
+`@lichess-org/chessground` (10.x — the exact version pin is governed by
+ADR-014 and `AGENTS.md` "Mandatory chessboard dependency").
 
 ## Reasons
 
@@ -23,4 +24,6 @@ ChessRemedy requires:
 
 ## Constraint
 
-Do not replace the library without a new ADR.
+Do not replace the library without a new ADR. Chessground must be used
+through a reusable wrapper component, not scattered through the UI
+(`ARCHITECTURE.md` §4).

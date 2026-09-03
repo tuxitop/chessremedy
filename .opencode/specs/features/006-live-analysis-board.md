@@ -4,7 +4,7 @@
 
 Provide a free-form analysis board where the user can play any legal move
 on a starting position and receive **live** engine evaluation, multiple
-principal-variation (PV) lines, and per-move classification (Feature 008,
+principal-variation (PV) lines, and per-move classification (Feature 009,
 ADR-023).
 
 This primitive is reused by:
@@ -24,7 +24,7 @@ In scope:
 - ChessRemedy `<Chessboard />` (Feature 002) — inherits resize,
   move list, navigation, persistence.
 - Engine service (Feature 005) integration with live cancellation.
-- Per-move classification (Feature 008, ADR-023).
+- Per-move classification (Feature 009, ADR-023).
 - Multiple PV lines (configurable; default 3, max 5).
 - Engine depth slider (default = `normal` profile from ADR-012 —
   depth 20, hash 64 MB, MultiPV 1 — overridable per session).
@@ -35,7 +35,7 @@ Out of scope:
 
 - No automatic re-analysis on engine upgrade — ADR-020's opt-in applies.
 - No puzzle / variation authoring — only user-driven board play.
-- No game-level analysis pipeline (Feature 007). Feature 006 is for
+- No game-level analysis pipeline (Feature 008). Feature 006 is for
   free-form analysis of an arbitrary starting position, not for
   walking through an imported game.
 
@@ -61,13 +61,25 @@ Out of scope:
 - Persisted analysis metadata per ADR-019 / ADR-020.
 - The page is keyboard-accessible: every control reachable via Tab;
   Enter / Space activates; Arrow keys do **not** move pieces (piece
-  movement is mouse/touch only — see AGENTS §13).
+  movement is mouse/touch only — see AGENTS.md UI requirements).
 
-## Dependencies
+## Context
+
+Required reading:
+
+- `ARCHITECTURE.md` §5 (Engine)
+- `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`,
+  `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-009`
+- `domain/analysis-model.md`, `domain/classification.md`
+- `research/browser-stockfish.md`, `research/move-classification.md`
+
+Feature dependencies:
 
 - Feature 002 — chessboard wrapper, move list, navigation, resize.
 - Feature 003 — chess domain (chessops Position, FEN, PGN).
 - Feature 005 — Stockfish engine service.
+- Classification glyph semantics come from Feature 009 / ADR-023;
+  this board renders glyphs only when classification output exists.
 
 ## Acceptance Criteria
 

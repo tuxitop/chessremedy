@@ -43,7 +43,7 @@ This feature provides:
 13. Tactical-training / cycle statistics (per-set and per-cycle
     aggregates and cross-cycle comparisons)
 
-The dashboard will consume these results in Feature 014.
+Feature 015 (Dashboard) will consume these results.
 
 ---
 
@@ -144,6 +144,8 @@ here.
 ---
 
 ## Missed Tactical Statistics
+
+Counts are based on Feature 010's `missedTactic` flag.
 
 Provide:
 
@@ -571,3 +573,19 @@ All deterministic fixtures must produce deterministic statistics.
 
 11. The feature can be demonstrated locally with fixture data even when no
     real games have been imported.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `decisions/ADR-013`, `decisions/ADR-023`,
+  `decisions/ADR-024`, `decisions/ADR-019`, `decisions/ADR-020`
+- Domain: `domain/statistics.md`, `domain/game-model.md`,
+  `domain/analysis-model.md`, `domain/classification.md`,
+  `domain/tactical-training.md`
+- Research: `research/move-accuracy.md`, `research/move-classification.md`
+
+Feature dependencies: Features 008/009/010 (game data), 012/013
+(attempts/cycles); output consumed by Feature 015.

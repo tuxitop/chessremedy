@@ -13,16 +13,11 @@ Review the implementation for:
 
 $ARGUMENTS
 
-Read:
-
-- AGENTS.md
-- feature specification
-- implementation plan
-- relevant architecture
-- relevant ADRs
-- relevant domain specifications
-
-Inspect the actual git diff and relevant source files.
+Load context per `AGENTS.md` "Context discipline": read `AGENTS.md`,
+`.opencode/DECISIONS.md`, the feature specification and the ADR/domain
+docs its Context block lists, the implementation plan, and the actual
+git diff. Load further ADRs/research/history only when the diff raises
+a question they answer. Do not read unrelated documents.
 
 Do not modify code.
 

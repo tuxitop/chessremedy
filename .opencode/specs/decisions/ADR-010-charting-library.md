@@ -15,20 +15,17 @@ lockfile are the source of truth.
 ## Reasons
 
 - Declarative React component model (`<LineChart>`, `<Bar>`,
-  `<Tooltip>`) is the most natural fit for a React SPA. Developers
-  write JSX, not configuration objects.
-- All V1 chart types are first-class components: line, bar,
-  pie/donut, area, radar/spider.
-- `<ReferenceLine>`, `<ReferenceArea>`, and `<Brush>` provide
-  annotation and time-series zoom without plugins.
-- `<ResponsiveContainer>` handles responsive resizing out of the box
-  via ResizeObserver.
-- Touch events handled natively since v0.20.0.
-- ARIA attributes, keyboard navigation, and recent accessibilityLayer
-  additions show commitment to accessibility.
-- TypeScript-first with built-in types.
-- MIT license.
-- ESM output with `sideEffects: false` for Vite tree-shaking.
+  `<Tooltip>`) fits a React SPA — developers write JSX, not
+  configuration objects — and every V1 chart type (line, bar,
+  pie/donut, area, radar/spider) is a first-class component.
+- `<ResponsiveContainer>` (ResizeObserver) and native touch support
+  since v0.20.0 cover responsiveness and mobile; ARIA attributes,
+  keyboard navigation, and recent accessibilityLayer additions show
+  commitment to accessibility.
+- TypeScript-first with built-in types, MIT license, and ESM output
+  with `sideEffects: false` for Vite tree-shaking.
+
+Full evaluation: `specs/research/charting-library.md`.
 
 ## Consequences
 

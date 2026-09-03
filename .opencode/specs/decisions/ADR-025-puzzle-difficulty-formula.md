@@ -95,6 +95,6 @@ will compute; the underlying score stored on the puzzle is the
 - `specs/PRODUCT.md` §8, §9
 - `specs/ARCHITECTURE.md` §6
 - `specs/domain/puzzle-model.md`
-- `specs/features/010-puzzle-generation.md`
+- `specs/features/011-puzzle-generation.md`
 - `specs/research/puzzle-generation.md`
 - ADR-005, ADR-006, ADR-012, ADR-026

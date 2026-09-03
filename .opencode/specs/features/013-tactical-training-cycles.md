@@ -69,3 +69,18 @@ The model is defined in `specs/domain/tactical-training.md`.
    network or IndexedDB to run domain tests.
 7. No puzzle review event depends on an individual scheduler; no
    scheduling state is stored on a Puzzle.
+
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `decisions/ADR-031`, `decisions/ADR-025`;
+  optional `history/ADR-007/011/021/022` (history only)
+- Domain: `domain/tactical-training.md`, `domain/puzzle-model.md`
+- Research: `research/cycle-training.md`; optional
+  `research/fsrs-implementation.md` (deferred future scheduler)
+
+Feature dependencies: Feature 011 (puzzle source), Feature 012 (solve
+interaction); consumers Features 014/015.

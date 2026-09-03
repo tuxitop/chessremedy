@@ -181,7 +181,8 @@ puzzle scheduling in a local-first React + Vite SPA backed by IndexedDB/Dexie?
 **Known limitations:**
 
 - 378 kB WASM binary — significantly larger than pure TS alternatives
-- BSD-3-Clause license (not MIT) — different from ChessRemedy's MIT
+- BSD-3-Clause license (not MIT) — different from ChessRemedy's
+  GPL-3.0-or-later posture (ADR-027)
 - WASM adds complexity to the build pipeline
 - Scheduler-only use case doesn't justify WASM overhead
 - Optimizer (training) is rarely needed in a browser SPA
@@ -240,8 +241,9 @@ puzzle scheduling in a local-first React + Vite SPA backed by IndexedDB/Dexie?
    official TypeScript implementation. Actively tracks FSRS algorithm updates
    (currently v6).
 
-5. **License compatibility.** MIT license is fully compatible with
-   ChessRemedy's licensing requirements.
+5. **License compatibility.** MIT license is compatible with
+   ChessRemedy's GPL-3.0-or-later dependency policy (`AGENTS.md`,
+   ADR-027).
 
 6. **Algorithm currency.** Implements FSRS v6 (latest), ensuring ChessRemedy
    benefits from the most recent algorithm improvements. Default parameters
@@ -255,7 +257,8 @@ puzzle scheduling in a local-first React + Vite SPA backed by IndexedDB/Dexie?
   design requires explicit v6 configuration.
 
 - **fsrs-browser**: 378 kB WASM binary is unjustified for scheduler-only
-  use. BSD-3-Clause license differs from ChessRemedy's MIT. WASM adds build
+  use. BSD-3-Clause license differs from ChessRemedy's GPL-3.0-or-later
+  posture (ADR-027). WASM adds build
   complexity. Optimizer functionality is unnecessary for V1 (user-side
   scheduling doesn't need parameter training).
 

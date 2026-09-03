@@ -29,15 +29,17 @@ metadata envelope. The conceptual shape is:
 ## Reasons
 
 - JSON is the natural representation for IndexedDB collections and is
-  already used by the application layer.
-- A versioned envelope allows future schema changes to be migrated
-  without breaking older clients (see `Migration` below).
+  already used by the application layer; a versioned envelope allows
+  future schema changes to be migrated without breaking older clients
+  (see `Migration` below).
 - Gzip reduces typical payload size by 70–90 %; a 1,000-game archive
   shrinks from ~5 MB to well under the Dropbox 150 MB single-upload
   limit.
-- The `deviceId` field allows the sync engine to reason about which
-  device last produced a snapshot and to deduplicate revisits.
-- A single file keeps V1 conflict resolution simple (see ADR-017).
+- A single file keeps V1 conflict resolution simple (ADR-017), and the
+  `deviceId` field lets the sync engine reason about which device last
+  produced a snapshot and deduplicate revisits.
+
+Full evaluation: `specs/research/synchronization.md`.
 
 ## Consequences
 
