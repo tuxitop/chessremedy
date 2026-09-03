@@ -43,8 +43,9 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 001, 002, 003.
 
 ### Feature 006 — Live Analysis Board
-- Required: `ARCHITECTURE.md` §5; ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-009`; domain `domain/analysis-model.md`, `domain/classification.md`; research `research/browser-stockfish.md`, `research/move-classification.md`.
-- Dependencies: Features 002, 003, 005; classification output (Feature 009).
+- Required: `ARCHITECTURE.md` §5; ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-009`; domain `domain/analysis-model.md`; research `research/browser-stockfish.md`.
+- Optional: ADR-023 + `domain/classification.md` (glyph rendering arrives with Feature 009; not computed here).
+- Dependencies: Features 002, 003, 005.
 
 ### Feature 007 — Game Import
 - Required: `ARCHITECTURE.md`; ADRs `decisions/ADR-001`, `decisions/ADR-009`, `decisions/ADR-013`; domain `domain/game-model.md`; research `research/game-import.md`.
