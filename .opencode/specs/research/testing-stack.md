@@ -274,10 +274,10 @@ fake-indexeddb + MSW (Node) + Playwright** as the V1 testing stack.
 
 The reasoning, broken out by the categories the brief calls out:
 
-- **Domain unit tests (chess.js, classification, tactics, puzzles, FSRS,
-  statistics)** — Vitest in Node with the default `node` environment.
-  Pure functions need no DOM. Use `pool: 'threads'` if these suites grow
-  large enough that cold-start time matters.
+- **Domain unit tests (chess.js, classification, tactics, puzzles,
+  cycle training, statistics)** — Vitest in Node with the default `node`
+  environment. Pure functions need no DOM. Use `pool: 'threads'` if
+  these suites grow large enough that cold-start time matters.
 
 - **React component tests (chessboard wrapper, puzzle UI, dashboard)** —
   Vitest with **happy-dom as the default DOM environment** and

@@ -1,0 +1,237 @@
+# Tactical Training (Cycle-Based)
+
+This specification defines the V1 training model: puzzles are gathered
+into fixed **Tactical Training Sets** and practised in repeated
+**Training Cycles**. Every puzzle in a cycle produces a **Puzzle
+Attempt**; cycles aggregate attempts into cycle-level metrics. This is
+a ChessRemedy adaptation of the Woodpecker method's core idea —
+repeatedly cycling through a fixed set — and does not reproduce any
+particular published protocol. See ADR-031 and
+`specs/research/cycle-training.md`.
+
+V1 does not schedule puzzles individually. FSRS or another individual
+scheduler is deferred; the model below must not prevent one from being
+added later.
+
+## Puzzle
+
+A `Puzzle` is the immutable definition of a tactical exercise:
+
+- id
+- source game / source ply (provenance, `specs/domain/puzzle-model.md`)
+- starting FEN
+- side to move
+- expected solution (may be multi-move)
+- tactical objective
+- difficulty metadata (static score, ADR-025)
+- engine verification metadata
+- generation version
+
+A `Puzzle` contains **no scheduling state**: no due date, no review
+interval, no stability, and no per-user difficulty. A puzzle may belong
+to zero, one or many `TacticalTrainingSet`s. Membership is tracked by
+the set, not stored on the puzzle.
+
+## TacticalTrainingSet
+
+A `TacticalTrainingSet` is a fixed collection of puzzles intended to be
+trained together:
+
+- id
+- name
+- creation date
+- source/criteria (e.g. "blunders from games imported on 2026-06-01",
+  "missed tactical opportunities, classical time control", or a manual
+  selection)
+- puzzle IDs (the set membership, in the set's base order)
+- ordering policy (see Configuration)
+- target size
+- status (e.g. `active`, `archived`)
+- configuration/version (the training-configuration snapshot the set
+  was created or last edited with)
+
+A set is created by the user or generated from a puzzle source
+(Feature 011 output, game-review selections). Sets are deterministic
+and reproducible for testing; their membership and order are stored
+state, not derived from mutable query results.
+
+## TrainingCycle
+
+A `TrainingCycle` is one pass through the puzzles of a set:
+
+- id
+- training set id
+- cycle number (1-based, per set)
+- start time
+- completion time (null while in progress)
+- duration (computed from start/completion time, or accumulated while
+  in progress)
+- number of puzzles (the set size at cycle start)
+- puzzles completed
+- puzzles skipped
+- accuracy
+- total attempts
+- hints used
+- retries
+- aggregate solving time
+- completion status
+
+Status values:
+
+- `inProgress` — started, not yet finished (resumable)
+- `completed` — the completion condition (§ Completion) was met
+- `abandoned` — the user discarded the cycle without completing it
+
+### Completion
+
+A cycle is **completed** when every non-skipped puzzle in the cycle has
+a definite result (solved or failed) and, when the configured
+retry-failed behavior is `endOfCycle`, the retry pass (if any) has been
+resolved. Skipped puzzles do not block completion, but they are not
+counted as completed puzzles.
+
+### Lifecycle rules
+
+The following behaviors are defined explicitly and are configurable
+where noted:
+
+- **Completes every puzzle**: the cycle ends as `completed` when the
+  completion condition above is met.
+- **Exit before completing the set**: the cycle is stored as
+  `inProgress` and can be resumed later from the next unanswered
+  puzzle. The user may instead discard the cycle, which marks it
+  `abandoned`; a new cycle can then be started from the set.
+- **Skip a puzzle**: the puzzle is recorded as skipped (`PuzzleAttempt`
+  result `skipped`), excluded from accuracy and solving-time aggregates,
+  and is not marked completed. Skipping does not remove the puzzle from
+  the set or from future cycles.
+- **Wrong answer**: a wrong move records a failed attempt (or a retry
+  step) and does **not** remove the puzzle from the current cycle by
+  default. The configured retry-failed behavior decides whether the
+  user is offered the puzzle again within the same cycle
+  (`endOfCycle`), never (`none`), or immediately (`immediate`).
+- **Hints**: using a hint never marks a puzzle as failed. A hinted
+  solve is recorded as `solvedWithHelp` and is excluded from
+  first-try-no-hint accuracy. The hint level reached is recorded.
+- **Retries**: a retry is an additional attempt on the same puzzle
+  within the same cycle. Each retry step is recorded so that "number of
+  attempts" and "required retries" are measurable.
+
+A puzzle that is still failing at the end of a completed cycle remains
+in the set and is revisited in the next cycle.
+
+## PuzzleAttempt
+
+A `PuzzleAttempt` records one puzzle's outcome within a cycle:
+
+- puzzle id
+- training set id
+- cycle id
+- timestamp
+- result
+- solving time
+- number of attempts (wrong moves / retries within this puzzle)
+- hints used (count and highest level reached)
+- whether the puzzle was eventually solved
+
+Result values:
+
+- `solvedFirstTry` — solved on the first attempt without any hint
+- `solvedWithHelp` — solved using a hint and/or after a retry
+- `failed` — not solved when the attempt ended
+- `skipped` — left without solving (no result)
+
+Attempt records are the atomic training data. Every cycle-level metric
+is derived from attempt records; attempts are never aggregated on the
+puzzle.
+
+## Cycle configuration
+
+Cycle behavior is configuration, not hidden constants. Configuration
+lives on the training set and applies to cycles started from it.
+Configurable fields:
+
+- set size / target size
+- ordering
+- retry-failed behavior (`none` | `endOfCycle` | `immediate`)
+- hint-level availability (which of the four hint levels are enabled)
+- completion rules (e.g. whether skipping is allowed)
+- target accuracy
+- optional target solving time
+- number of cycles (informational target for a training plan)
+
+V1 defaults (product decisions; revisable without an ADR only when the
+change is a default-value change):
+
+- target size: 10 puzzles per set
+- ordering: by difficulty ascending (ties by puzzle id) — deterministic
+- retry-failed: `endOfCycle`
+- hint-level availability: levels 1–4 enabled, first-hint level at the
+  set's configured threshold
+- completion rules: skipping allowed; a skipped puzzle is not completed
+- target accuracy / target solving time: optional, unset by default
+- number of cycles: unset (open-ended) by default
+
+These defaults are not derived from any specific Woodpecker protocol;
+they are ChessRemedy's initial product choices (ADR-031).
+
+## Metrics
+
+Metrics are defined at two levels and the two must never be conflated.
+
+### Puzzle-level metrics (per attempt)
+
+- outcome (result above)
+- solving time
+- number of attempts
+- hints used / highest hint level
+- solved yes/no
+
+### Cycle-level aggregates
+
+For a completed (or in-progress, partial) cycle:
+
+- puzzles completed: attempts with a definite result (solved or failed)
+- puzzles skipped: attempts with result `skipped`
+- **first-try accuracy**: `solvedFirstTry / definite attempts`
+- **solve rate**: `(solvedFirstTry + solvedWithHelp) / definite attempts`
+- total attempts
+- hints used (total and count of puzzles requiring a hint)
+- retries (total and count of puzzles requiring a retry)
+- aggregate solving time
+- average puzzle solving time
+- median puzzle solving time where useful
+
+"Skipped" is never in any accuracy denominator. Abandoned cycles are
+kept distinct and are reported separately from completed ones.
+
+### Improvement across cycles
+
+The system may compare metrics across cycles of the same set, e.g.:
+
+```text
+Cycle 1   Accuracy: 72%   Time: 31:42
+Cycle 2   Accuracy: 84%   Time: 24:15
+Cycle 3   Accuracy: 91%   Time: 19:08
+```
+
+Comparisons must use the same set, the same metric definition, and
+comparable sample sizes. The system must not claim that an improvement
+proves the training method caused it; it reports measured deltas only
+(same caveats as `specs/domain/statistics.md`).
+
+## Future scheduling
+
+The immutable `Puzzle`, the `TacticalTrainingSet` membership and the
+attempt/cycle history are the entire V1 training data surface. A future
+individual scheduler (e.g. FSRS) can be layered on top of attempt
+history without changing the puzzle definition or discarding V1 data.
+No scheduler abstraction is introduced in V1 beyond this boundary:
+
+```text
+Puzzle
+  ↓
+Training Strategy
+  ├── Cycle Training (V1)
+  └── Individual Scheduler (future)
+```

@@ -7,8 +7,8 @@ and convert mistakes into personalised puzzles.
 > **Foundation** feature (see
 > [`.opencode/specs/features/001-foundation.md`](.opencode/specs/features/001-foundation.md)).
 > Subsequent features (chessboard, game import, Stockfish analysis,
-> puzzles, FSRS, statistics, dashboard, sync) are tracked by the
-> spec workspace, not by this README.
+> puzzles, cycle-based tactical training, statistics, dashboard, sync)
+> are tracked by the spec workspace, not by this README.
 
 ---
 
@@ -89,7 +89,9 @@ See `.opencode/specs/decisions/` for the full set of accepted ADRs.
 ## Forbidden dependencies
 
 Foundation must not install `chess.js`, `@lichess-org/chessground`,
-`stockfish`, `recharts`, or `ts-fsrs`. These belong to later features.
+`stockfish`, or `recharts`. These belong to later features.
+`ts-fsrs` is not a planned V1 dependency: V1 trains puzzles with
+cycle-based tactical training, not an individual scheduler (ADR-031).
 A guard script is documented in `.opencode/plans/001-foundation.md` §15.
 
 ## License

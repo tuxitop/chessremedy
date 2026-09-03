@@ -50,9 +50,12 @@ Persistence:
 - IndexedDB
 - Dexie
 
-Spaced repetition:
+Puzzle training:
 
-- FSRS implementation/library
+- V1 uses deterministic in-domain cycle-based tactical training
+  (training sets, cycles, attempts) with no scheduler library
+  (ADR-031). A future individual scheduler (e.g. FSRS) is an
+  application-layer option and is not a V1 dependency.
 
 Visualization:
 
@@ -91,7 +94,7 @@ Examples:
 - import games
 - analyze game
 - generate puzzles
-- review puzzle
+- run a training cycle
 - synchronize data
 
 ### Domain
@@ -103,7 +106,7 @@ Examples:
 - move classification
 - tactical detection
 - puzzle generation
-- SRS state
+- cycle training state (sets, cycles, attempts)
 - statistics
 
 Domain code should be deterministic wherever possible.
@@ -232,8 +235,9 @@ Persistent entities include:
 - analyses
 - puzzle candidates
 - puzzles
-- puzzle reviews
-- SRS state
+- training sets
+- training cycles
+- puzzle attempts
 - import jobs
 - analysis jobs
 - application settings
@@ -313,7 +317,7 @@ The application should continue functioning when offline for:
 - viewing imported games
 - viewing analysis
 - solving available puzzles
-- reviewing SRS
+- running and resuming training cycles
 - local analysis
 - dashboard statistics
 
@@ -337,4 +341,16 @@ and:
 without changing domain logic.
 
 Future opening-training functionality should reuse the same chessboard,
-game-state and spaced-repetition infrastructure.
+game-state and training infrastructure (training sets, cycles and
+attempt history). V1's training data model deliberately does not commit
+to an individual scheduling strategy: puzzle training currently uses
+cycle-based training, and a future per-puzzle scheduler (e.g. FSRS) can
+be layered on without changing the immutable puzzle model (ADR-031).
+
+The conceptual boundary is:
+
+    Puzzle
+      ↓
+    Training Strategy
+      ├── Cycle Training (V1)
+      └── Individual Scheduler (future)

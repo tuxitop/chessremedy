@@ -40,6 +40,8 @@ This feature provides:
 10. Weekly trend data
 11. Sample-size metadata
 12. Statistics query/filtering
+13. Tactical-training / cycle statistics (per-set and per-cycle
+    aggregates and cross-cycle comparisons)
 
 The dashboard will consume these results in Feature 014.
 
@@ -300,6 +302,33 @@ The exact implementation type is determined by the domain model.
 
 ---
 
+## Tactical Training / Cycle Statistics
+
+The statistics layer must also expose training-set and cycle
+aggregates derived from stored puzzle attempts and cycles (Feature
+013, `specs/domain/tactical-training.md`). These aggregates are
+deterministic and independently testable with cycle/attempt fixtures.
+
+Per training set, per cycle, provide:
+
+- puzzles completed / skipped
+- first-try accuracy (`solvedFirstTry / definite attempts`)
+- solve rate (including hinted/retried solves)
+- total attempts, hints used (and puzzles requiring hints), retries
+- aggregate, average and optional median puzzle solving time
+- cycle status counts (`completed`, `inProgress`, `abandoned`)
+
+Cross-cycle comparisons (same set, same metric definition) may report
+raw deltas such as current/previous cycle accuracy and time. Every
+value carries its sample size (number of puzzles), following the
+sample-size rules below; improvement must not be presented as proven
+causation.
+
+Training-set and cycle aggregates must never be mixed into
+game-analysis aggregates.
+
+---
+
 ## Sample Size
 
 Every aggregate statistic must expose its sample size.
@@ -441,6 +470,16 @@ Include analyzed games containing mistakes/blunders in:
 - opening
 - middlegame
 - endgame
+
+### Training sets/cycles
+
+- one set with a completed cycle (known per-puzzle outcomes)
+- multiple cycles over the same set (known accuracy/time deltas)
+- an in-progress cycle and an abandoned cycle
+- attempts with hints, retries, skips and varied solve times
+
+These exercise the cycle-aggregate rules (denominators, sample sizes,
+cross-cycle comparisons) without needing the puzzle UI.
 
 ### Edge cases
 

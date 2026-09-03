@@ -2,20 +2,19 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-031.
 
 ## Decision
 
-V1 enables **FSRS fuzz** (`enable_fuzz: true`) on the `ts-fsrs`
-scheduler for all ChessRemedy puzzle scheduling.
+~~V1 enables FSRS fuzz (`enable_fuzz: true`) on the `ts-fsrs`
+scheduler for all ChessRemedy puzzle scheduling.~~
 
-The fuzzy interval bounds documented in `ts-fsrs` (minimum 0.95× the
-nominal interval, maximum 1.05×) are accepted as the V1 jitter band.
-No custom fuzz implementation is introduced.
+V1 has no scheduler and no fuzz policy. Puzzle repetition is organized
+by cycle training, not by algorithmically scheduled intervals.
 
 ## Reasons
 
-- Without fuzz, batches of puzzles scheduled together produce
+~~- Without fuzz, batches of puzzles scheduled together produce
   synchronized review spikes: a user who completes 20 puzzles in one
   session will be reminded of all 20 on the same future day, which
   makes the due queue noisy and unpleasant to use.
@@ -25,21 +24,19 @@ No custom fuzz implementation is introduced.
   does not change the long-term retention characteristics of the
   schedule.
 - ADR-011 already commits to `ts-fsrs` 5.x; fuzz is a parameter on
-  that library, not a new dependency.
+  that library, not a new dependency.~~
 
-## Consequences
+The "no synchronized review spikes" concern is specific to individual
+scheduling; if a scheduler is added in the future, its fuzz/jitter
+policy must be re-decided at that time.
 
-- The `fsrs` constructor in ChessRemedy must be called with
-  `{ enable_fuzz: true }`.
-- Tests that exercise scheduler output should allow the fuzz band
-  rather than asserting on exact intervals.
-- Fuzz does not change the algorithm version. Algorithm-version
-  changes are tracked separately by ADR-011 and the FSRS library's
-  own version field.
+## Supersession note
+
+ADR-031 replaces this decision. See ADR-031 (Alternatives considered)
+for why individual scheduling is deferred.
 
 ## Sources
 
 - `specs/research/fsrs-implementation.md` (Open Question 4)
-- `specs/ARCHITECTURE.md` §6a (analytics) and §7 (storage)
 - ADR-011 (FSRS Implementation)
 - ADR-022 (FSRS Puzzle Rating Mapping)

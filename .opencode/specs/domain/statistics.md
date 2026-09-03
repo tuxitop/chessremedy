@@ -21,8 +21,15 @@ Metrics may include:
 - inaccuracies per game
 - missed tactics
 - errors per 100 moves
-- puzzle success
-- training retention
+- puzzle first-try accuracy (per training set/cycle)
+- puzzle solve rate
+- cycle solving time (average/median per puzzle)
+- hints and retries per cycle
+- completion rate per cycle
+
+Training metrics are defined in `specs/domain/tactical-training.md`
+(cycle-level aggregates derived from puzzle attempts) and must not be
+conflated with game-analysis metrics.
 
 Aggregates must clearly indicate sample size.
 
@@ -35,3 +42,14 @@ Aggregates must clearly indicate sample size.
   "insufficient data" placeholder.
 - Mixed-platform or mixed-time-control views must be explicitly labeled
   as such and are never the default.
+
+## Cycle-training comparisons
+
+Cycle metrics are aggregates over the puzzles attempted in a cycle;
+each value carries the number of puzzles it is based on. Cross-cycle
+comparisons must use the same training set and the same metric
+definition. A per-cycle accuracy based on fewer than 5 puzzles follows
+the sample-size rule above, while a *series* of cycles may still be
+shown when each cycle's own aggregate meets the rule. A change between
+two cycles must never be labelled as proven improvement caused by the
+training method (see `specs/domain/tactical-training.md`).

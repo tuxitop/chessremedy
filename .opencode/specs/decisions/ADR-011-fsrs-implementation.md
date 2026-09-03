@@ -2,19 +2,18 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-031.
 
 ## Decision
 
-ChessRemedy V1 uses `ts-fsrs` for puzzle scheduling.
+~~ChessRemedy V1 uses `ts-fsrs` for puzzle scheduling.~~
 
-Exact version follows the **Dependency policy in `AGENTS.md`**
-(latest stable by default). The `package.json` caret range and the
-lockfile are the source of truth.
+No FSRS library is used in V1. Puzzle training uses deterministic
+cycle-based domain logic with no scheduler dependency.
 
 ## Reasons
 
-- Most complete API surface: `repeat()` for previewing all rating
+~~- Most complete API surface: `repeat()` for previewing all rating
   outcomes, `next()` for applying ratings, `get_retrievability()`
   for retention metrics, `rollback()`, `forget()`, and `reschedule()`
   for history import and corrections.
@@ -27,25 +26,18 @@ lockfile are the source of truth.
 - MIT license.
 - Implements the current FSRS algorithm. Default parameters work
   well without requiring user-specific optimization.
-- Backed by the open-spaced-repetition organization.
+- Backed by the open-spaced-repetition organization.~~
 
-## Consequences
+V1 requires no scheduler library. The `ts-fsrs` evaluation recorded in
+`specs/research/fsrs-implementation.md` is retained for a future
+individual-puzzle scheduler and is not a V1 decision.
 
-- Requires a thin adapter between `ts-fsrs` Card objects (which use
-  `Date` instances) and IndexedDB storage (which uses timestamps).
-- Default parameters are used initially. Personalized tuning requires
-  accumulated review data and is a future iteration.
-- `enable_fuzz` should be enabled to prevent synchronized review
-  spikes when many puzzles are scheduled together (ADR-021).
-- Bundle contribution is small.
+## Supersession note
 
-## Why not the alternatives
-
-- `@squeakyrobot/fsrs`: too new (v1.0.0 at the time of the
-  research). Missing rollback, forget, reschedule helpers. Not
-  listed in awesome-fsrs.
-- `fsrs-browser`: large WASM binary unjustified for scheduler-only
-  use. BSD-3-Clause license differs from ChessRemedy's MIT.
+ADR-031 replaces this decision. If a future scheduler is introduced,
+its implementation choice must be re-evaluated against the latest
+stable candidates at that time (see the Dependency policy in
+`AGENTS.md`); ADR-011 is not resurrected by reference.
 
 ## Source
 

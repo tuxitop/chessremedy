@@ -15,11 +15,13 @@ metadata envelope. The conceptual shape is:
   "exportedAt": "ISO-8601 timestamp",
   "deviceId": "stable UUID for the producing device",
   "collections": {
-    "games":     { ... },
-    "analysis":  { ... },
-    "puzzles":   { ... },
-    "fsrsCards": { ... },
-    "settings":  { ... }
+    "games":          { ... },
+    "analysis":       { ... },
+    "puzzles":        { ... },
+    "trainingSets":   { ... },
+    "trainingCycles": { ... },
+    "puzzleAttempts": { ... },
+    "settings":       { ... }
   }
 }
 ```

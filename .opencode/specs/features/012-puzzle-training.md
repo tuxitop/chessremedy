@@ -2,7 +2,27 @@
 
 ## Goal
 
-Allow the user to solve personalized puzzles.
+Allow the user to solve personalized puzzles within an active tactical
+training cycle.
+
+Puzzles are trained as part of a fixed **training set** and an active
+**training cycle** (Feature 013 / ADR-031). This feature is the solving
+experience: presenting a puzzle, handling the user's moves, hints,
+retries and post-solve analysis, and recording each attempt. The
+set/cycle lifecycle, ordering and cycle results are owned by Feature
+013.
+
+## Training context
+
+- The user enters a training cycle for a selected set; the next puzzle
+  in the cycle is presented.
+- Solving, retrying, skipping and abandoning follow the rules in
+  `specs/domain/tactical-training.md`.
+- Each puzzle interaction produces a `PuzzleAttempt` (result, solve
+  time, attempts, hints used, retries) recorded by Feature 013.
+- After completing or exiting a puzzle, the view returns to the current
+  cycle (next puzzle or cycle results), not to an independently
+  scheduled queue.
 
 ## Requirements
 
@@ -16,7 +36,7 @@ Allow the user to solve personalized puzzles.
 - next
 - end
 - analyze after completion
-- return to puzzle
+- return to puzzle / current cycle
 
 Wrong moves must be identified as incorrect.
 
@@ -48,7 +68,7 @@ top of the **Live Analysis Board** primitive (Feature 006):
 - Eval swing annotation for each divergence point: "Your move lost
   `X` percentage points; the engine preferred `Y`."
 - A "Continue" button closes the analysis panel and returns to the
-  puzzle queue.
+  current training cycle (next puzzle or cycle results).
 
 ### Outcomes
 
@@ -82,5 +102,5 @@ For the Post-Solve Analysis:
   with the engine's preferred move and the eval swing.
 - An abandoned puzzle (no attempt) shows the verified solution as
   the principal variation.
-- The "Continue" button closes the panel and returns to the puzzle
-  queue without losing puzzle state.
+- The "Continue" button closes the panel and returns to the current
+  training cycle without losing puzzle state.

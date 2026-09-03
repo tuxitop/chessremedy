@@ -15,7 +15,7 @@ V1 focuses on:
 4. Missed-tactic detection.
 5. Personalized tactical puzzle generation.
 6. Puzzle training.
-7. FSRS spaced repetition.
+7. Cycle-based tactical training.
 8. Progress analytics (statistics + dashboard).
 9. Optional cloud synchronization.
 
@@ -43,7 +43,7 @@ shipping order is:
 | 010 | Tactical Detection                         | `010-tactical-detection.md`           |
 | 011 | Tactical Puzzle Generation                 | `011-puzzle-generation.md`            |
 | 012 | Puzzle Training                            | `012-puzzle-training.md`              |
-| 013 | Spaced Repetition                          | `013-spaced-repetition.md`            |
+| 013 | Tactical Training Cycles                   | `013-tactical-training-cycles.md`     |
 | 014 | Game Analysis History & Statistics         | `014-game-history-statistics.md`      |
 | 015 | Dashboard                                  | `015-dashboard.md`                    |
 | 016 | Synchronization                            | `016-synchronization.md`              |
@@ -106,7 +106,9 @@ Do not implement multiple unrelated features in one change.
 - Stockfish runs in Web Workers.
 - Chessground is wrapped by our own chessboard component.
 - Chess rules/state are handled by `chessops` (ADR-028).
-- Spaced repetition uses FSRS.
+- V1 puzzle training uses cycle-based tactical training over fixed sets
+  (ADR-031); no per-puzzle scheduler/FSRS dependency in V1, and the
+  data model stays open to a future individual scheduler.
 - Synchronization is an infrastructure concern, not a domain concern.
 
 ---

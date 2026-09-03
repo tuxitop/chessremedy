@@ -1,5 +1,12 @@
 # FSRS TypeScript Implementation Selection
 
+> **Status: Deferred (not a V1 decision).** V1 uses cycle-based
+> tactical training (ADR-031) and does not use an FSRS library. This
+> document is retained as research for a *future* individual-puzzle
+> scheduler; its recommendation is **not** adopted for V1. Re-evaluate
+> against the latest stable candidates (Dependency policy in
+> `AGENTS.md`) if individual scheduling is introduced.
+
 ## Question
 
 Which TypeScript/JavaScript FSRS implementation should ChessRemedy use for V1

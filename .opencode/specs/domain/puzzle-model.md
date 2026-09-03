@@ -25,3 +25,12 @@ The puzzle should preserve enough provenance to explain:
 - what opportunity existed
 - what the solution was
 - why the sequence mattered
+
+## No scheduling state
+
+A Puzzle is an immutable definition and carries **no scheduling or
+training state** — no due date, no review interval, no stability and no
+per-user difficulty (ADR-031). A puzzle may belong to zero, one or many
+tactical training sets; membership is tracked by the set, and practice
+history is recorded as puzzle attempts, both defined in
+`specs/domain/tactical-training.md`.

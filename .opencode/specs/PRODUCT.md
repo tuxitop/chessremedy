@@ -12,7 +12,7 @@ The initial product focuses exclusively on:
 - blunders
 - tactical misses
 - personalized puzzles
-- spaced repetition
+- cycle-based tactical training
 - progress analysis
 
 Opening repertoire functionality is future scope.
@@ -219,21 +219,46 @@ The exact hint behavior is configurable.
 
 ---
 
-## 11. Spaced Repetition
+## 11. Tactical Training
 
-Completed puzzles are scheduled using FSRS.
+Personalized puzzles are trained in **fixed sets over repeated
+training cycles** (a Woodpecker-inspired approach; the product is not
+bound to any author's exact protocol). See ADR-031 and
+`specs/domain/tactical-training.md`.
 
-Review history records:
+A **tactical training set** groups puzzles by a source or criteria.
+A **training cycle** is one pass through a set; each puzzle produces a
+**puzzle attempt**, and cycles aggregate attempts into cycle metrics
+(first-try accuracy, solve rate, solving time, hints, retries,
+completion).
+
+Training behavior is configurable:
+
+- training-set size
+- puzzle ordering
+- retry behavior for failed puzzles
+- hint-level availability
+- cycle completion rules
+- target accuracy
+- optional target solving time
+- number of cycles
+
+A wrong answer does not remove a puzzle from the set by default; a
+puzzle still failing at the end of a cycle is revisited in the next
+cycle. Puzzles are not scheduled individually in V1: there is no
+per-puzzle "next review" or FSRS scheduling. Attempt records keep:
 
 - puzzle
+- training set / cycle
 - timestamp
 - outcome
-- rating
 - attempts
 - hints
 - response time where available
 
-The user can configure repetition behavior.
+Individual-puzzle scheduling (e.g. FSRS) is intentionally deferred and
+may be added later without discarding the immutable puzzle model or the
+attempt history (ADR-031).
 
 ---
 
@@ -276,10 +301,17 @@ Errors by:
 
 ### Training
 
-- puzzles due
-- puzzles completed
-- success rate
-- retention/progress indicators
+- active tactical training sets
+- current cycle and cycle progress
+- previous cycle accuracy
+- current cycle accuracy
+- cycle solving time
+- improvement over previous cycles
+- weakest tactical categories
+- puzzles repeatedly failed
+
+Terminology and definitions follow `specs/domain/tactical-training.md`;
+there is no "puzzles due" or retention-scheduling concept in V1.
 
 Charts must expose the selected platform/time-control filters.
 

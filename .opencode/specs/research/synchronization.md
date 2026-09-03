@@ -137,8 +137,9 @@ How should ChessRemedy implement optional cloud synchronization using Dropbox fo
    e. If still conflicting → create backup of remote, upload merged as new file
 
 **Why JSON-level merge works for ChessRemedy:**
-- Each record has a unique ID (game ID, puzzle ID, etc.)
-- Collections are independent (games, analysis, puzzles, FSRS data)
+- Each record has a unique ID (game ID, puzzle ID, training-set/cycle ID, etc.)
+- Collections are independent (games, analysis, puzzles, training sets,
+  training cycles, puzzle attempts)
 - Merging is additive: new records from either side can be combined
 - Conflicting updates to the same record are rare (single-user, multi-device)
 
@@ -157,7 +158,9 @@ How should ChessRemedy implement optional cloud synchronization using Dropbox fo
     "games": { ... },
     "analysis": { ... },
     "puzzles": { ... },
-    "fsrsCards": { ... },
+    "trainingSets": { ... },
+    "trainingCycles": { ... },
+    "puzzleAttempts": { ... },
     "settings": { ... }
   }
 }

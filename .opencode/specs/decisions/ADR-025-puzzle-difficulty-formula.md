@@ -74,8 +74,9 @@ will compute; the underlying score stored on the puzzle is the
 
 - Difficulty is a *function* of the puzzle's verification output,
   not of the user's eventual success rate. A puzzle is not
-  re-rated after the user solves it (the FSRS card carries the
-  user's personal rating).
+  re-rated after the user solves it; personal performance is
+  recorded in puzzle attempts and cycle aggregates (ADR-031,
+  `specs/domain/tactical-training.md`), never on the puzzle.
 - The score is sensitive to engine depth at the verification stage.
   Bumping the verification depth from 30 to 35 will re-rank some
   puzzles. The `puzzleGeneratorVersion` field on each puzzle

@@ -40,7 +40,7 @@ The following are explicitly outside this feature:
 * missed-tactic detection
 * tactical motif classification
 * puzzle generation
-* spaced repetition
+* tactical-training cycle bookkeeping
 * dashboard statistics
 * player accuracy calculation
 

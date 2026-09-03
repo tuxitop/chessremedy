@@ -19,6 +19,14 @@ A puzzle may originate from:
 
 The source game, move and position must remain traceable.
 
+## Training-set consumption
+
+Generated puzzles feed **tactical training sets** (ADR-031,
+`specs/domain/tactical-training.md`): puzzles may be grouped into a set
+by source/criteria (e.g. "blunders from this import", "classical
+time-control misses") for cycle training (Feature 013). Generation does
+not assign any scheduling state to a puzzle.
+
 ## Puzzle structure
 
 A puzzle must contain:
