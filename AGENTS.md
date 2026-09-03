@@ -30,9 +30,7 @@ shipping order is:
 | 015 | Dashboard                                  | `015-dashboard.md`                    |
 | 016 | Synchronization                            | `016-synchronization.md`              |
 
-Features should be implemented in this order. The current active and
-next feature are tracked by `.opencode/commands/status.md` and should
-not be inferred from implementation alone.
+Features should be implemented in this order.
 
 ---
 
