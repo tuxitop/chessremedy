@@ -23,6 +23,7 @@ import { BoardContainer } from './BoardContainer';
 import type { UseBoardSize } from './useBoardSize';
 import {
   chessgroundDestsFromPosition,
+  parseSquareKey,
   positionToFen,
   type ChessOpsPosition,
 } from './chessopsAdapter';
@@ -113,10 +114,19 @@ interface LiveProps {
   autoShapes: readonly DrawShape[] | undefined;
 }
 
-/** True when the move lands a pawn on the opponent's back rank. */
-function isPromotionDestination(position: ChessOpsPosition, dest: Key): boolean {
+/**
+ * True when the move is a pawn of the side to move landing on the opponent's
+ * back rank. Only pawns can promote: a rook or other piece sliding to the
+ * last rank must be treated as an ordinary move (see the `after` handler).
+ */
+export function isPromotionDestination(position: ChessOpsPosition, from: Key, dest: Key): boolean {
   const rank = dest[1];
-  return position.turn === 'white' ? rank === '8' : rank === '1';
+  const onBackRank = position.turn === 'white' ? rank === '8' : rank === '1';
+  if (!onBackRank) {
+    return false;
+  }
+  const mover = position.board.get(parseSquareKey(from));
+  return mover !== undefined && mover.role === 'pawn' && mover.color === position.turn;
 }
 
 /**
@@ -281,7 +291,7 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
         events: {
           after: (orig: Key, dest: Key) => {
             const pos = positionRef.current;
-            if (isPromotionDestination(pos, dest)) {
+            if (isPromotionDestination(pos, orig, dest)) {
               if (pendingPromotionRef.current) {
                 return;
               }

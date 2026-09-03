@@ -2,6 +2,9 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Color, Key } from '@lichess-org/chessground/types';
+import { fenOf } from '@/domain/chess';
+import { ENGINE_POSITIONS } from '@/infrastructure/engine/fixtures/enginePositions';
+import { BrowserEnginePanel } from '@/components/engine/BrowserEnginePanel';
 import {
   Chessboard,
   type BoardTheme,
@@ -18,8 +21,8 @@ import { BOARD_SIZE_DEFAULT } from '@/components/chessboard/boardSize';
 import { commentShapesToDrawShapes } from '@/components/chessboard/boardShapes';
 import {
   PLAYGROUND_FIXTURES,
-  findFixture,
   isPgnFixture,
+  type FenFixture,
   type PlaygroundFixture,
   type PlaygroundFixtureId,
 } from '@/components/chessboard/playgroundFixtures';
@@ -63,6 +66,28 @@ const DEFAULT_SETTINGS: SettingsShape = {
   pieceSet: 'cburnett',
 };
 
+/** Engine-verification positions shown as extra selectable FEN fixtures. */
+const ENGINE_FIXTURES: readonly FenFixture[] = ENGINE_POSITIONS.map((p) => ({
+  id: p.id,
+  kind: 'fen',
+  label: p.label,
+  fen: p.fen,
+  exercises: p.exercises,
+}));
+
+/** Everything selectable on the playground board. */
+const ALL_FIXTURES: readonly PlaygroundFixture[] = [...PLAYGROUND_FIXTURES, ...ENGINE_FIXTURES];
+
+export type SelectableFixtureId = PlaygroundFixtureId | (typeof ENGINE_POSITIONS)[number]['id'];
+
+function findSelectableFixture(id: SelectableFixtureId): PlaygroundFixture {
+  const found = ALL_FIXTURES.find((f) => f.id === id);
+  if (!found) {
+    throw new Error(`Unknown playground fixture: ${id}`);
+  }
+  return found;
+}
+
 function buildFixtureTree(fixture: PlaygroundFixture): { tree: MoveTree; error: string | null } {
   if (isPgnFixture(fixture)) {
     const result = buildTreeFromPgn(fixture.pgn);
@@ -89,22 +114,22 @@ function landingOrientation(fixture: PlaygroundFixture): Orientation {
 }
 
 export function PlaygroundPage(): React.JSX.Element {
-  const [fixtureId, setFixtureId] = useState<PlaygroundFixtureId>('starting');
+  const [fixtureId, setFixtureId] = useState<SelectableFixtureId>('starting');
   const [settings, setSettings] = useState<SettingsShape>(DEFAULT_SETTINGS);
   const boardSizeApi = useBoardSize();
   const [manualOrientations, setManualOrientations] = useState<
-    Record<PlaygroundFixtureId, Orientation>
+    Record<SelectableFixtureId, Orientation>
   >({});
 
-  const fixture = useMemo<PlaygroundFixture>(() => findFixture(fixtureId), [fixtureId]);
+  const fixture = useMemo<PlaygroundFixture>(() => findSelectableFixture(fixtureId), [fixtureId]);
   const built = useMemo(() => buildFixtureTree(fixture), [fixture]);
 
   const handleSelectFixture = useCallback(
-    (id: PlaygroundFixtureId) => {
+    (id: SelectableFixtureId) => {
       if (id === fixtureId) {
         return;
       }
-      const next = findFixture(id);
+      const next = findSelectableFixture(id);
       const orientation = manualOrientations[id] ?? landingOrientation(next);
       setSettings((cur) => ({ ...cur, orientation }));
       setFixtureId(id);
@@ -144,7 +169,7 @@ interface PlaygroundContentProps {
   buildError: string | null;
   settings: SettingsShape;
   onSettingsChange: (next: SettingsShape) => void;
-  onSelectFixture: (id: PlaygroundFixtureId) => void;
+  onSelectFixture: (id: SelectableFixtureId) => void;
   boardSizeApi: ReturnType<typeof useBoardSize>;
 }
 
@@ -168,6 +193,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
   const chessboardRef = useRef<ChessboardHandle | null>(null);
 
   const position = useMemo(() => positionAtPath(tree, path), [tree, path]);
+  const currentFen = useMemo(() => fenOf(position), [position]);
   const sideToMove = useMemo<Orientation>(() => sideToMoveAt(tree, path), [tree, path]);
   const activePly = path.length > 0 ? path[path.length - 1]! : null;
   const lastMove = useMemo<readonly [string, string] | null>(
@@ -393,9 +419,9 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
               <select
                 data-testid="fixture-select"
                 value={fixture.id}
-                onChange={(e) => onSelectFixture(e.target.value as PlaygroundFixtureId)}
+                onChange={(e) => onSelectFixture(e.target.value as SelectableFixtureId)}
               >
-                {PLAYGROUND_FIXTURES.map((f) => (
+                {ALL_FIXTURES.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.label}
                   </option>
@@ -439,10 +465,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
           </div>
 
           <div className={styles.engineLines} aria-label="Engine lines">
-            <span className={styles.engineTitle}>Engine</span>
-            <p className={styles.engineHint}>
-              Engine lines and evaluations appear here after Stockfish is wired in (Feature 005).
-            </p>
+            <BrowserEnginePanel fen={currentFen} />
           </div>
 
           <div className={styles.moveListArea} aria-label="Moves">

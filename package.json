@@ -20,7 +20,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "fetch-piece-assets": "node scripts/fetch-piece-assets.mjs",
-    "postinstall": "node scripts/fetch-piece-assets.mjs"
+    "copy-stockfish-assets": "node scripts/copy-stockfish-assets.mjs",
+    "postinstall": "node scripts/fetch-piece-assets.mjs && node scripts/copy-stockfish-assets.mjs"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
@@ -28,7 +29,8 @@
     "dexie": "^4.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.3",
+    "stockfish": "^18.0.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.0.0",

@@ -42,7 +42,14 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,wasm}'],
+        // Precache only the default single-threaded engine build for offline
+        // analysis (ADR-012/D5). The multi-threaded `lite` build needs
+        // cross-origin isolation headers that a service-worker cache response
+        // does not carry, so it is left to the browser HTTP cache.
+        globIgnores: ['**/stockfish/stockfish-*-lite.js', '**/stockfish/stockfish-*-lite.wasm'],
+        // The engine WASM (~7 MB) exceeds workbox's 2 MiB default ceiling.
+        maximumFileSizeToCacheInBytes: 9_000_000,
       },
     }),
   ],
@@ -54,5 +61,15 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
   },
 });

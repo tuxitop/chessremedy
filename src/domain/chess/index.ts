@@ -14,6 +14,8 @@ export { createMoveList, mainlineNodes, nodeAtPath, validateReplay } from './mov
 export type { MoveList, NodePath, PgnNode } from './moveList';
 export { mainlineMoves, movesToPath, positionAtPath } from './move';
 export type { Move } from './move';
+export { uciPvToSan } from './san';
+export type { UciPvToSanResult } from './san';
 export { gameFromPgn } from './parseGame';
 export type { GameParseErrorCode, GameParseResult, ImportContext } from './parseGame';
 export { GAME_PHASES, ANALYSIS_STATES, ANALYSIS_PROFILES } from './analysis';

@@ -37,10 +37,10 @@ test.describe('Chessboard Playground', () => {
     await expect(page.getByTestId('playground-page')).toBeVisible();
   });
 
-  test('renders 17 fixtures in the position selector', async ({ page }) => {
+  test('renders 22 fixtures in the position selector', async ({ page }) => {
     const select = page.getByTestId('fixture-select');
     await expect(select).toBeVisible();
-    await expect(select.locator('option')).toHaveCount(17);
+    await expect(select.locator('option')).toHaveCount(22);
   });
 
   test('a drawn (insufficient material) position shows 1/2 chips and locks input', async ({
@@ -102,6 +102,16 @@ test.describe('Chessboard Playground', () => {
     const host = page.getByTestId('chessground-host');
     await expect(host.locator('piece.white.queen')).toHaveCount(1);
     await expect(host.locator('piece.white.pawn:not(.ghost)')).toHaveCount(0);
+  });
+
+  test('moving a non-pawn to the last rank does not open promotion', async ({ page }) => {
+    // Regression: only pawns may promote. A queen sliding to the eighth
+    // rank must play as an ordinary capture, not open the promotion dialog.
+    await page.getByTestId('fixture-select').selectOption('engine-hanging-rook');
+    await playMove(page, 'd5', 'a8');
+    await expect(page.getByTestId('promotion-dialog')).not.toBeVisible();
+    const move = page.getByTestId('move-list-move').filter({ hasText: 'Qxa8' }).first();
+    await expect(move).toBeVisible();
   });
 
   test('a checkmated fixture shows the mate badge and Checkmate label', async ({ page }) => {
