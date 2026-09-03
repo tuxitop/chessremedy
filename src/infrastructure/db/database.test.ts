@@ -11,8 +11,9 @@ describe('ChessRemedyDatabase', () => {
     expect(db.isOpen()).toBe(true);
   });
 
-  it('exposes exactly the settings table', () => {
-    expect(db.tables.map((t) => t.name)).toEqual(['settings']);
+  it('exposes the settings and games tables at schema version 2', () => {
+    expect(db.tables.map((t) => t.name)).toEqual(['settings', 'games']);
+    expect(db.verno).toBe(2);
   });
 
   it('round-trips a primitive setting', async () => {

@@ -1,4 +1,5 @@
 export { applyV1Schema } from './v1';
+export { applyV2Schema } from './v2';
 
 import type Dexie from 'dexie';
 
