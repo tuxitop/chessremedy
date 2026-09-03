@@ -10,6 +10,8 @@ import styles from './AnalysisPanel.module.css';
 export interface AnalysisPanelProps {
   readonly controller: AnalysisController;
   readonly capabilities: EngineCapabilities;
+  /** FEN of the current position (for rendering PVs). */
+  readonly fen: string;
   /** Player at the bottom of the board (for eval text perspective). */
   readonly bottomColor: PlayerColor;
   /** Side to move at the current position. */
@@ -27,20 +29,21 @@ export interface AnalysisPanelProps {
 export function AnalysisPanel({
   controller,
   capabilities,
+  fen,
   bottomColor,
   sideToMove,
   rightSlot,
 }: AnalysisPanelProps): React.JSX.Element {
-  const { enabled, analyzing, result, error, reachedDepth, engineLabel } = controller;
+  const { enabled, analyzing, lines, error, reachedDepth, engineLabel } = controller;
 
   const bestEval: EngineEvaluation | null =
-    enabled && result && result.lines.length > 0 ? (result.lines[0]!.evaluation ?? null) : null;
+    enabled && lines.length > 0 ? (lines[0]!.evaluation ?? null) : null;
   const evalText =
     bestEval === null
       ? null
       : formatEvaluation(evaluationFromBottom(bestEval, bottomColor, sideToMove));
 
-  const lines = enabled ? (result?.lines ?? []) : [];
+  const visibleLines = enabled ? lines : [];
   const showIdle = !enabled;
   const statusText = !enabled
     ? 'Off'
@@ -117,15 +120,15 @@ export function AnalysisPanel({
         </div>
       )}
 
-      {lines.length > 0 && (
+      {visibleLines.length > 0 && (
         <div className={styles.lines} data-testid="engine-result">
-          {lines.map((line) => (
-            <div className={styles.line} key={`${result!.position}|${line.multipv}`}>
+          {visibleLines.map((line) => (
+            <div className={styles.line} key={`${fen}|${line.multipv}`}>
               <span className={styles.lineEval} data-testid="engine-eval">
                 {formatEvaluation(line.evaluation)}
               </span>
               <span className={styles.linePv} data-testid="engine-pv">
-                {formatPv(result!.position, line.principalVariation)}
+                {formatPv(fen, line.principalVariation)}
               </span>
             </div>
           ))}

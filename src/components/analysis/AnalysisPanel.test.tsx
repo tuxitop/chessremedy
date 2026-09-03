@@ -42,6 +42,7 @@ function Harness({
     <AnalysisPanel
       controller={controller}
       capabilities={CAPS}
+      fen={fen}
       bottomColor="white"
       sideToMove="white"
     />
@@ -105,6 +106,26 @@ describe('AnalysisPanel', () => {
     });
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain('Engine worker failed: boom');
+  });
+
+  it('shows progress-driven lines before the final result (per reached depth)', async () => {
+    const rig = createFakeAnalysisService();
+    render(<Harness rig={rig} autoStart={true} />);
+    await flush();
+    // No final result yet — a progress event at depth 12 surfaces a live line.
+    act(() => {
+      rig.jobs[0]!.emitProgress({
+        jobId: rig.jobs[0]!.id,
+        depth: 12,
+        multipv: 1,
+        evaluation: { cp: 40 },
+        principalVariation: [{ uci: 'e2e4' }, { uci: 'e7e5' }],
+      });
+    });
+    expect(screen.getByTestId('engine-eval')).toHaveTextContent('+0.40');
+    expect(screen.getByTestId('engine-pv')).toHaveTextContent('1. e4 e5');
+    expect(screen.getByTestId('engine-status')).toHaveTextContent('Analyzing');
+    expect(screen.getByTestId('engine-depth-row')).toHaveTextContent('Depth: 12');
   });
 
   it('re-runs when a later move changes the FEN', async () => {

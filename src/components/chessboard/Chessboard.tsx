@@ -42,6 +42,22 @@ const ANNOTATION_BRUSHES: DrawBrushes = {
   purple: { key: 'p', color: ANNOTATION_COLORS.P.color, opacity: 1, lineWidth: 10 },
 };
 
+/**
+ * Brushes for engine-line arrows (Feature 006). The best line is drawn in a
+ * warm colour so it is never confused with user-drawn (green) arrows; further
+ * lines are greyed with decreasing opacity.
+ */
+const ENGINE_ARROW_BRUSHES = {
+  best: { key: 'best', color: '#f0a000', opacity: 1, lineWidth: 10 },
+  gray1: { key: 'gray1', color: '#9aa0a6', opacity: 0.85, lineWidth: 8 },
+  gray2: { key: 'gray2', color: '#9aa0a6', opacity: 0.65, lineWidth: 8 },
+  gray3: { key: 'gray3', color: '#9aa0a6', opacity: 0.45, lineWidth: 8 },
+  gray4: { key: 'gray4', color: '#9aa0a6', opacity: 0.3, lineWidth: 8 },
+  gray5: { key: 'gray5', color: '#9aa0a6', opacity: 0.2, lineWidth: 8 },
+} as const;
+
+const DRAW_BRUSHES: DrawBrushes = { ...ANNOTATION_BRUSHES, ...ENGINE_ARROW_BRUSHES };
+
 export interface ChessboardHandle {
   /** Clear all arrows drawn on the board (manual + automatic). */
   clearArrows(): void;
@@ -239,7 +255,7 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
             },
           }
         : {}),
-      drawable: { enabled: p.drawable, brushes: ANNOTATION_BRUSHES },
+      drawable: { enabled: p.drawable, brushes: DRAW_BRUSHES },
       animation: { enabled: p.animation },
       highlight: {
         lastMove: Boolean(p.lastMove),
@@ -304,7 +320,7 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
           },
         },
       },
-      drawable: { enabled: p.drawable, brushes: ANNOTATION_BRUSHES },
+      drawable: { enabled: p.drawable, brushes: DRAW_BRUSHES },
       animation: { enabled: p.animation },
       highlight: { lastMove: Boolean(p.lastMove), check: true },
     };

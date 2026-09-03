@@ -26,9 +26,10 @@
  * (purple/wood use the classic Lichess images; wood is rendered as the
  * classic brown pair.)
  *
- * The other board rules (last-move / check / selected / move-dest /
- * premove-dest highlighting and the coordinate override) are shared and
+ * The other board rules (last-move / check highlighting) are shared and
  * added verbatim by this generator so every theme file stays complete.
+ * Legal-move destination/selection markers are intentionally NOT themed:
+ * they fall back to Chessground's own default styling.
  *
  * Run with: `node scripts/build-board-theme-css.mjs`
  * Re-run after changing a palette. Output files are checked in.
@@ -73,28 +74,6 @@ const shared = `
     rgba(255, 0, 0, 1) 0%,
     rgba(231, 0, 0, 0.5) 25%,
     rgba(169, 0, 0, 0) 90%
-  );
-}
-
-.theme-name cg-board square.selected {
-  background-color: rgba(20, 85, 30, 0.5);
-}
-
-.theme-name cg-board square.move-dest {
-  background: radial-gradient(
-    ellipse at center,
-    rgba(20, 85, 30, 0.2) 0%,
-    rgba(20, 85, 30, 0.2) 25%,
-    rgba(20, 85, 30, 0) 60%
-  );
-}
-
-.theme-name cg-board square.premove-dest {
-  background: radial-gradient(
-    ellipse at center,
-    rgba(20, 30, 85, 0.2) 0%,
-    rgba(20, 30, 85, 0.2) 25%,
-    rgba(20, 30, 85, 0) 60%
   );
 }
 `;

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Color, Key } from '@lichess-org/chessground/types';
@@ -16,9 +16,11 @@ import { SettingsPopover, type SettingsState } from '@/components/chessboard/Set
 import { useBoardSize } from '@/components/chessboard/useBoardSize';
 import { BOARD_SIZE_DEFAULT } from '@/components/chessboard/boardSize';
 import {
+  buildTreeFromPgn,
   play as playMove,
   positionAtPath,
   pathToEnd,
+  pathToLanding,
   sideToMoveAt,
   step,
   treeFromFen,
@@ -30,8 +32,10 @@ import { useAnalysisController } from '@/components/analysis/useAnalysisControll
 import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
 import { EvaluationBar } from '@/components/analysis/EvaluationBar';
-import { firstMoveSquares } from '@/components/analysis/engineFormat';
+import { engineArrowShapes } from '@/components/analysis/engineArrows';
+import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
+import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import styles from './LiveAnalysisPage.module.css';
 
 type Orientation = 'white' | 'black';
@@ -68,17 +72,19 @@ function orientationForFen(fen: string): Orientation {
 export function LiveAnalysisPage(): React.JSX.Element {
   const boardSizeApi = useBoardSize();
   const engine = useBrowserAnalysisEngine();
-  const { defaults, isReady } = useEngineDefaults();
+  const { defaults: engineDefaults, isReady: engineDefaultsReady } = useEngineDefaults();
+  const { defaults: boardDefaults, isReady: boardDefaultsReady } = useBoardAppearance();
 
-  const [startFen, setStartFen] = useState<string>(LIVE_START_FEN);
   const [fenInput, setFenInput] = useState<string>(LIVE_START_FEN);
+  const [pgnInput, setPgnInput] = useState<string>('');
   const [fenError, setFenError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<SettingsShape>(DEFAULT_SETTINGS);
+  const [pgnError, setPgnError] = useState<string | null>(null);
+  const boardTouched = useRef(false);
 
-  const initialTree = useMemo(() => treeFromFen(startFen), [startFen]);
-
-  const [tree, setTree] = useState<MoveTree>(initialTree);
+  const [baseTree, setBaseTree] = useState<MoveTree>(() => treeFromFen(LIVE_START_FEN));
+  const [tree, setTree] = useState<MoveTree>(baseTree);
   const [path, setPath] = useState<Path>([]);
+  const [settings, setSettings] = useState<SettingsShape>(DEFAULT_SETTINGS);
   const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(
     null,
   );
@@ -104,33 +110,81 @@ export function LiveAnalysisPage(): React.JSX.Element {
     fen: currentFen,
     capabilities: engine.capabilities,
     autoStart: true,
-    defaults: isReady ? defaults : null,
+    defaults: engineDefaultsReady ? engineDefaults : null,
   });
 
-  const bestArrow: DrawShape[] = useMemo(() => {
-    const line = controller.result?.lines[0];
-    if (!line) return [];
-    const squares = firstMoveSquares(line);
-    if (!squares) return [];
-    return [{ orig: squares.from as Key, dest: squares.to as Key, brush: 'green' }];
-  }, [controller.result]);
+  // Adopt persisted board/theme defaults only until the user tweaks them here.
+  useEffect(() => {
+    if (!boardDefaultsReady || !boardDefaults || boardTouched.current) return;
+    setSettings((cur) => ({
+      ...cur,
+      boardTheme: boardDefaults.boardTheme,
+      pieceSet: boardDefaults.pieceSet,
+      coordinates: boardDefaults.coordinates,
+      animation: boardDefaults.animation,
+    }));
+  }, [boardDefaultsReady, boardDefaults]);
 
-  const resetToFen = useCallback((fen: string) => {
-    const parsed = parsePositionFen(fen);
+  const handleBoardChange = useCallback((next: SettingsShape) => {
+    boardTouched.current = true;
+    setSettings(next);
+  }, []);
+
+  const engineArrows: DrawShape[] = useMemo(
+    () => engineArrowShapes(controller.lines, controller.settings.arrows),
+    [controller.lines, controller.settings.arrows],
+  );
+
+  const plyEvals = useMemo(
+    () => buildPlyEvaluations(tree, controller.evalsByFen),
+    [tree, controller.evalsByFen],
+  );
+
+  const setPositionFromFen = useCallback((raw: string) => {
+    const parsed = parsePositionFen(raw);
     if (!parsed.ok) {
       setFenError(parsed.message);
       return;
     }
     const canonical = fenOf(parsed.position);
     setFenError(null);
-    setStartFen(canonical);
+    setPgnError(null);
+    setPgnInput('');
     setFenInput(canonical);
-    setSettings((cur) => ({ ...cur, orientation: orientationForFen(canonical) }));
-    setTree(treeFromFen(canonical));
+    const nextTree = treeFromFen(canonical);
+    setBaseTree(nextTree);
+    setTree(nextTree);
     setPath([]);
+    setSettings((cur) => ({ ...cur, orientation: orientationForFen(canonical) }));
     setPendingPromotion(null);
     setMoveError(null);
   }, []);
+
+  const loadPgn = useCallback(() => {
+    const built = buildTreeFromPgn(pgnInput);
+    if (built.error) {
+      setPgnError(built.error);
+      return;
+    }
+    setPgnError(null);
+    setFenError(null);
+    setFenInput(built.tree.startFen);
+    const landing = pathToLanding(built.tree);
+    setBaseTree(built.tree);
+    setTree(built.tree);
+    setPath(landing);
+    const landingPos = positionAtPath(built.tree, landing);
+    setSettings((cur) => ({ ...cur, orientation: orientationForFen(fenOf(landingPos)) }));
+    setPendingPromotion(null);
+    setMoveError(null);
+  }, [pgnInput]);
+
+  const handleReset = useCallback(() => {
+    setTree(baseTree);
+    setPath([]);
+    setPendingPromotion(null);
+    setMoveError(null);
+  }, [baseTree]);
 
   const handleMove = useCallback(
     (from: string, to: string) => {
@@ -220,6 +274,7 @@ export function LiveAnalysisPage(): React.JSX.Element {
   );
 
   const boardSizePx = boardSizeApi.size;
+  const headerError = fenError ?? pgnError ?? moveError;
 
   return (
     <div className={styles.page} data-testid="live-analysis-page">
@@ -230,33 +285,12 @@ export function LiveAnalysisPage(): React.JSX.Element {
         </p>
       </header>
 
-      <div className={styles.fenRow}>
-        <label className={styles.fenLabel}>
-          <span>Starting FEN</span>
-          <input
-            className={styles.fenInput}
-            value={fenInput}
-            onChange={(e) => setFenInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') resetToFen(fenInput);
-            }}
-            data-testid="live-fen-input"
-          />
-        </label>
-        <button
-          type="button"
-          className={styles.fenButton}
-          onClick={() => resetToFen(fenInput)}
-          data-testid="live-fen-set"
-        >
-          Set position
-        </button>
-        {fenError && (
-          <span className={styles.fenError} role="alert" data-testid="live-fen-error">
-            {fenError}
-          </span>
-        )}
-      </div>
+      {headerError && (
+        <div className={styles.positionError} role="alert" data-testid="live-position-error">
+          <strong>Could not load position.</strong>
+          <pre className={styles.errorMessage}>{headerError}</pre>
+        </div>
+      )}
 
       <div className={styles.layout}>
         <section
@@ -277,7 +311,7 @@ export function LiveAnalysisPage(): React.JSX.Element {
             boardTheme={settings.boardTheme}
             pieceSet={settings.pieceSet}
             lastMove={lastMove as readonly [Key, Key] | null}
-            autoShapes={bestArrow}
+            autoShapes={engineArrows}
             boardSize={boardSizeApi}
             onMove={handleMove}
             onPromotionRequired={(p) => setPendingPromotion(p)}
@@ -286,27 +320,20 @@ export function LiveAnalysisPage(): React.JSX.Element {
             <button
               type="button"
               className={styles.actionButton}
-              onClick={() => resetToFen(startFen)}
+              onClick={handleReset}
               data-testid="live-reset"
             >
               Reset position
             </button>
           </div>
-          {(fenError || moveError) && (
-            <div className={styles.positionError} role="alert" data-testid="live-position-error">
-              <strong>Could not play position.</strong>
-              <pre className={styles.errorMessage}>{fenError ?? moveError}</pre>
-            </div>
-          )}
         </section>
 
-        <div className={styles.evalBarColumn}>
+        <div
+          className={styles.evalBarColumn}
+          style={!boardSizeApi.isMobile ? { height: boardSizePx } : undefined}
+        >
           <EvaluationBar
-            evaluation={
-              controller.result && controller.result.lines.length > 0
-                ? controller.result.lines[0]!.evaluation
-                : null
-            }
+            evaluation={controller.lines.length > 0 ? controller.lines[0]!.evaluation : null}
             bottomColor={settings.orientation}
             sideToMove={sideToMove}
           />
@@ -320,12 +347,13 @@ export function LiveAnalysisPage(): React.JSX.Element {
           <AnalysisPanel
             controller={controller}
             capabilities={engine.capabilities}
+            fen={currentFen}
             bottomColor={settings.orientation}
             sideToMove={sideToMove}
             rightSlot={
               <SettingsPopover
                 state={settingsForPopover}
-                onChange={(next) => setSettings(next)}
+                onChange={handleBoardChange}
                 onResetBoardSize={handleResetBoardSize}
                 onClearArrows={() => chessboardRef.current?.clearArrows()}
                 boardSize={boardSizePx}
@@ -333,7 +361,7 @@ export function LiveAnalysisPage(): React.JSX.Element {
             }
           />
           <div className={styles.moveListArea} aria-label="Moves">
-            <MoveList tree={tree} path={path} onSeek={handleSeek} />
+            <MoveList tree={tree} path={path} onSeek={handleSeek} plyEvals={plyEvals} />
           </div>
           <div className={styles.controls}>
             <Navigation
@@ -353,6 +381,57 @@ export function LiveAnalysisPage(): React.JSX.Element {
           </div>
         </aside>
       </div>
+
+      <section className={styles.sourceBar} aria-label="Position sources">
+        <div className={styles.sourceGroup}>
+          <span className={styles.sourceTitle}>Start from FEN</span>
+          <div className={styles.sourceControls}>
+            <input
+              className={styles.sourceInput}
+              value={fenInput}
+              onChange={(e) => setFenInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setPositionFromFen(fenInput);
+              }}
+              data-testid="live-fen-input"
+            />
+            <button
+              type="button"
+              className={styles.sourceButton}
+              onClick={() => setPositionFromFen(fenInput)}
+              data-testid="live-fen-set"
+            >
+              Set FEN
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.sourceGroup}>
+          <span className={styles.sourceTitle}>…or load a game from PGN</span>
+          <div className={styles.sourceControls}>
+            <textarea
+              className={styles.sourceTextarea}
+              value={pgnInput}
+              onChange={(e) => setPgnInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) loadPgn();
+              }}
+              rows={3}
+              spellCheck={false}
+              placeholder={'1. e4 e5 2. Nf3 Nc6 3. Bc4\n5. O-O Be7 6. Re1 b5'}
+              data-testid="live-pgn-input"
+            />
+            <button
+              type="button"
+              className={styles.sourceButton}
+              onClick={loadPgn}
+              data-testid="live-pgn-set"
+            >
+              Load PGN
+            </button>
+          </div>
+        </div>
+      </section>
 
       <PromotionDialog
         open={pendingPromotion !== null}

@@ -12,6 +12,20 @@ export interface UseEngineDefaults {
   save(next: LiveEngineSettings): Promise<void>;
 }
 
+function clampDefaults(stored: LiveEngineSettings, caps: EngineCapabilities): LiveEngineSettings {
+  const fallback = defaultLiveSettings(caps);
+  return {
+    engine: stored.engine,
+    profile: stored.profile,
+    depth: stored.depth ?? fallback.depth,
+    searchSeconds: stored.searchSeconds,
+    lines: stored.lines,
+    threads: Math.min(stored.threads, Math.max(1, caps.threads)),
+    memoryMb: Math.min(stored.memoryMb, caps.hashCapMb),
+    arrows: stored.arrows ?? fallback.arrows,
+  };
+}
+
 /**
  * Reads and writes the persisted engine-config defaults (Settings page) used
  * to initialise the live-analysis controller and the playground.
@@ -26,15 +40,7 @@ export function useEngineDefaults(): UseEngineDefaults {
       const caps: EngineCapabilities = readBrowserCapabilities();
       const stored = await settingsRepository.get<LiveEngineSettings>(SETTINGS_KEYS.engineDefaults);
       if (cancelled) return;
-      setDefaults(
-        stored
-          ? {
-              ...stored,
-              threads: Math.min(stored.threads, Math.max(1, caps.threads)),
-              memoryMb: Math.min(stored.memoryMb, caps.hashCapMb),
-            }
-          : defaultLiveSettings(caps),
-      );
+      setDefaults(stored ? clampDefaults(stored, caps) : defaultLiveSettings(caps));
       setIsReady(true);
     })();
     return () => {

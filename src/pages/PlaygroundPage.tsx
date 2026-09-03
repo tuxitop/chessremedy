@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Color, Key } from '@lichess-org/chessground/types';
@@ -8,7 +8,10 @@ import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalys
 import { useAnalysisController } from '@/components/analysis/useAnalysisController';
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
 import { EvaluationBar } from '@/components/analysis/EvaluationBar';
+import { engineArrowShapes } from '@/components/analysis/engineArrows';
+import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
+import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import {
   Chessboard,
   type BoardTheme,
@@ -121,9 +124,23 @@ export function PlaygroundPage(): React.JSX.Element {
   const [fixtureId, setFixtureId] = useState<SelectableFixtureId>('starting');
   const [settings, setSettings] = useState<SettingsShape>(DEFAULT_SETTINGS);
   const boardSizeApi = useBoardSize();
+  const boardTouched = useRef(false);
+  const { defaults: boardDefaults, isReady: boardDefaultsReady } = useBoardAppearance();
   const [manualOrientations, setManualOrientations] = useState<
     Record<SelectableFixtureId, Orientation>
   >({});
+
+  // Adopt persisted board/theme defaults until the user tweaks them here.
+  useEffect(() => {
+    if (!boardDefaultsReady || !boardDefaults || boardTouched.current) return;
+    setSettings((cur) => ({
+      ...cur,
+      boardTheme: boardDefaults.boardTheme,
+      pieceSet: boardDefaults.pieceSet,
+      coordinates: boardDefaults.coordinates,
+      animation: boardDefaults.animation,
+    }));
+  }, [boardDefaultsReady, boardDefaults]);
 
   const fixture = useMemo<PlaygroundFixture>(() => findSelectableFixture(fixtureId), [fixtureId]);
   const built = useMemo(() => buildFixtureTree(fixture), [fixture]);
@@ -143,6 +160,7 @@ export function PlaygroundPage(): React.JSX.Element {
 
   const handleSettingsChange = useCallback(
     (next: SettingsShape) => {
+      boardTouched.current = true;
       setSettings((cur) => {
         if (next.orientation !== cur.orientation) {
           setManualOrientations((prev) => ({ ...prev, [fixtureId]: next.orientation }));
@@ -218,6 +236,17 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
   const autoShapes: DrawShape[] = useMemo(
     () => (activePly ? commentShapesToDrawShapes(activePly.comments) : []),
     [activePly],
+  );
+
+  // Engine arrows layered on top of any comment-driven shapes.
+  const engineShapes: DrawShape[] = useMemo(
+    () => engineArrowShapes(engineController.lines, engineController.settings.arrows),
+    [engineController.lines, engineController.settings.arrows],
+  );
+  const allShapes = useMemo(() => [...autoShapes, ...engineShapes], [autoShapes, engineShapes]);
+  const plyEvals = useMemo(
+    () => buildPlyEvaluations(tree, engineController.evalsByFen),
+    [tree, engineController.evalsByFen],
   );
 
   const isCheckmate = position.isCheckmate();
@@ -421,7 +450,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
             boardTheme={settings.boardTheme}
             pieceSet={settings.pieceSet}
             lastMove={lastMove as readonly [Key, Key] | null}
-            autoShapes={autoShapes}
+            autoShapes={allShapes}
             overlay={<SquareBadges orientation={settings.orientation as Color} items={badges} />}
             boardSize={boardSizeApi}
             onMove={handleMove}
@@ -468,9 +497,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
         >
           <EvaluationBar
             evaluation={
-              engineController.result && engineController.result.lines.length > 0
-                ? engineController.result.lines[0]!.evaluation
-                : null
+              engineController.lines.length > 0 ? engineController.lines[0]!.evaluation : null
             }
             bottomColor={settings.orientation}
             sideToMove={sideToMove}
@@ -485,6 +512,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
           <AnalysisPanel
             controller={engineController}
             capabilities={engine.capabilities}
+            fen={currentFen}
             bottomColor={settings.orientation}
             sideToMove={sideToMove}
             rightSlot={
@@ -499,7 +527,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
           />
 
           <div className={styles.moveListArea} aria-label="Moves">
-            <MoveList tree={tree} path={path} onSeek={handleSeek} />
+            <MoveList tree={tree} path={path} onSeek={handleSeek} plyEvals={plyEvals} />
           </div>
 
           <div className={styles.controls}>

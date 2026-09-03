@@ -30,7 +30,12 @@ export const DEFAULT_ENGINE_ID: EngineId = 'stockfish';
 export interface LiveEngineSettings {
   readonly engine: EngineId;
   readonly profile: AnalysisProfile;
-  /** Search time in seconds (combined with the profile depth, whichever first). */
+  /**
+   * Maximum search depth (1..128). The search stops at whichever limit it
+   * reaches first: this depth or the search time.
+   */
+  readonly depth: number;
+  /** Search time in seconds (combined with the depth, whichever first). */
   readonly searchSeconds: number;
   /** Number of principal-variation lines (MultiPV), 1..5. */
   readonly lines: number;
@@ -38,12 +43,26 @@ export interface LiveEngineSettings {
   readonly threads: number;
   /** Hash size in MB (clamped to the capability cap). */
   readonly memoryMb: number;
+  /** Which engine-line arrows are drawn on the board. */
+  readonly arrows: EngineArrowMode;
 }
+
+/** Engine-line arrow display mode (Feature 006). */
+export type EngineArrowMode = 'first' | 'all';
+export const ARROW_MODES: readonly EngineArrowMode[] = ['first', 'all'];
+export const ARROW_MODE_DEFAULT: EngineArrowMode = 'first';
 
 export const LIVE_LINES_MIN = 1;
 export const LIVE_LINES_MAX = 5;
 export const LIVE_LINES_DEFAULT = 3;
 export const LIVE_SEARCH_SECONDS_MIN = 1;
+export const LIVE_DEPTH_MIN = 1;
+export const LIVE_DEPTH_MAX = 128;
+
+/** Clamp a search depth into [LIVE_DEPTH_MIN, LIVE_DEPTH_MAX]. */
+export function clampDepth(depth: number): number {
+  return Math.min(LIVE_DEPTH_MAX, Math.max(LIVE_DEPTH_MIN, Math.round(depth)));
+}
 
 /**
  * Default search time in seconds per profile for the live board. The ADR-012
@@ -73,6 +92,7 @@ export function threadCap(capabilities: EngineCapabilities): number {
 }
 
 export interface LiveProfilePreset {
+  readonly depth: number;
   readonly searchSeconds: number;
   /** MultiPV preset for the profile on the live board. */
   readonly lines: number;
@@ -82,10 +102,11 @@ export interface LiveProfilePreset {
 
 /**
  * Auto-configuration applied when the user selects a profile in the engine
- * settings. `lines` follows the profile's tactical intent (fast 1 / normal 3 /
- * tactical 5 / deep 3 — the Feature 006 default for the default profile),
- * threads come from the build capability and memory from the ADR-012 hash
- * clamped to the capability cap.
+ * settings. Depth/search time come from the profile's ADR-012 depth and the
+ * live search-time presets; `lines` follows the profile's tactical intent
+ * (fast 1 / normal 3 / tactical 5 / deep 3 — the Feature 006 default for the
+ * default profile); threads come from the build capability and memory from
+ * the ADR-012 hash clamped to the capability cap.
  */
 export function liveProfilePreset(
   profile: AnalysisProfile,
@@ -99,6 +120,7 @@ export function liveProfilePreset(
     deep: 3,
   };
   return {
+    depth: config.depth,
     searchSeconds: LIVE_SEARCH_SECONDS[profile],
     lines: linesFor[profile],
     threads: threadCap(capabilities),
@@ -116,6 +138,7 @@ export function settingsWithProfile(
   return {
     ...settings,
     profile,
+    depth: preset.depth,
     searchSeconds: preset.searchSeconds,
     lines: preset.lines,
     threads: preset.threads,
@@ -132,10 +155,9 @@ export function analysisOptionsFromSettings(settings: LiveEngineSettings): {
   readonly hashMb: number;
   readonly threads: number;
 } {
-  const depth = profileConfig(settings.profile).depth;
   return {
     profile: settings.profile,
-    maxDepth: depth,
+    maxDepth: settings.depth,
     movetimeMs: settings.searchSeconds * 1000,
     multipv: settings.lines,
     hashMb: settings.memoryMb,
@@ -149,10 +171,12 @@ export function defaultLiveSettings(capabilities: EngineCapabilities): LiveEngin
   return {
     engine: DEFAULT_ENGINE_ID,
     profile: 'normal',
+    depth: preset.depth,
     searchSeconds: preset.searchSeconds,
     lines: preset.lines,
     threads: preset.threads,
     memoryMb: preset.memoryMb,
+    arrows: ARROW_MODE_DEFAULT,
   };
 }
 

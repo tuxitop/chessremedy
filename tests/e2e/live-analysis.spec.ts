@@ -86,7 +86,22 @@ test.describe('Live Analysis Board', () => {
     await page.goto('/analysis/live');
     await page.getByTestId('live-fen-input').fill('not-a-fen');
     await page.getByTestId('live-fen-set').click();
-    await expect(page.getByTestId('live-fen-error')).toBeVisible();
+    await expect(page.getByTestId('live-position-error')).toBeVisible();
     await expect(page.getByTestId('chessground-host')).toBeVisible();
+  });
+
+  test('loads a multi-line game from PGN and shows the move list', async ({ page }) => {
+    await page.goto('/analysis/live');
+    await page
+      .getByTestId('live-pgn-input')
+      .fill(
+        '1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7\n' +
+          '6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7',
+      );
+    await page.getByTestId('live-pgn-set').click();
+    await expect(page.getByTestId('live-position-error')).toHaveCount(0);
+    const moves = page.getByTestId('move-list-move');
+    await expect(moves).toHaveCount(20);
+    await expect(moves.filter({ hasText: 'd4' }).first()).toBeVisible();
   });
 });

@@ -1,9 +1,24 @@
 import type * as React from 'react';
 import { ThemePicker } from '@/components/ui/ThemePicker';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
+import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import { readBrowserCapabilities } from '@/infrastructure/engine/capabilities';
-import { EngineConfigForm } from '@/components/analysis/EngineConfigForm';
-import { settingsWithProfile } from '@/components/analysis/engineSettings';
+import {
+  ARROW_MODES,
+  LIVE_DEPTH_MAX,
+  LIVE_DEPTH_MIN,
+  LIVE_LINES_MIN,
+  LIVE_LINES_MAX,
+  LIVE_SEARCH_SECONDS_MIN,
+  clampDepth,
+  clampLines,
+  clampSearchSeconds,
+  settingsWithProfile,
+  type EngineArrowMode,
+} from '@/components/analysis/engineSettings';
+import type { AnalysisProfile } from '@/domain/chess';
+import { ANALYSIS_PROFILE_ORDER } from '@/infrastructure/engine/engineProfiles';
+import { BOARD_THEMES, PIECE_SETS } from '@/components/chessboard/themes';
 import styles from './SettingsPage.module.css';
 
 interface SettingPlaceholder {
@@ -27,36 +42,138 @@ const SETTINGS_PLACEHOLDERS: SettingPlaceholder[] = [
 
 export function SettingsPage(): React.JSX.Element {
   const { defaults, isReady, save } = useEngineDefaults();
+  const {
+    defaults: appearance,
+    isReady: appearanceReady,
+    save: saveAppearance,
+  } = useBoardAppearance();
   const capabilities = readBrowserCapabilities();
 
   return (
     <div className={styles.page} data-testid="settings-page">
       <h1 className={styles.heading}>Settings</h1>
       <ThemePicker />
+
       <ul className={styles.list}>
         <li className={styles.row} data-testid="settings-row-engine">
           <div className={styles.rowText}>
             <h2 className={styles.rowTitle}>Engine</h2>
             <p className={styles.rowDescription}>
               Default engine configuration used by Live Analysis (and, later, by game analysis and
-              tactical verification).
+              tactical verification). Analysis stops at the depth or the search time, whichever is
+              reached first.
             </p>
           </div>
-          <div className={styles.engineDefaults}>
-            {isReady && defaults ? (
-              <EngineConfigForm
-                settings={defaults}
-                capabilities={capabilities}
-                onChange={(next) => void save(next)}
-                onApplyProfile={(profile) =>
-                  void save(settingsWithProfile(defaults, profile, capabilities))
-                }
-              />
-            ) : (
-              <p className={styles.engineLoading}>Loading engine defaults…</p>
-            )}
-          </div>
+          {isReady && defaults ? (
+            <EngineDefaults
+              settings={defaults}
+              capabilities={{
+                threads: Math.max(1, capabilities.threads),
+                hashCapMb: capabilities.hashCapMb,
+              }}
+              onProfile={(profile) =>
+                void save(settingsWithProfile(defaults, profile, capabilities))
+              }
+              onSearchSeconds={(v) =>
+                void save({ ...defaults, searchSeconds: clampSearchSeconds(v) })
+              }
+              onDepth={(v) => void save({ ...defaults, depth: clampDepth(v) })}
+              onLines={(v) => void save({ ...defaults, lines: clampLines(v) })}
+              onArrows={(v) => void save({ ...defaults, arrows: v })}
+              onThreads={(v) =>
+                void save({
+                  ...defaults,
+                  threads: Math.min(capabilities.threads, Math.max(1, v)),
+                })
+              }
+              onMemory={(v) =>
+                void save({
+                  ...defaults,
+                  memoryMb: Math.min(capabilities.hashCapMb, Math.max(1, v)),
+                })
+              }
+            />
+          ) : (
+            <p className={styles.engineLoading}>Loading engine defaults…</p>
+          )}
         </li>
+
+        <li className={styles.row} data-testid="settings-row-board">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Board &amp; pieces</h2>
+            <p className={styles.rowDescription}>
+              Default look of the chessboard: theme, piece set and optional decorations used when a
+              board opens.
+            </p>
+          </div>
+          {appearanceReady && appearance ? (
+            <div className={styles.boardForm}>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Board theme</span>
+                <select
+                  value={appearance.boardTheme}
+                  onChange={(e) =>
+                    void saveAppearance({
+                      ...appearance,
+                      boardTheme: e.target.value as (typeof BOARD_THEMES)[number],
+                    })
+                  }
+                  data-testid="setting-default-board-theme"
+                >
+                  {BOARD_THEMES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Piece set</span>
+                <select
+                  value={appearance.pieceSet}
+                  onChange={(e) =>
+                    void saveAppearance({
+                      ...appearance,
+                      pieceSet: e.target.value as (typeof PIECE_SETS)[number],
+                    })
+                  }
+                  data-testid="setting-default-piece-set"
+                >
+                  {PIECE_SETS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.check}>
+                <input
+                  type="checkbox"
+                  checked={appearance.coordinates}
+                  onChange={(e) =>
+                    void saveAppearance({ ...appearance, coordinates: e.target.checked })
+                  }
+                  data-testid="setting-default-coordinates"
+                />
+                <span>Show coordinates</span>
+              </label>
+              <label className={styles.check}>
+                <input
+                  type="checkbox"
+                  checked={appearance.animation}
+                  onChange={(e) =>
+                    void saveAppearance({ ...appearance, animation: e.target.checked })
+                  }
+                  data-testid="setting-default-animation"
+                />
+                <span>Piece animations</span>
+              </label>
+            </div>
+          ) : (
+            <p className={styles.engineLoading}>Loading board defaults…</p>
+          )}
+        </li>
+
         {SETTINGS_PLACEHOLDERS.map((setting) => (
           <li
             key={setting.title}
@@ -71,6 +188,118 @@ export function SettingsPage(): React.JSX.Element {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+interface EngineDefaultsProps {
+  settings: ReturnType<typeof useEngineDefaults>['defaults'] & {};
+  capabilities: { threads: number; hashCapMb: number };
+  onProfile: (profile: AnalysisProfile) => void;
+  onSearchSeconds: (v: number) => void;
+  onDepth: (v: number) => void;
+  onLines: (v: number) => void;
+  onArrows: (v: EngineArrowMode) => void;
+  onThreads: (v: number) => void;
+  onMemory: (v: number) => void;
+}
+
+function EngineDefaults({
+  settings,
+  capabilities,
+  onProfile,
+  onSearchSeconds,
+  onDepth,
+  onLines,
+  onArrows,
+  onThreads,
+  onMemory,
+}: EngineDefaultsProps): React.JSX.Element {
+  return (
+    <div className={styles.engineDefaults}>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Profile</span>
+        <select
+          value={settings.profile}
+          onChange={(e) => onProfile(e.target.value as AnalysisProfile)}
+          data-testid="setting-default-profile"
+        >
+          {ANALYSIS_PROFILE_ORDER.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Search time (seconds)</span>
+        <input
+          type="number"
+          min={LIVE_SEARCH_SECONDS_MIN}
+          value={settings.searchSeconds}
+          onChange={(e) => onSearchSeconds(Number(e.target.value) || 1)}
+          data-testid="setting-default-search-seconds"
+        />
+      </label>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Depth</span>
+        <input
+          type="number"
+          min={LIVE_DEPTH_MIN}
+          max={LIVE_DEPTH_MAX}
+          value={settings.depth}
+          onChange={(e) => onDepth(Number(e.target.value) || 1)}
+          data-testid="setting-default-depth"
+        />
+      </label>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Lines</span>
+        <input
+          type="number"
+          min={LIVE_LINES_MIN}
+          max={LIVE_LINES_MAX}
+          value={settings.lines}
+          onChange={(e) => onLines(Number(e.target.value) || 1)}
+          data-testid="setting-default-lines"
+        />
+      </label>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Threads</span>
+        <input
+          type="number"
+          min={1}
+          max={capabilities.threads}
+          value={settings.threads}
+          disabled={capabilities.threads <= 1}
+          onChange={(e) => onThreads(Number(e.target.value) || 1)}
+          data-testid="setting-default-threads"
+        />
+      </label>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Memory (MB)</span>
+        <input
+          type="number"
+          min={1}
+          max={capabilities.hashCapMb}
+          value={settings.memoryMb}
+          onChange={(e) => onMemory(Number(e.target.value) || 1)}
+          data-testid="setting-default-memory"
+        />
+      </label>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Arrows</span>
+        <select
+          value={settings.arrows}
+          onChange={(e) => onArrows(e.target.value as EngineArrowMode)}
+          data-testid="setting-default-arrows"
+        >
+          {ARROW_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {mode === 'first' ? 'First line' : 'All lines'}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }

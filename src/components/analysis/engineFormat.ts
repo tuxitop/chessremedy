@@ -8,6 +8,7 @@
 
 import { uciPvToSan } from '@/domain/chess';
 import type { EngineEvaluation, EngineLine } from '@/infrastructure/engine/types';
+import { evaluationFromBottom, type PlayerColor } from './evaluation';
 
 /** `+0.72`, `-1.34`, `M3`, `-M5` — mate is never rendered as centipawns. */
 export function formatEvaluation(evaluation: EngineEvaluation): string {
@@ -17,6 +18,18 @@ export function formatEvaluation(evaluation: EngineEvaluation): string {
   const cp = evaluation.cp;
   const sign = cp > 0 ? '+' : cp < 0 ? '-' : '';
   return `${sign}${(Math.abs(cp) / 100).toFixed(2)}`;
+}
+
+/** Side to move implied by a FEN. */
+export function sideToMoveOf(fen: string): PlayerColor {
+  const token = fen.split(/\s+/)[1];
+  return token === 'b' ? 'black' : 'white';
+}
+
+/** Format an evaluation (side-to-move perspective) from White's viewpoint. */
+export function formatWhiteEvaluation(evaluation: EngineEvaluation, fen: string): string {
+  const asWhite = evaluationFromBottom(evaluation, 'white', sideToMoveOf(fen));
+  return formatEvaluation(asWhite);
 }
 
 /** `1234` → `1.2k`, `1400000` → `1.4M`. */

@@ -220,9 +220,14 @@ export interface MoveListProps {
   path: Path;
   /** Fired when the user clicks/seeks a move. */
   onSeek?: (path: Path) => void;
+  /**
+   * Per-ply evaluation text (`ply.id → e.g. "+0.30"`), shown greyed on the
+   * right of the move's column once that position has an engine evaluation.
+   */
+  plyEvals?: ReadonlyMap<number, string>;
 }
 
-export function MoveList({ tree, path, onSeek }: MoveListProps): React.JSX.Element {
+export function MoveList({ tree, path, onSeek, plyEvals }: MoveListProps): React.JSX.Element {
   const model = useMemo(() => buildMoveListModel(tree), [tree]);
   const listRef = useRef<HTMLDivElement | null>(null);
   const activeId = path.length > 0 ? path[path.length - 1]!.id : null;
@@ -318,36 +323,43 @@ export function MoveList({ tree, path, onSeek }: MoveListProps): React.JSX.Eleme
         }
         const isActive = part.ply.id === activeId;
         const color = part.ply.nags.length > 0 ? nagMeta(part.ply.nags[0]!)?.color : undefined;
+        const plyEval = plyEvals?.get(part.ply.id);
         return (
-          <button
-            type="button"
-            key={`${rowKey}-m-${part.ply.id}`}
-            className={`${styles.move} ${isActive ? styles.moveActive : ''}`}
-            style={color ? { color } : undefined}
-            onClick={() => onSeek?.(part.path)}
-            data-token-index={indexRef.n++}
-            data-testid="move-list-move"
-            data-san={part.ply.san}
-            data-ply-id={part.ply.id}
-            aria-current={isActive ? 'step' : undefined}
-            aria-selected={isActive}
-            role="treeitem"
-          >
-            {part.ply.san}
-            {part.ply.nags.map((nag) => {
-              const meta = nagMeta(nag);
-              return meta ? (
-                <span
-                  className={styles.nag}
-                  key={`${rowKey}-nag-${part.ply.id}-${nag}`}
-                  data-testid="nag-glyph"
-                  data-nag={meta.nag}
-                >
-                  {meta.glyph}
-                </span>
-              ) : null;
-            })}
-          </button>
+          <Fragment key={`${rowKey}-m-${part.ply.id}`}>
+            <button
+              type="button"
+              className={`${styles.move} ${isActive ? styles.moveActive : ''}`}
+              style={color ? { color } : undefined}
+              onClick={() => onSeek?.(part.path)}
+              data-token-index={indexRef.n++}
+              data-testid="move-list-move"
+              data-san={part.ply.san}
+              data-ply-id={part.ply.id}
+              aria-current={isActive ? 'step' : undefined}
+              aria-selected={isActive}
+              role="treeitem"
+            >
+              {part.ply.san}
+              {part.ply.nags.map((nag) => {
+                const meta = nagMeta(nag);
+                return meta ? (
+                  <span
+                    className={styles.nag}
+                    key={`${rowKey}-nag-${part.ply.id}-${nag}`}
+                    data-testid="nag-glyph"
+                    data-nag={meta.nag}
+                  >
+                    {meta.glyph}
+                  </span>
+                ) : null;
+              })}
+            </button>
+            {plyEval !== undefined && (
+              <span className={styles.plyEval} data-testid="ply-eval" data-ply-id={part.ply.id}>
+                {plyEval}
+              </span>
+            )}
+          </Fragment>
         );
       })}
     </>

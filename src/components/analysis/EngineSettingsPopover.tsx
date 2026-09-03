@@ -87,8 +87,16 @@ export function EngineSettingsPopover({
         aria-haspopup="dialog"
         aria-controls={triggerId}
         data-testid="engine-settings-gear"
+        title="Engine settings"
       >
-        ⚙
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
+          <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+            <path d="M3 6.5h14" />
+            <circle cx="7.5" cy="6.5" r="2" fill="var(--color-surface, white)" />
+            <path d="M3 13.5h14" />
+            <circle cx="13" cy="13.5" r="2" fill="var(--color-surface, white)" />
+          </g>
+        </svg>
       </button>
       {open && (
         <div

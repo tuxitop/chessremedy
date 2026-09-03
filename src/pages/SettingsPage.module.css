@@ -57,12 +57,51 @@
   font-weight: 600;
 }
 
-.engineDefaults {
+.engineDefaults,
+.boardForm {
   flex-shrink: 0;
-  width: 260px;
+  width: min(420px, 100%);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3) var(--space-4);
+}
+
+.rowField {
   display: flex;
   flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.rowFieldLabel {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.rowField select,
+.rowField input {
+  font-family: inherit;
+  font-size: var(--font-size-md);
+  padding: var(--space-2) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.check {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+.check input {
+  margin: 0;
 }
 
 .engineLoading {

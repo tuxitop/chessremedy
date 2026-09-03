@@ -24,25 +24,3 @@
     rgba(169, 0, 0, 0) 90%
   );
 }
-
-.board-brown cg-board square.selected {
-  background-color: rgba(20, 85, 30, 0.5);
-}
-
-.board-brown cg-board square.move-dest {
-  background: radial-gradient(
-    ellipse at center,
-    rgba(20, 85, 30, 0.2) 0%,
-    rgba(20, 85, 30, 0.2) 25%,
-    rgba(20, 85, 30, 0) 60%
-  );
-}
-
-.board-brown cg-board square.premove-dest {
-  background: radial-gradient(
-    ellipse at center,
-    rgba(20, 30, 85, 0.2) 0%,
-    rgba(20, 30, 85, 0.2) 25%,
-    rgba(20, 30, 85, 0) 60%
-  );
-}

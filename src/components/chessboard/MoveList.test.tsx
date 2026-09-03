@@ -97,4 +97,24 @@ describe('MoveList', () => {
     render(<MoveList tree={built.tree} path={[]} />);
     expect(screen.getByTestId('move-list-empty')).toBeInTheDocument();
   });
+
+  it('renders greyed per-ply evaluations at the right of their column', () => {
+    const tree = treeOf('1. e4 e5');
+    const white = tree.rootChildren[0]!;
+    const black = white.children[0]!;
+    render(
+      <MoveList
+        tree={tree}
+        path={[]}
+        plyEvals={
+          new Map([
+            [white.id, '+0.30'],
+            [black.id, '+0.40'],
+          ])
+        }
+      />,
+    );
+    const evals = screen.getAllByTestId('ply-eval').map((n) => n.textContent);
+    expect(evals).toEqual(['+0.30', '+0.40']);
+  });
 });

@@ -73,6 +73,16 @@
   font-weight: 700;
 }
 
+/* Per-ply engine evaluation, greyed, pushed to the right of the move column. */
+.plyEval {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted, #888);
+  user-select: none;
+}
+
 /* A variation takes its own indented line under the move it replaces. */
 .variation {
   display: flex;

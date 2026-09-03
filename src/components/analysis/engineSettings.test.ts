@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EngineCapabilities } from '@/infrastructure/engine/capabilities';
 import {
   analysisOptionsFromSettings,
+  clampDepth,
   clampLines,
   clampSearchSeconds,
   defaultLiveSettings,
@@ -27,17 +28,26 @@ const CAPS_LITE: EngineCapabilities = {
 };
 
 describe('live engine settings', () => {
-  it('clamps line counts and search time', () => {
+  it('clamps line counts, search time and depth', () => {
     expect(clampLines(9)).toBe(5);
     expect(clampLines(-2)).toBe(1);
     expect(clampLines(3)).toBe(3);
     expect(clampSearchSeconds(0.4)).toBe(1);
     expect(clampSearchSeconds(2)).toBe(2);
+    expect(clampDepth(0)).toBe(1);
+    expect(clampDepth(400)).toBe(128);
+    expect(clampDepth(20)).toBe(20);
   });
 
   it('defaults to the normal profile with 3 lines and capability-capped memory', () => {
     const s = defaultLiveSettings(CAPS_DESKTOP);
-    expect(s).toMatchObject({ engine: 'stockfish', profile: 'normal', lines: 3 });
+    expect(s).toMatchObject({
+      engine: 'stockfish',
+      profile: 'normal',
+      lines: 3,
+      depth: 20,
+      arrows: 'first',
+    });
     expect(s.memoryMb).toBe(64);
     expect(s.threads).toBe(1);
     expect(s.searchSeconds).toBe(5);
@@ -45,11 +55,11 @@ describe('live engine settings', () => {
 
   it('derives live presets per profile', () => {
     const fast = liveProfilePreset('fast', CAPS_DESKTOP);
-    expect(fast).toMatchObject({ searchSeconds: 2, lines: 1, threads: 1, memoryMb: 16 });
+    expect(fast).toMatchObject({ depth: 10, searchSeconds: 2, lines: 1, threads: 1, memoryMb: 16 });
     const deep = liveProfilePreset('deep', CAPS_DESKTOP);
-    expect(deep).toMatchObject({ searchSeconds: 15, lines: 3, memoryMb: 256 });
+    expect(deep).toMatchObject({ depth: 30, searchSeconds: 15, lines: 3, memoryMb: 256 });
     const tactical = liveProfilePreset('tactical', CAPS_DESKTOP);
-    expect(tactical).toMatchObject({ searchSeconds: 8, lines: 5, memoryMb: 128 });
+    expect(tactical).toMatchObject({ depth: 22, searchSeconds: 8, lines: 5, memoryMb: 128 });
   });
 
   it('caps memory and threads to the capability on the multi-threaded build', () => {
@@ -61,17 +71,21 @@ describe('live engine settings', () => {
     const base: LiveEngineSettings = {
       engine: 'stockfish',
       profile: 'fast',
+      depth: 10,
       searchSeconds: 2,
       lines: 1,
       threads: 1,
       memoryMb: 16,
+      arrows: 'all',
     };
     const next = settingsWithProfile(base, 'deep', CAPS_DESKTOP);
     expect(next).toMatchObject({
       profile: 'deep',
+      depth: 30,
       searchSeconds: 15,
       lines: 3,
       memoryMb: 256,
+      arrows: 'all',
     });
   });
 
@@ -79,14 +93,16 @@ describe('live engine settings', () => {
     const s: LiveEngineSettings = {
       engine: 'stockfish',
       profile: 'normal',
+      depth: 18,
       searchSeconds: 5,
       lines: 3,
       threads: 1,
       memoryMb: 64,
+      arrows: 'first',
     };
     expect(analysisOptionsFromSettings(s)).toEqual({
       profile: 'normal',
-      maxDepth: 20,
+      maxDepth: 18,
       movetimeMs: 5000,
       multipv: 3,
       hashMb: 64,

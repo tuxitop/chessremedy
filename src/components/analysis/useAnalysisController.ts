@@ -69,10 +69,12 @@ export function useAnalysisController({
       setSettingsState({
         engine: defaults.engine,
         profile: defaults.profile,
+        depth: defaults.depth,
         searchSeconds: defaults.searchSeconds,
         lines: defaults.lines,
         threads: Math.min(defaults.threads, caps.threads),
         memoryMb: Math.min(defaults.memoryMb, caps.hashCapMb),
+        arrows: defaults.arrows,
       });
     }
     // `caps` is stable per session; defaults change only while loading.

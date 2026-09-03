@@ -3,8 +3,14 @@ import type { EngineCapabilities } from '@/infrastructure/engine/capabilities';
 import type { AnalysisProfile } from '@/domain/chess';
 import { ANALYSIS_PROFILE_ORDER } from '@/infrastructure/engine/engineProfiles';
 import {
+  ARROW_MODES,
   AVAILABLE_ENGINES,
+  LIVE_DEPTH_MAX,
+  LIVE_DEPTH_MIN,
   LIVE_LINES_MAX,
+  LIVE_LINES_MIN,
+  LIVE_SEARCH_SECONDS_MIN,
+  clampDepth,
   clampLines,
   clampSearchSeconds,
 } from './engineSettings';
@@ -16,6 +22,16 @@ export interface EngineConfigFormProps {
   readonly capabilities: EngineCapabilities;
   readonly onChange: (next: LiveEngineSettings) => void;
   readonly onApplyProfile: (profile: AnalysisProfile) => void;
+}
+
+export function HelpIcon({ text }: { readonly text: string }): React.JSX.Element {
+  return (
+    <span className={styles.helpWrap} aria-label={text} title={text}>
+      <span className={styles.helpIcon} aria-hidden="true">
+        ?
+      </span>
+    </span>
+  );
 }
 
 /** Field group shared by the engine-settings popover and the Settings page. */
@@ -34,9 +50,12 @@ export function EngineConfigForm({
   };
 
   return (
-    <>
+    <div className={styles.grid}>
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>Engine</span>
+        <span className={styles.fieldLabel}>
+          Engine
+          <HelpIcon text="The chess engine used for live analysis." />
+        </span>
         <select
           value={settings.engine}
           disabled={singleEngine}
@@ -49,11 +68,13 @@ export function EngineConfigForm({
             </option>
           ))}
         </select>
-        {singleEngine && <span className={styles.hint}>Only one engine available.</span>}
       </label>
 
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>Profile</span>
+        <span className={styles.fieldLabel}>
+          Profile
+          <HelpIcon text="A preset that auto-configures depth, time, lines, threads and memory." />
+        </span>
         <select
           value={settings.profile}
           onChange={(e) => onApplyProfile(e.target.value as AnalysisProfile)}
@@ -65,34 +86,91 @@ export function EngineConfigForm({
             </option>
           ))}
         </select>
-        <span className={styles.hint}>Profile auto-configures the settings below.</span>
       </label>
 
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>Search time (seconds)</span>
-        <input
-          type="number"
-          min={1}
-          value={settings.searchSeconds}
-          onChange={(e) => update('searchSeconds', clampSearchSeconds(Number(e.target.value) || 1))}
-          data-testid="setting-search-seconds"
-        />
+        <span className={styles.fieldLabel}>
+          Depth
+          <HelpIcon text="Maximum search depth. Analysis stops at depth or time, whichever comes first." />
+        </span>
+        <div className={styles.rangeRow}>
+          <input
+            type="range"
+            min={LIVE_DEPTH_MIN}
+            max={LIVE_DEPTH_MAX}
+            value={settings.depth}
+            onChange={(e) => update('depth', clampDepth(Number(e.target.value)))}
+            data-testid="setting-depth"
+          />
+          <output className={styles.rangeValue} data-testid="setting-depth-value">
+            {settings.depth}
+          </output>
+        </div>
       </label>
 
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>Number of lines</span>
-        <input
-          type="number"
-          min={1}
-          max={LIVE_LINES_MAX}
-          value={settings.lines}
-          onChange={(e) => update('lines', clampLines(Number(e.target.value) || 1))}
-          data-testid="setting-lines"
-        />
+        <span className={styles.fieldLabel}>
+          Search time (s)
+          <HelpIcon text="Maximum time spent per position. Analysis stops at depth or time, whichever comes first." />
+        </span>
+        <div className={styles.rangeRow}>
+          <input
+            type="range"
+            min={LIVE_SEARCH_SECONDS_MIN}
+            max={60}
+            value={Math.min(settings.searchSeconds, 60)}
+            onChange={(e) => update('searchSeconds', clampSearchSeconds(Number(e.target.value)))}
+            data-testid="setting-search-seconds"
+          />
+          <output className={styles.rangeValue} data-testid="setting-search-seconds-value">
+            {settings.searchSeconds}
+          </output>
+        </div>
       </label>
 
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>Threads</span>
+        <span className={styles.fieldLabel}>
+          Lines
+          <HelpIcon text="How many principal variations to display and draw as arrows." />
+        </span>
+        <div className={styles.rangeRow}>
+          <input
+            type="range"
+            min={LIVE_LINES_MIN}
+            max={LIVE_LINES_MAX}
+            value={settings.lines}
+            onChange={(e) => update('lines', clampLines(Number(e.target.value)))}
+            data-testid="setting-lines"
+          />
+          <output className={styles.rangeValue} data-testid="setting-lines-value">
+            {settings.lines}
+          </output>
+        </div>
+      </label>
+
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>
+          Arrows
+          <HelpIcon text="Show only the best move, or an arrow for every displayed line (later lines are greyed)." />
+        </span>
+        <select
+          value={settings.arrows}
+          onChange={(e) => update('arrows', e.target.value as LiveEngineSettings['arrows'])}
+          data-testid="setting-arrows"
+        >
+          {ARROW_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {mode === 'first' ? 'First line' : 'All lines'}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>
+          Threads
+          <HelpIcon text="Search threads. Limited by the engine build and your device." />
+        </span>
         <input
           type="number"
           min={1}
@@ -110,7 +188,10 @@ export function EngineConfigForm({
       </label>
 
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>Memory (MB)</span>
+        <span className={styles.fieldLabel}>
+          Memory (MB)
+          <HelpIcon text="Hash memory used by the engine, capped by your device." />
+        </span>
         <input
           type="number"
           min={1}
@@ -125,6 +206,6 @@ export function EngineConfigForm({
           data-testid="setting-memory"
         />
       </label>
-    </>
+    </div>
   );
 }

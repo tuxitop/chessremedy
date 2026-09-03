@@ -25,23 +25,34 @@
   font-size: 0.9rem;
 }
 
-.fenRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 8px;
+.sourceBar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 24px;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  padding-top: 12px;
 }
 
-.fenLabel {
+.sourceGroup {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.85rem;
-  flex: 1 1 420px;
-  min-width: 320px;
+  min-width: 0;
 }
 
-.fenInput {
+.sourceTitle {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, #666);
+}
+
+.sourceControls {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.sourceInput,
+.sourceTextarea {
   padding: 6px 8px;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
   border-radius: 6px;
@@ -50,9 +61,21 @@
   font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
   font-size: 0.85rem;
   width: 100%;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.fenButton,
+.sourceInput {
+  height: 34px;
+}
+
+.sourceTextarea {
+  resize: vertical;
+  min-height: 64px;
+}
+
+.sourceButton,
 .actionButton {
   padding: 6px 12px;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
@@ -62,9 +85,12 @@
   font-family: inherit;
   font-size: 0.88rem;
   color: inherit;
+  height: 34px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
 }
 
-.fenButton:hover,
+.sourceButton:hover,
 .actionButton:hover {
   background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
 }
@@ -72,6 +98,12 @@
 .fenError {
   color: var(--color-text-error, #c33);
   font-size: 0.8rem;
+}
+
+@media (max-width: 768px) {
+  .sourceBar {
+    grid-template-columns: 1fr;
+  }
 }
 
 .layout {

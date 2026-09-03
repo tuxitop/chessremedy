@@ -4,7 +4,9 @@ import type {
   AnalysisJobEvent,
   AnalysisOptions,
   EngineAnalysisResult,
+  EngineEvaluation,
   EngineJobError,
+  EngineLine,
   EngineProgress,
   EngineServiceStatus,
 } from '@/infrastructure/engine/types';
@@ -33,14 +35,23 @@ export interface LiveAnalysisOptions {
 
 export interface LiveAnalysisState {
   readonly analyzing: boolean;
-  /** The completed result for the *current* FEN, or null. */
+  /**
+   * Lines to display: the completed result for the current FEN, or the
+   * freshest per-rank lines reported as the engine deepens.
+   */
+  readonly lines: readonly EngineLine[];
   readonly result: EngineAnalysisResult | null;
-  readonly progress: EngineProgress | null;
   readonly error: EngineJobError | null;
-  /** Reached depth from progress or the completed result. */
+  /** Reached depth from live progress or the completed result. */
   readonly reachedDepth: number | null;
   /** Current engine identity, e.g. `stockfish 18.0.8 (lite-single)`. */
   readonly engineLabel: string | null;
+  /**
+   * Best (first-line) evaluation recorded for each analysed FEN this session
+   * (white-perspective magnitude removed; keyed by position FEN). Populated
+   * when a result completes, so the move list can show per-ply evaluations.
+   */
+  readonly evalsByFen: Readonly<Record<string, EngineEvaluation>>;
   /** Abort the active analysis (does not re-run). */
   cancel(): void;
 }
@@ -50,12 +61,31 @@ function engineLabelOf(status: EngineServiceStatus): string | null {
   return `${status.engine.engineName} ${status.engine.engineVersion} (${status.engine.engineBuild})`;
 }
 
+/** Keep only progress snapshots that carry a real evaluation + a move list. */
+function usableLine(progress: EngineProgress): boolean {
+  return progress.evaluation !== undefined && (progress.principalVariation?.length ?? 0) > 0;
+}
+
+/** Normalise a progress snapshot into a displayable engine line. */
+function progressToLine(progress: EngineProgress): EngineLine {
+  return {
+    multipv: progress.multipv ?? 1,
+    evaluation: progress.evaluation!,
+    principalVariation: progress.principalVariation ?? [],
+    wdl: progress.wdl ?? null,
+    ...(progress.depth !== undefined ? { depth: progress.depth } : {}),
+    ...(progress.seldepth !== undefined ? { seldepth: progress.seldepth } : {}),
+    ...(progress.nodes !== undefined ? { nodes: progress.nodes } : {}),
+    ...(progress.timeMs !== undefined ? { timeMs: progress.timeMs } : {}),
+  };
+}
+
 /**
  * Orchestrates engine jobs for one board position. Whenever the position, the
  * enabled flag or the options change, the in-flight job is cancelled and a new
  * analysis starts for the current FEN. State is driven purely by job events
- * (no synchronous setState inside effects), and the job for a stale position
- * is unsubscribed before it is cancelled, so late events cannot surface.
+ * (no synchronous setState inside effects). Live progress lines replace the
+ * display as each depth is reached; a completed result supersedes them.
  */
 export function useLiveAnalysis({
   service,
@@ -65,8 +95,9 @@ export function useLiveAnalysis({
 }: LiveAnalysisOptions): LiveAnalysisState {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<EngineAnalysisResult | null>(null);
-  const [progress, setProgress] = useState<EngineProgress | null>(null);
+  const [liveLines, setLiveLines] = useState<readonly EngineLine[]>([]);
   const [error, setError] = useState<EngineJobError | null>(null);
+  const [evalsByFen, setEvalsByFen] = useState<Readonly<Record<string, EngineEvaluation>>>({});
 
   const jobRef = useRef<AnalysisJob | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -98,36 +129,47 @@ export function useLiveAnalysis({
         case 'status':
           if (event.status === 'running') {
             setAnalyzing(true);
-            setProgress(null);
-            setResult(null);
+            setLiveLines([]);
             setError(null);
           } else if (event.status === 'cancelled') {
             setAnalyzing(false);
-            setProgress(null);
             setResult(null);
+            setLiveLines([]);
             setError(null);
           } else if (event.status === 'completed' || event.status === 'failed') {
             setAnalyzing(false);
           }
           break;
         case 'progress':
-          if (job.fen === fen) {
-            setProgress(event.progress);
+          if (job.fen === fen && usableLine(event.progress)) {
+            // Replace the same-rank line so the display advances each depth.
+            setLiveLines((current) => {
+              const rank = event.progress.multipv ?? 1;
+              const rest = current.filter((l) => (l.multipv ?? 1) !== rank);
+              return [...rest, progressToLine(event.progress)].sort(
+                (a, b) => (a.multipv ?? 1) - (b.multipv ?? 1),
+              );
+            });
           }
           break;
         case 'result': {
           const res = event.result;
           if (job.fen === fen) {
             setResult(res);
+            setLiveLines([]);
             setAnalyzing(false);
-            setProgress(null);
+            setEvalsByFen((cur) => {
+              const best = res.lines[0];
+              if (!best) return cur;
+              return { ...cur, [res.position]: best.evaluation };
+            });
           }
           break;
         }
         case 'error':
           setError(event.error);
           setAnalyzing(false);
-          setProgress(null);
+          setLiveLines([]);
           break;
       }
     });
@@ -144,22 +186,21 @@ export function useLiveAnalysis({
     jobRef.current?.cancel();
   }, []);
 
-  // Only a result matching the currently displayed position is ever shown.
+  // Completed results trump live progress for the *current* FEN; otherwise the
+  // freshest per-rank lines are shown.
   const currentResult = fen && result?.position === fen ? result : null;
-  const reachedDepth =
-    (analyzing ? (progress?.depth ?? null) : null) ??
-    (currentResult && currentResult.lines.length > 0
-      ? (currentResult.lines[0]!.depth ?? null)
-      : null) ??
-    null;
+  const lines = currentResult ? currentResult.lines : liveLines;
+
+  const reachedDepth = lines.reduce((max, line) => Math.max(max, line.depth ?? 0), 0) || null;
 
   return {
     analyzing,
+    lines,
     result: currentResult,
-    progress,
     error,
     reachedDepth,
     engineLabel: service ? engineLabelOf(service.getStatus()) : null,
+    evalsByFen,
     cancel,
   };
 }
