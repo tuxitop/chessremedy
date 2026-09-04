@@ -3,9 +3,16 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
+import { analysesRepository } from '@/infrastructure/db/analysis-repository';
+import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { gameFromPgn } from '@/domain/chess/parseGame';
+import { planGameAnalysis } from '@/domain/analysis';
 import { createFakeImportService } from '@/components/games/test-support/fakeImportService';
+import {
+  createFakeAnalysisService,
+  type FakeAnalysisService,
+} from '@/components/games/test-support/fakeAnalysisService';
 import { renderWithProviders } from '@/test/test-utils';
 import { GamesPage } from './GamesPage';
 
@@ -17,7 +24,17 @@ async function seedGames(ids: string[]): Promise<void> {
 
 function renderGames(): void {
   const rig = createFakeImportService();
-  renderWithProviders(<GamesPage service={rig.service} />, { initialEntries: ['/games'] });
+  // Null disables the Feature-008 column without triggering a browser fetch.
+  renderWithProviders(<GamesPage service={rig.service} analysisService={null} />, {
+    initialEntries: ['/games'],
+  });
+}
+
+function renderWithAnalysis(fake: FakeAnalysisService): void {
+  const rig = createFakeImportService();
+  renderWithProviders(<GamesPage service={rig.service} analysisService={fake.service} />, {
+    initialEntries: ['/games'],
+  });
 }
 
 describe('GamesPage (Game Library)', () => {
@@ -140,5 +157,64 @@ describe('GamesPage (Game Library)', () => {
     await waitFor(() =>
       expect(screen.queryByTestId('library-selection-bar')).not.toBeInTheDocument(),
     );
+  });
+});
+
+describe('GamesPage analysis workflow (Feature 008)', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.positionAnalysisCache.clear();
+  });
+
+  it('analyzes a selected game and exposes Review once completed', async () => {
+    const bullet = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(bullet);
+    const fake = createFakeAnalysisService();
+    renderWithAnalysis(fake);
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(1));
+    expect(screen.getByTestId(`game-analysis-${bullet.id}`)).toHaveAttribute(
+      'data-status',
+      'unanalyzed',
+    );
+
+    await user.click(screen.getByTestId(`game-select-${bullet.id}`));
+    await user.click(screen.getByTestId('library-analyze'));
+
+    await waitFor(() => expect(screen.getByTestId(`game-review-${bullet.id}`)).toBeInTheDocument());
+    expect(await analysesRepository.countForGame(bullet.id)).toBe(4);
+  });
+
+  it('surfaces a failed analysis and retries it to completion', async () => {
+    const game = fixtureGame('cc-blitz-clean');
+    await gamesRepository.saveGame(game);
+    const plan = planGameAnalysis(game);
+    if (!plan.ok) throw new Error(plan.message);
+    const failingFen = plan.plan.analyzeFens[0]!;
+
+    const fake = createFakeAnalysisService(new Map([[failingFen, 'Engine crashed']]));
+    renderWithAnalysis(fake);
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(1));
+    await user.click(screen.getByTestId(`game-select-${game.id}`));
+    await user.click(screen.getByTestId('library-analyze'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'failed',
+      ),
+    );
+    expect(await analysisJobsRepository.listByGame(game.id)).toHaveLength(1);
+
+    // Retry after the engine recovers completes the same job identity.
+    fake.engine.clearFailures();
+    screen.getByTestId(`game-retry-${game.id}`);
+    await user.click(screen.getByTestId(`game-retry-${game.id}`));
+    await waitFor(() => expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument());
   });
 });

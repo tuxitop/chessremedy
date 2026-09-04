@@ -117,4 +117,23 @@ describe('MoveList', () => {
     const evals = screen.getAllByTestId('ply-eval').map((n) => n.textContent);
     expect(evals).toEqual(['+0.30', '+0.40']);
   });
+
+  it('renders classification glyphs from nagOverrides instead of the tree NAGs', () => {
+    const tree = treeOf('1. e4 e5 2. g4 Qh4#');
+    const e4 = tree.rootChildren[0]!;
+    const e5 = e4.children[0]!;
+    const g4 = e5.children[0]!;
+    const overrides = new Map<number, readonly number[]>([
+      [e4.id, [1]], // good → !
+      [g4.id, [4]], // blunder → ??
+    ]);
+    render(<MoveList tree={tree} path={[]} nagOverrides={overrides} />);
+    const glyphs = screen
+      .getAllByTestId('nag-glyph')
+      .map((g) => ({ nag: g.getAttribute('data-nag'), text: g.textContent }));
+    expect(glyphs).toEqual([
+      { nag: '1', text: '!' },
+      { nag: '4', text: '??' },
+    ]);
+  });
 });

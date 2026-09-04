@@ -23,6 +23,12 @@ const LiveAnalysisPage = lazy(() =>
   import('@/pages/LiveAnalysisPage').then((m) => ({ default: m.LiveAnalysisPage })),
 );
 
+// Game Review (Feature 008) mounts the chessboard; keep it out of the initial
+// bundle alongside the other board-heavy pages.
+const GameReviewPage = lazy(() =>
+  import('@/pages/GameReviewPage').then((m) => ({ default: m.GameReviewPage })),
+);
+
 // react-router-dom@7 enables v7 future flags by default; no `future` option
 // is needed (and the option is no longer accepted in v7).
 export const router = createBrowserRouter([
@@ -32,6 +38,14 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'games', element: <GamesPage /> },
+      {
+        path: 'games/:id/review',
+        element: (
+          <Suspense fallback={null}>
+            <GameReviewPage />
+          </Suspense>
+        ),
+      },
       { path: 'analysis', element: <AnalysisPage /> },
       {
         path: 'analysis/live',

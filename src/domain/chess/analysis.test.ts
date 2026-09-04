@@ -1,34 +1,54 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANALYSIS_JOB_STATES,
   ANALYSIS_PROFILES,
-  ANALYSIS_STATES,
+  ANALYSIS_VERSION,
   GAME_PHASES,
-  type Analysis,
-  type AnalysisProfile,
+  MOVE_CLASSIFICATIONS,
+  type EngineMetadata,
   type MoveAnalysis,
 } from './analysis';
 
+const ENGINE: EngineMetadata = {
+  engineName: 'stockfish',
+  engineVersion: '18.0.8',
+  engineBuild: 'stockfish-18-lite-single',
+  profile: 'normal',
+};
+
 function sampleMoveAnalysis(overrides: Partial<MoveAnalysis> = {}): MoveAnalysis {
   return {
-    id: 'ma-1',
+    analysisId: 'lichess:abc|a1|c1|p1|stockfish@18.0.8@stockfish-18-lite-single@normal',
     gameId: 'lichess:abc',
     ply: 0,
-    fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    moveNumber: 1,
+    side: 'white',
     playedMove: { san: 'e4', uci: 'e2e4' },
+    positionFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    evalBefore: { cp: 21, mate: null },
+    evalAfter: { cp: -18, mate: null },
+    wdlBefore: { w: 520, d: 460, l: 20 },
+    wdlAfter: { w: 480, d: 500, l: 20 },
     bestMove: { san: 'e4', uci: 'e2e4' },
-    evalCp: 20,
-    evalMate: null,
-    wdl: { w: 400, d: 560, l: 40 },
-    principalVariation: ['e2e4', 'e7e5'],
+    bestPv: ['e2e4', 'e7e5'],
+    multipvLines: [
+      {
+        multipv: 1,
+        uci: ['e2e4', 'e7e5'],
+        evaluation: { cp: 21, mate: null },
+        wdl: { w: 520, d: 460, l: 20 },
+      },
+    ],
     legalMovesCount: 20,
-    phase: 'opening',
-    engine: {
-      engineName: 'stockfish',
-      engineVersion: '18.0.8',
-      engineBuild: 'stockfish-18-lite-single',
-      profile: 'normal',
-    },
-    analysisVersion: 1,
+    inBook: false,
+    classification: 'best',
+    classificationVersion: 1,
+    gamePhase: 'opening',
+    gamePhaseVersion: 1,
+    missedTactic: false,
+    detectionVersion: null,
+    engine: ENGINE,
+    analysisVersion: ANALYSIS_VERSION,
     analyzedAt: 1_700_000_000_000,
     ...overrides,
   };
@@ -37,43 +57,53 @@ function sampleMoveAnalysis(overrides: Partial<MoveAnalysis> = {}): MoveAnalysis
 describe('analysis model', () => {
   it('fixes the literal sets', () => {
     expect(GAME_PHASES).toEqual(['opening', 'middlegame', 'endgame']);
-    expect(ANALYSIS_STATES).toEqual(['pending', 'running', 'completed', 'failed', 'cancelled']);
+    expect(ANALYSIS_JOB_STATES).toEqual([
+      'queued',
+      'inProgress',
+      'completed',
+      'cancelled',
+      'failed',
+    ]);
     expect(ANALYSIS_PROFILES).toEqual(['fast', 'normal', 'tactical', 'deep']);
+    expect(MOVE_CLASSIFICATIONS).toEqual(['best', 'good', 'inaccuracy', 'mistake', 'blunder']);
+    expect(ANALYSIS_VERSION).toBe(1);
   });
 
-  it('constructs a completed analysis with populated WDL', () => {
-    const analysis: Analysis = {
-      id: 'a-1',
-      gameId: 'lichess:abc',
-      state: 'completed',
-      moves: [sampleMoveAnalysis()],
-      analysisVersion: 1,
-      createdAt: 1,
-      updatedAt: 2,
-    };
-    expect(analysis.moves[0]!.wdl).toEqual({ w: 400, d: 560, l: 40 });
-    expect(analysis.moves[0]!.evalCp).toBe(20);
+  it('constructs a completed move record with WDL and classification', () => {
+    const record = sampleMoveAnalysis();
+    expect(record.wdlBefore).toEqual({ w: 520, d: 460, l: 20 });
+    expect(record.evalBefore.cp).toBe(21);
+    expect(record.classification).toBe('best');
   });
 
-  it('supports a fast-profile move with null WDL and no engine yet', () => {
-    const fast: MoveAnalysis = sampleMoveAnalysis({
-      wdl: null,
-      evalCp: null,
-      evalMate: null,
-      analyzedAt: null,
-      legalMovesCount: null,
-      engine: null,
-      playedMove: null,
+  it('reserves the missed-tactic contract for Feature 010', () => {
+    const record: MoveAnalysis = sampleMoveAnalysis({
+      missedTactic: true,
+      detectionVersion: 3,
     });
-    expect(fast.wdl).toBeNull();
-    expect(fast.playedMove).toBeNull();
+    expect(record.missedTactic).toBe(true);
+    expect(record.detectionVersion).toBe(3);
+    // Feature 008 never computes it — a fresh record defaults false/null.
+    const fresh = sampleMoveAnalysis();
+    expect(fresh.missedTactic).toBe(false);
+    expect(fresh.detectionVersion).toBeNull();
   });
 
-  it('keeps mate and cp as independent nullable fields (runtime convention)', () => {
-    const mate: MoveAnalysis = sampleMoveAnalysis({ evalCp: null, evalMate: 3, wdl: null });
-    expect(mate.evalMate).toBe(3);
-    expect(mate.evalCp).toBeNull();
-    const profile: AnalysisProfile = mate.engine?.profile ?? 'fast';
-    expect(ANALYSIS_PROFILES).toContain(profile);
+  it('supports the fast profile with null WDL and mate-only evaluations', () => {
+    const fast: MoveAnalysis = sampleMoveAnalysis({
+      wdlBefore: null,
+      wdlAfter: null,
+      evalBefore: { cp: null, mate: null },
+      engine: { ...ENGINE, profile: 'fast' },
+    });
+    expect(fast.wdlBefore).toBeNull();
+    expect(fast.wdlAfter).toBeNull();
+
+    const mate: MoveAnalysis = sampleMoveAnalysis({
+      evalAfter: { cp: null, mate: -2 },
+    });
+    expect(mate.evalAfter.mate).toBe(-2);
+    expect(mate.evalAfter.cp).toBeNull();
+    expect(ANALYSIS_PROFILES).toContain(mate.engine.profile);
   });
 });

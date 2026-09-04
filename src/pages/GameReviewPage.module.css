@@ -1,0 +1,165 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.backLink {
+  display: inline-block;
+  color: var(--color-accent, #1f6feb);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-1);
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.heading {
+  font-size: var(--font-size-xl, 1.5rem);
+  font-weight: 700;
+  margin: 0;
+}
+
+.subtitle {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-md);
+  margin: var(--space-1) 0 0;
+}
+
+.obsolete {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-fg);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 24rem);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.boardColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.gameId {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  word-break: break-all;
+}
+
+.sidePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.summary {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-3);
+}
+
+.summaryTitle {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  margin: 0 0 var(--space-2);
+}
+
+.summarySide {
+  padding: var(--space-2) 0;
+}
+
+.summarySide + .summarySide {
+  border-top: 1px solid var(--color-border);
+}
+
+.sideLabel {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  margin: 0 0 var(--space-1);
+  color: var(--color-fg);
+}
+
+.counts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, auto);
+  gap: var(--space-2);
+  justify-content: start;
+}
+
+.countRow {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.countName {
+  color: var(--color-fg-muted);
+}
+
+.countValue {
+  font-weight: 700;
+}
+
+.missed {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-danger, #c4261c);
+  font-size: var(--font-size-sm);
+}
+
+.statePanel {
+  max-width: 34rem;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.stateTitle {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  margin: 0;
+}
+
+.stateDescription {
+  color: var(--color-fg-muted);
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

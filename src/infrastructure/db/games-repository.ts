@@ -212,16 +212,31 @@ export class DexieGamesRepository implements GamesRepository {
   }
 
   async deleteGame(id: GameId): Promise<void> {
-    await this.database.games.delete(id);
+    await this.deleteGames([id]);
   }
 
+  /**
+   * Batch delete inside one transaction (Game Library). Game-scoped derived
+   * rows follow their source game (ARCHITECTURE.md §7): Feature-008 analysis
+   * records and analysis jobs are removed here. The independent FEN-keyed
+   * engine cache (ADR-018) is deliberately NOT touched.
+   */
   async deleteGames(ids: readonly GameId[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-    await this.database.transaction('rw', this.database.games, async () => {
-      await this.database.games.bulkDelete([...ids]);
-    });
+    const gameIds = [...ids];
+    await this.database.transaction(
+      'rw',
+      this.database.games,
+      this.database.analyses,
+      this.database.analysisJobs,
+      async () => {
+        await this.database.games.bulkDelete(gameIds);
+        await this.database.analyses.where('gameId').anyOf(gameIds).delete();
+        await this.database.analysisJobs.where('gameId').anyOf(gameIds).delete();
+      },
+    );
   }
 
   private async fetchRows(query: GameQuery | undefined): Promise<GameRow[]> {

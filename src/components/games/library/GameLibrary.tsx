@@ -1,5 +1,6 @@
 import type * as React from 'react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { TIME_CONTROL_CATEGORIES } from '@/domain/chess/timeControl';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
@@ -15,6 +16,9 @@ import {
 } from '@/domain/gameLibrary';
 import { dateIsoOf } from '@/domain/gameLibrary/timeframe';
 import { useGameLibrary } from '@/hooks/useGameLibrary';
+import { useLibraryAnalysis, type LibraryAnalysisApi } from '@/hooks/useLibraryAnalysis';
+import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
+import type { GameAnalysisStatus } from '@/domain/analysis';
 import { Button } from '@/components/ui/Button';
 import styles from './GameLibrary.module.css';
 
@@ -34,10 +38,22 @@ const DEFAULT_PAGE_SIZE = 50;
 
 interface GameLibraryProps {
   readonly refreshKey: number;
+  /**
+   * Feature-008 analysis service. When `null` the Analysis column is hidden
+   * and the bulk Analyze action stays disabled (analysis unavailable).
+   */
+  readonly analysisService?: AnalysisServiceLike | null;
 }
 
-export function GameLibrary({ refreshKey }: GameLibraryProps): React.JSX.Element {
+export function GameLibrary({
+  refreshKey,
+  analysisService = null,
+}: GameLibraryProps): React.JSX.Element {
   const library = useGameLibrary(refreshKey);
+  const analysis = useLibraryAnalysis(
+    analysisService ?? null,
+    library.rows.map((row) => row.id),
+  );
   const { filters } = library;
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
@@ -134,6 +150,8 @@ export function GameLibrary({ refreshKey }: GameLibraryProps): React.JSX.Element
                 rows={shownRows}
                 selectedIds={library.selected.ids}
                 onToggle={library.toggleRow}
+                analysis={analysis.enabled ? analysis : null}
+                statuses={analysis.statuses}
               />
               <Pagination
                 totalCount={totalCount}
@@ -150,17 +168,39 @@ export function GameLibrary({ refreshKey }: GameLibraryProps): React.JSX.Element
             </>
           ) : null}
 
+          {analysis?.error ? (
+            <p role="alert" className={styles.error} data-testid="analysis-error">
+              {analysis.error}
+            </p>
+          ) : null}
+
           {selectedCount > 0 ? (
             <div className={styles.selectionBar} data-testid="library-selection-bar">
               <span className={styles.selectionCount}>Selected: {selectedCount}</span>
               <Button
                 variant="secondary"
-                disabled
-                title="Bulk analysis arrives with Feature 008"
+                disabled={!analysis?.enabled || analysis.running || selectedCount === 0}
+                title={
+                  analysis?.enabled ? undefined : 'Analysis is unavailable. Start the engine first.'
+                }
                 data-testid="library-analyze"
+                onClick={() => {
+                  if (analysis) {
+                    analysis.analyze([...library.selected.ids]);
+                  }
+                }}
               >
-                Analyze
+                {analysis?.running ? 'Analyzing…' : 'Analyze'}
               </Button>
+              {analysis?.running ? (
+                <Button
+                  variant="secondary"
+                  data-testid="library-analyze-cancel"
+                  onClick={() => analysis.cancel()}
+                >
+                  Cancel analysis
+                </Button>
+              ) : null}
               <Button
                 variant="secondary"
                 data-testid="library-delete"
@@ -342,14 +382,18 @@ function GameRows({
   rows,
   selectedIds,
   onToggle,
+  analysis,
+  statuses,
 }: {
   rows: readonly LibraryGameRow[];
   selectedIds: ReadonlySet<string>;
   onToggle: (id: string) => void;
+  analysis: LibraryAnalysisApi | null;
+  statuses: Readonly<Record<string, GameAnalysisStatus>>;
 }): React.JSX.Element {
   return (
     <div
-      className={styles.table}
+      className={`${styles.table} ${analysis ? styles.withAnalysis : ''}`}
       role="table"
       aria-label="Imported games"
       data-testid="library-rows"
@@ -365,6 +409,7 @@ function GameRows({
         <span role="columnheader">Platform</span>
         <span role="columnheader">Your side</span>
         <span role="columnheader">Date</span>
+        {analysis ? <span role="columnheader">Analysis</span> : null}
       </div>
       {rows.map((row) => (
         <div
@@ -405,9 +450,77 @@ function GameRows({
           <span role="cell" data-testid="game-date" data-col="Date">
             {formatDate(row.playedAt)}
           </span>
+          {analysis ? (
+            <span
+              role="cell"
+              data-testid={`game-analysis-${row.id}`}
+              data-col="Analysis"
+              data-status={statuses[row.id] ?? 'unanalyzed'}
+            >
+              <AnalysisCell
+                gameId={row.id}
+                status={statuses[row.id] ?? 'unanalyzed'}
+                onRetry={analysis.retry}
+              />
+            </span>
+          ) : null}
         </div>
       ))}
     </div>
+  );
+}
+
+const STATUS_LABELS: Readonly<Record<GameAnalysisStatus, string>> = {
+  unanalyzed: 'Not analyzed',
+  queued: 'Queued',
+  inProgress: 'Analyzing…',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  failed: 'Failed',
+};
+
+function AnalysisCell({
+  gameId,
+  status,
+  onRetry,
+}: {
+  gameId: string;
+  status: GameAnalysisStatus;
+  onRetry: (gameId: string) => void;
+}): React.JSX.Element {
+  if (status === 'completed') {
+    return (
+      <Link
+        className={styles.reviewLink}
+        data-testid={`game-review-${gameId}`}
+        to={`/games/${gameId}/review`}
+      >
+        Review
+      </Link>
+    );
+  }
+  if (status === 'failed' || status === 'cancelled') {
+    return (
+      <span className={styles.statusWrap}>
+        <span className={styles.statusLabel}>{STATUS_LABELS[status]}</span>
+        <Button
+          variant="ghost"
+          className={styles.retryButton!}
+          data-testid={`game-retry-${gameId}`}
+          onClick={() => onRetry(gameId)}
+        >
+          Retry
+        </Button>
+      </span>
+    );
+  }
+  return (
+    <span
+      className={status === 'inProgress' ? styles.analyzing : styles.statusLabel}
+      data-testid={`game-analysis-label-${gameId}`}
+    >
+      {STATUS_LABELS[status]}
+    </span>
   );
 }
 

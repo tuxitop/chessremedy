@@ -133,6 +133,12 @@
   padding: var(--space-2) var(--space-3);
 }
 
+/* Feature-008: an extra Analysis column when the feature is wired. */
+.withAnalysis .header,
+.withAnalysis .row {
+  grid-template-columns: 2.5rem 1.3fr 1.3fr 4.5rem 10rem 6.5rem 5.5rem 7.5rem 9rem;
+}
+
 .header {
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -287,5 +293,44 @@
   .selectionBar {
     position: static;
     flex-wrap: wrap;
+  }
+}
+
+.reviewLink {
+  color: var(--color-accent, #1f6feb);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.reviewLink:hover {
+  text-decoration: underline;
+}
+
+.statusWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.statusLabel {
+  color: var(--color-fg-muted);
+}
+
+.analyzing {
+  color: var(--color-accent, #1f6feb);
+  font-style: italic;
+}
+
+.retryButton {
+  font-size: var(--font-size-sm);
+  min-height: 0;
+  padding: 0 var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .row .statusWrap,
+  .row .reviewLink {
+    justify-content: flex-end;
   }
 }

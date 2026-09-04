@@ -225,9 +225,20 @@ export interface MoveListProps {
    * right of the move's column once that position has an engine evaluation.
    */
   plyEvals?: ReadonlyMap<number, string>;
+  /**
+   * Per-ply NAGs to display instead of the tree's own glyphs (e.g. Feature-008
+   * move-classification glyphs on Game Review). Keyed by `ply.id`.
+   */
+  nagOverrides?: ReadonlyMap<number, readonly number[]>;
 }
 
-export function MoveList({ tree, path, onSeek, plyEvals }: MoveListProps): React.JSX.Element {
+export function MoveList({
+  tree,
+  path,
+  onSeek,
+  plyEvals,
+  nagOverrides,
+}: MoveListProps): React.JSX.Element {
   const model = useMemo(() => buildMoveListModel(tree), [tree]);
   const listRef = useRef<HTMLDivElement | null>(null);
   const activeId = path.length > 0 ? path[path.length - 1]!.id : null;
@@ -322,7 +333,8 @@ export function MoveList({ tree, path, onSeek, plyEvals }: MoveListProps): React
           );
         }
         const isActive = part.ply.id === activeId;
-        const color = part.ply.nags.length > 0 ? nagMeta(part.ply.nags[0]!)?.color : undefined;
+        const effectiveNags = nagOverrides?.get(part.ply.id) ?? part.ply.nags;
+        const color = effectiveNags.length > 0 ? nagMeta(effectiveNags[0]!)?.color : undefined;
         const plyEval = plyEvals?.get(part.ply.id);
         return (
           <Fragment key={`${rowKey}-m-${part.ply.id}`}>
@@ -340,7 +352,7 @@ export function MoveList({ tree, path, onSeek, plyEvals }: MoveListProps): React
               role="treeitem"
             >
               {part.ply.san}
-              {part.ply.nags.map((nag) => {
+              {effectiveNags.map((nag) => {
                 const meta = nagMeta(nag);
                 return meta ? (
                   <span

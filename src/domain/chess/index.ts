@@ -18,14 +18,30 @@ export { uciPvToSan } from './san';
 export type { UciPvToSanResult } from './san';
 export { gameFromPgn } from './parseGame';
 export type { GameParseErrorCode, GameParseResult, ImportContext } from './parseGame';
-export { GAME_PHASES, ANALYSIS_STATES, ANALYSIS_PROFILES } from './analysis';
+export { GAME_PHASES, ANALYSIS_JOB_STATES, ANALYSIS_PROFILES, ANALYSIS_VERSION } from './analysis';
 export type {
-  Analysis,
+  AnalysisJobState,
   AnalysisProfile,
-  AnalysisState,
   EngineMetadata,
+  EvalCpMate,
   GamePhase,
   MoveAnalysis,
+  MoveClassification,
+  MultiPvLine,
+  PlayedMove,
   Wdl,
 } from './analysis';
+export { MOVE_CLASSIFICATIONS } from './analysis';
+export {
+  classifyMove,
+  CLASSIFICATION_VERSION,
+  cpValueOf,
+  isBestMoveTie,
+  winPercentFromCp,
+  WPLOSS_GOOD,
+  WPLOSS_INACCURACY,
+  WPLOSS_MISTAKE,
+} from './classification';
+export type { ClassificationInputs } from './classification';
+export { GAME_PHASE_VERSION, gamePhaseOf } from './gamePhase';
 export * from './fixtures';
