@@ -11,13 +11,12 @@ test.describe('App shell (production build)', () => {
     }
   });
 
-  test('navigating to Games renders the placeholder page', async ({ page }) => {
+  test('navigating to Games renders the import page', async ({ page }) => {
     await page.goto('/');
     await page.getByTestId('nav-games').click();
-    await expect(page.getByTestId('placeholder-panel')).toBeVisible();
-    await expect(page.getByTestId('placeholder-badge')).toContainText(
-      'Coming in Feature 007 — Game Import',
-    );
+    await expect(page.getByTestId('games-page')).toBeVisible();
+    await expect(page.getByTestId('import-panel-chesscom')).toBeVisible();
+    await expect(page.getByTestId('import-panel-lichess')).toBeVisible();
   });
 
   test('theme toggle persists across reloads', async ({ page }) => {
