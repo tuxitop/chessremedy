@@ -8,7 +8,7 @@ Statistics must preserve:
 
 Primary analytical dimensions:
 
-- Chess.com / Lichess
+- Lichess / Chess.com (canonical platform order; see `domain/game-library.md`)
 - bullet / blitz / rapid / classical / correspondence / unknown
 - Opening / Middlegame / Endgame
 

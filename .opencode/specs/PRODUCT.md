@@ -33,8 +33,8 @@ The application should answer three questions:
 
 V1 supports:
 
-- Chess.com
 - Lichess
+- Chess.com
 
 The user can import their games in batches.
 
@@ -51,6 +51,40 @@ Imported games retain:
 - user's color
 
 Duplicate games must not be imported twice.
+
+Platform names are canonical across the product and are always presented
+in this order: **Lichess, Chess.com**.
+
+---
+
+## 3a. Game Library
+
+The Game Library is the central place where the user manages imported
+games:
+
+- browse imported games;
+- search games (players, opponent, external game id);
+- filter games (time frame, time control, player side, platform);
+- inspect game metadata;
+- select individual or multiple games;
+- prepare games for analysis;
+- delete games (with confirmation);
+- support future bulk operations.
+
+Search and filters combine (AND) and their state is preserved in the
+URL, so filtered views can be bookmarked, shared and restored.
+
+The page is the entry point of the analysis workflow
+(`browse → filter/search → select → analyze → results → puzzles → train`).
+Per-game rows expose future-ready actions and insights (live analysis,
+review, puzzles from this game, accuracy, mastered counts) supplied by
+Features 008–014; V1 does not fake analysis functionality.
+
+The library works well from a few to thousands of games, on desktop,
+tablet and mobile (deliberate mobile design, not a shrunk table).
+
+Domain rules live in `specs/domain/game-library.md`; feature behavior in
+Feature 007.
 
 ---
 

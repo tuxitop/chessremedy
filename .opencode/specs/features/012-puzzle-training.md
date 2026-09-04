@@ -76,6 +76,13 @@ analysis metadata (Feature 008 `MoveAnalysis[]`) and the cached engine
 response (Feature 005 / ADR-018). No new analysis is run when the user
 opens the post-solve panel.
 
+## Game Library integration
+
+Solves are recorded against puzzles owned by their source game. Later,
+training activity contributes the **mastered-from-game** count shown in
+Game Library insights (`domain/game-library.md`); aggregate definitions
+come from Feature 013/014, and the Library never computes them.
+
 ## Acceptance Criteria
 
 A user can complete, retry and analyze a puzzle without losing puzzle state.
@@ -103,7 +110,8 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
 - Architecture/decisions: `ARCHITECTURE.md` (post-solve reuse of Feature
   006); `decisions/ADR-031`, `decisions/ADR-023`, `decisions/ADR-018`;
   optional `history/ADR-007/011/021/022` (history only)
-- Domain: `domain/tactical-training.md`, `domain/puzzle-model.md`
+- Domain: `domain/tactical-training.md`, `domain/puzzle-model.md`,
+  `domain/game-library.md`
 - Research: `research/cycle-training.md`
 
 Feature dependencies: Features 006, 008, 011, 013; PRODUCT §10 (hint

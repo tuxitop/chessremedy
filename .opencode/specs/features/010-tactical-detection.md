@@ -28,6 +28,13 @@ defined in:
 - `specs/research/tactical-detection.md`
 - ADR-026 (Tactical Verification Pipeline)
 
+## Game Library integration
+
+Once games are analyzed, this feature contributes a per-game
+`missedTactic` count to the Game Library insights region
+(`domain/game-library.md`). Detection remains owned here; the Library
+only renders the value.
+
 ## Acceptance Criteria
 
 Verified candidates contain:
@@ -49,7 +56,7 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
   `decisions/ADR-025`, `decisions/ADR-012`, `decisions/ADR-018`,
   `decisions/ADR-019`, `decisions/ADR-020`
 - Domain: `domain/tactics.md`, `domain/analysis-model.md`,
-  `domain/puzzle-model.md`
+  `domain/puzzle-model.md`, `domain/game-library.md`
 - Research: `research/tactical-detection.md`,
   `research/move-classification.md`
 

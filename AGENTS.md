@@ -19,7 +19,7 @@ shipping order is:
 | 004 | Local Game Storage                         | `004-local-storage.md`                |
 | 005 | Stockfish                                  | `005-stockfish.md`                    |
 | 006 | Live Analysis Board                        | `006-live-analysis-board.md`          |
-| 007 | Game Import                                | `007-game-import.md`                  |
+| 007 | Game Import & Library                      | `007-game-import.md`                  |
 | 008 | Game Analysis                              | `008-game-analysis.md`                |
 | 009 | Move Classification                        | `009-move-classification.md`          |
 | 010 | Tactical Detection                         | `010-tactical-detection.md`           |

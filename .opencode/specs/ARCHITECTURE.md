@@ -250,6 +250,51 @@ Persistent entities include:
 
 Database schema must be versioned.
 
+### Data ownership & deletion
+
+Derived data is owned by its source game and is removed with it:
+
+```
+Game
+ ├── Analysis          (per game)
+ ├── Puzzle Candidate
+ └── Puzzle(s)
+       └── Puzzle attempts / training-set membership
+```
+
+Deleting a game deletes its game-scoped derived rows (analyses, puzzle
+candidates, puzzles) and transitively puzzle attempts and set
+membership once those tables exist. The **engine analysis cache
+(ADR-018) is exempt**: it is keyed by position FEN (positions are shared
+across games) and is a performance cache, not game-scoped state — it is
+never purged on game deletion. Feature 016 syncs deletions as tombstones
+consistent with this rule; derived per-game insights and
+filter/search/selection state are never synced. The full rules live in
+`specs/domain/game-library.md`.
+
+### Game Library data flow
+
+The Game Library (Feature 007) browses stored games without loading the
+whole table into the UI when it can be avoided:
+
+1. The page owns a single canonical filter/search/selection state
+   (`specs/domain/game-library.md`), serialized to the URL query string.
+2. Coarse equality filters (platform, time control, side) and the local
+   time-zone date window are pushed down to Dexie through the games
+   repository as indexed `GameQuery` predicates (source /
+   normalizedTimeControl / playedAt leading index).
+3. Free-text name search runs as a bounded in-memory pass over the
+   pushed-down summaries; results are windowed for rendering.
+4. Selection is a set of game ids independent of rendered rows; it is
+   cleared whenever filters/search change.
+5. Per-row insights and row actions are capability-registered by later
+   features (008 bulk/review, 011 puzzles-from-game, 014 accuracy) and
+   never force a Library redesign.
+
+Schema stays additive (currently v3). Indexed pagination or
+virtualization is introduced behind these seams when a measured dataset
+demands it — the model does not couple the Library to "render every row".
+
 ---
 
 ## 8. Synchronization

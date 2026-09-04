@@ -53,6 +53,14 @@ The model is defined in `specs/domain/tactical-training.md`.
 - Cycle accuracy/time/hints/retries/completion are derived from attempt
   records.
 
+## Game Library integration
+
+Training sets and attempts reference puzzles, which are owned by their
+source game. When a puzzle is removed because its game was deleted
+(`ARCHITECTURE.md` §7), its attempts and set membership are removed or
+invalidated consistently so per-game and per-set aggregates never count
+orphaned puzzles.
+
 ## Acceptance Criteria
 
 1. A user can create/select a training set, start a cycle and solve its
@@ -78,7 +86,8 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
 
 - Architecture/decisions: `decisions/ADR-031`, `decisions/ADR-025`;
   optional `history/ADR-007/011/021/022` (history only)
-- Domain: `domain/tactical-training.md`, `domain/puzzle-model.md`
+- Domain: `domain/tactical-training.md`, `domain/puzzle-model.md`,
+  `domain/game-library.md`
 - Research: `research/cycle-training.md`; optional
   `research/fsrs-implementation.md` (deferred future scheduler)
 

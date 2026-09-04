@@ -130,6 +130,19 @@ Provide deterministic puzzle fixtures including:
 
 These fixtures must be usable without Stockfish for UI tests.
 
+## Game Library integration
+
+Puzzles retain their source game (provenance above), which makes two
+Game Library surfaces possible and owned here:
+
+- the per-row **"Puzzles from this game"** action and count
+  (`puzzles-per-game`), registered through the Library row-action /
+  insight capability registry (`domain/game-library.md`);
+- deletion ownership: deleting a source game deletes its puzzle
+  candidates and puzzles (and transitively their attempts and
+  training-set membership) per `ARCHITECTURE.md` §7. No orphaned puzzle
+  or candidate may remain.
+
 ## Acceptance Criteria
 
 The system can generate a puzzle containing a multi-move tactical solution.
@@ -152,7 +165,7 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
   `decisions/ADR-026`, `decisions/ADR-012`, `decisions/ADR-018`,
   `decisions/ADR-031`
 - Domain: `domain/puzzle-model.md`, `domain/tactics.md`,
-  `domain/tactical-training.md`
+  `domain/tactical-training.md`, `domain/game-library.md`
 - Research: `research/puzzle-generation.md`,
   `research/tactical-detection.md`
 

@@ -47,8 +47,8 @@ features, ADRs, research, or the whole documentation tree.
 - Optional: ADR-023 + `domain/classification.md` (glyph rendering arrives with Feature 009; not computed here).
 - Dependencies: Features 002, 003, 005.
 
-### Feature 007 — Game Import
-- Required: `ARCHITECTURE.md`; ADRs `decisions/ADR-001`, `decisions/ADR-009`, `decisions/ADR-013`; domain `domain/game-model.md`; research `research/game-import.md`.
+### Feature 007 — Game Import & Library
+- Required: `ARCHITECTURE.md`; ADRs `decisions/ADR-001`, `decisions/ADR-009`, `decisions/ADR-013`, `decisions/ADR-018`; domain `domain/game-model.md`, `domain/game-library.md`; research `research/game-import.md`.
 - Dependencies: Features 001, 003, 004 (persistence + duplicate detection).
 
 ### Feature 008 — Game Analysis
@@ -112,6 +112,7 @@ features, ADRs, research, or the whole documentation tree.
 ## Lookup: domain specs by feature
 
 - `domain/game-model.md` → Features 002/003/004/007/014/015/016
+- `domain/game-library.md` → Features 007/008/011/014/016
 - `domain/analysis-model.md` → Features 005/006/008/009/010/014
 - `domain/classification.md` → Features 006/008/009/014
 - `domain/tactics.md` → Features 010/011

@@ -40,6 +40,11 @@ Filters:
 - time control
 - date range
 
+Filter dimensions and labels follow the canonical model in
+`domain/game-library.md` (Lichess, Chess.com platform order; ADR-013
+time-control categories; local time-zone calendar-day date ranges). The
+Dashboard never introduces a parallel filter model.
+
 ## Acceptance Criteria
 
 Rapid and Blitz are never silently combined.
@@ -63,7 +68,7 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
 - Architecture/decisions: `ARCHITECTURE.md` §6a; `decisions/ADR-010`,
   `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`
 - Domain: `domain/statistics.md`, `domain/tactical-training.md`,
-  `domain/game-model.md`
+  `domain/game-model.md`, `domain/game-library.md`
 - Research: `research/charting-library.md`
 
 Feature dependencies: Feature 014 (sole read-only data source), Feature

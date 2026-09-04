@@ -32,6 +32,11 @@ interval, no stability, and no per-user difficulty. A puzzle may belong
 to zero, one or many `TacticalTrainingSet`s. Membership is tracked by
 the set, not stored on the puzzle.
 
+Puzzles are owned by their source game. Deleting a game removes its
+puzzles and, transitively, their attempts and set membership per the
+ownership rule (`ARCHITECTURE.md` §7, `domain/game-library.md`), so
+training aggregates never reference orphaned puzzles.
+
 ## TacticalTrainingSet
 
 A `TacticalTrainingSet` is a fixed collection of puzzles intended to be

@@ -108,9 +108,11 @@ Platform must remain a separate dimension.
 
 At minimum:
 
-- Chess.com
 - Lichess
+- Chess.com
 - Local/Imported where applicable
+
+(Canonical platform order per `domain/game-library.md`.)
 
 Rating/Elo history must be calculated separately for Chess.com and Lichess.
 
@@ -546,6 +548,18 @@ All deterministic fixtures must produce deterministic statistics.
 
 ---
 
+## Game Library integration
+
+This feature is the single authoritative source for the per-game values
+shown in Game Library **insights** — per-game accuracy, classification
+counts, and puzzles-from-game vs mastered-from-game totals
+(`domain/game-library.md` row view). The Library is a read-only consumer,
+exactly as the Dashboard consumes Feature 014.
+
+Date-range filtering across surfaces (Library, statistics queries,
+dashboard filters) uses the single canonical definition of **local
+time-zone calendar-day boundaries** in `domain/game-library.md`.
+
 ## Acceptance Criteria
 
 1. The application can calculate statistics from analyzed fixture games
@@ -584,7 +598,7 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
   `decisions/ADR-024`, `decisions/ADR-019`, `decisions/ADR-020`
 - Domain: `domain/statistics.md`, `domain/game-model.md`,
   `domain/analysis-model.md`, `domain/classification.md`,
-  `domain/tactical-training.md`
+  `domain/tactical-training.md`, `domain/game-library.md`
 - Research: `research/move-accuracy.md`, `research/move-classification.md`
 
 Feature dependencies: Features 008/009/010 (game data), 012/013

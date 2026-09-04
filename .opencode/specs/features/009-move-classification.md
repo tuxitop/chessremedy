@@ -24,6 +24,14 @@ Use the approved methodology in:
 - `specs/research/move-classification.md`
 - ADR-023 (Move Classification Thresholds)
 
+## Game Library integration
+
+Per-game classification summaries (`best`/`good`/`inaccuracy`/
+`mistake`/`blunder` counts and accuracy) are surfaced in Game Library
+rows as **insights**. They are computed by Feature 008/009 analysis and
+consumed read-only by the Library (`domain/game-library.md` row view);
+the Library never computes or duplicates classification logic.
+
 ## Acceptance Criteria
 
 Classification is deterministic for identical versioned analysis.
@@ -38,7 +46,8 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
 
 - Architecture/decisions: `decisions/ADR-005`, `decisions/ADR-019`,
   `decisions/ADR-023`, `decisions/ADR-026`
-- Domain: `domain/classification.md`, `domain/analysis-model.md`
+- Domain: `domain/classification.md`, `domain/analysis-model.md`,
+  `domain/game-library.md`
 - Research: `research/move-classification.md`,
   `research/move-accuracy.md`
 
