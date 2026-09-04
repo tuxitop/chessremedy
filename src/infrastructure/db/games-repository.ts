@@ -87,10 +87,16 @@ export interface GamesRepository {
   getGame(id: GameId): Promise<Game | undefined>;
   /** Lightweight records for listings/stats; never parses PGN. Ordered per D6. */
   listGameSummaries(query?: GameQuery): Promise<readonly GameSummary[]>;
+  /** Ids only, for the same query (used by Library select-all). */
+  listGameIds(query?: GameQuery): Promise<readonly GameId[]>;
+  /** Total number of stored games (Library header count). */
+  countGames(): Promise<number>;
   /** Cheap duplicate existence check. */
   hasGame(id: GameId): Promise<boolean>;
   /** Idempotent delete; resolves when absent. */
   deleteGame(id: GameId): Promise<void>;
+  /** Batch delete inside one transaction (Game Library; cascade-ready). */
+  deleteGames(ids: readonly GameId[]): Promise<void>;
 }
 
 export class GameCorruptionError extends Error {
@@ -191,6 +197,15 @@ export class DexieGamesRepository implements GamesRepository {
     return [...rows].sort(compareRows).map((row) => summaryOf(row));
   }
 
+  async listGameIds(query?: GameQuery): Promise<readonly GameId[]> {
+    const rows = await this.fetchRows(query);
+    return rows.filter((row) => matchesQuery(row, query)).map((row) => row.id);
+  }
+
+  async countGames(): Promise<number> {
+    return this.database.games.count();
+  }
+
   async hasGame(id: GameId): Promise<boolean> {
     const count = await this.database.games.where(':id').equals(id).count();
     return count > 0;
@@ -200,7 +215,28 @@ export class DexieGamesRepository implements GamesRepository {
     await this.database.games.delete(id);
   }
 
+  async deleteGames(ids: readonly GameId[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    await this.database.transaction('rw', this.database.games, async () => {
+      await this.database.games.bulkDelete([...ids]);
+    });
+  }
+
   private async fetchRows(query: GameQuery | undefined): Promise<GameRow[]> {
+    const after = query?.playedAfter;
+    const before = query?.playedBefore;
+    if (after !== undefined || before !== undefined) {
+      const clause = this.database.games.where('playedAt');
+      if (after !== undefined && before !== undefined) {
+        return clause.between(after, before, false, false).toArray();
+      }
+      if (after !== undefined) {
+        return clause.above(after).toArray();
+      }
+      return clause.below(before!).toArray();
+    }
     if (query?.source) {
       return this.database.games.where('source').equals(query.source).toArray();
     }

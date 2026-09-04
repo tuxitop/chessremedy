@@ -273,6 +273,41 @@ describe('gamesRepository listing & filtering', () => {
   });
 });
 
+describe('gamesRepository batch delete & id listing', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+  });
+
+  it('deletes multiple games inside one transaction and removes them all', async () => {
+    const a = fixtureGame('cc-bullet-blunder');
+    const b = fixtureGame('cc-blitz-clean');
+    const c = fixtureGame('li-rapid-clean');
+    for (const game of [a, b, c]) {
+      await gamesRepository.saveGame(game);
+    }
+    await gamesRepository.deleteGames([a.id, b.id]);
+    expect(await db.games.count()).toBe(1);
+    expect(await gamesRepository.hasGame(c.id)).toBe(true);
+    expect(await gamesRepository.hasGame(a.id)).toBe(false);
+
+    // Deleting an empty set and unknown ids is idempotent.
+    await gamesRepository.deleteGames([]);
+    await gamesRepository.deleteGames(['missing:1', 'missing:2']);
+    expect(await db.games.count()).toBe(1);
+  });
+
+  it('lists only matching ids for a query (Library select-all)', async () => {
+    const bullet = fixtureGame('cc-bullet-blunder');
+    const blitz = fixtureGame('cc-blitz-clean');
+    for (const game of [bullet, blitz]) {
+      await gamesRepository.saveGame(game);
+    }
+    const ids = await gamesRepository.listGameIds({ source: 'chesscom' });
+    expect([...ids].sort()).toEqual([bullet.id, blitz.id].sort());
+    expect(await gamesRepository.listGameIds({ source: 'lichess' })).toEqual([]);
+  });
+});
+
 describe('gamesRepository corruption detection & categories', () => {
   beforeEach(async () => {
     await db.games.clear();

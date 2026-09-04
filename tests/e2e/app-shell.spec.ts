@@ -11,12 +11,12 @@ test.describe('App shell (production build)', () => {
     }
   });
 
-  test('navigating to Games renders the import page', async ({ page }) => {
+  test('navigating to Games renders the Game Library', async ({ page }) => {
     await page.goto('/');
     await page.getByTestId('nav-games').click();
     await expect(page.getByTestId('games-page')).toBeVisible();
-    await expect(page.getByTestId('import-panel-chesscom')).toBeVisible();
-    await expect(page.getByTestId('import-panel-lichess')).toBeVisible();
+    await expect(page.getByTestId('game-library')).toBeVisible();
+    await expect(page.getByTestId('import-toggle')).toBeVisible();
   });
 
   test('theme toggle persists across reloads', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const USERNAME = 'chessremedy';
 
@@ -73,58 +73,68 @@ const monthGames = [
   gameJson(7123456702, BLITZ_PGN, 'eagereddie', USERNAME, '2026-05-28', '300+0'),
 ];
 
-function serveChessCom(route: Route, url: URL): void {
-  const path = url.pathname;
-  const base = `/pub/player/${USERNAME}`;
-  let body = '{}';
-  if (path === base) {
-    body = JSON.stringify({ username: USERNAME, player_id: 1 });
-  } else if (path === `${base}/games/archives`) {
-    body = JSON.stringify({
-      archives: [`https://api.chess.com/pub/player/${USERNAME}/games/2026/05`],
-    });
-  } else if (path === `${base}/games/2026/05`) {
-    body = JSON.stringify({ games: monthGames });
-  }
-  void route.fulfill({ status: 200, contentType: 'application/json', body });
-}
-
 async function enableChessMock(page: Page): Promise<void> {
   await page.route('**/api.chess.com/**', async (route) => {
-    const request = route.request();
-    serveChessCom(route, new URL(request.url()));
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    const base = `/pub/player/${USERNAME}`;
+    let body = '{}';
+    if (path === base) {
+      body = JSON.stringify({ username: USERNAME, player_id: 1 });
+    } else if (path === `${base}/games/archives`) {
+      body = JSON.stringify({
+        archives: [`https://api.chess.com/pub/player/${USERNAME}/games/2026/05`],
+      });
+    } else if (path === `${base}/games/2026/05`) {
+      body = JSON.stringify({ games: monthGames });
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body });
   });
 }
 
-test.describe('Game import (Chess.com, mocked)', () => {
-  test('imports games, filters the list, survives reload, and never runs the engine', async ({
+test.describe('Game Library (Chess.com, mocked)', () => {
+  test('import → browse → filter → search → select → delete, and never runs the engine', async ({
     page,
   }) => {
     await enableChessMock(page);
     await page.goto('/games');
-    await expect(page.getByTestId('imported-games-empty')).toBeVisible();
+    await expect(page.getByTestId('library-empty')).toBeVisible();
 
-    // Import the two May games.
+    // Import two May games through the (collapsible) import section.
+    await page.getByTestId('import-toggle').click();
     await page.getByTestId('import-username-chesscom').fill(USERNAME);
     await page.getByTestId('import-run-chesscom').click();
-    await expect(page.getByTestId('game-row')).toHaveCount(2);
-    await expect(page.getByTestId('import-counter-inserted-chesscom')).toHaveText('new 2');
     await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await expect(page.getByTestId('game-row')).toHaveCount(2);
 
-    // Opponent search narrows the list, Reset restores it.
-    await page.getByTestId('gfilter-opponent').fill('eagereddie');
+    // Filter by platform, time control and side; results narrow (AND).
+    await page.getByTestId('filter-platform').selectOption('chesscom');
+    await expect(page.getByTestId('game-row')).toHaveCount(2);
+    await page.getByTestId('filter-timecontrol').selectOption('bullet');
     await expect(page.getByTestId('game-row')).toHaveCount(1);
-    await page.getByTestId('gfilter-reset').click();
+    await page.getByTestId('filter-side').selectOption('white');
+    await expect(page.getByTestId('game-row')).toHaveCount(1);
+    await expect(page.getByTestId('library-count')).toHaveText('1 of 2 games');
+
+    // Search for the other game's opponent and verify no-match, then clear.
+    await page.getByTestId('library-search').fill('eagereddie');
+    await expect(page.getByTestId('library-no-match')).toBeVisible();
+    await page.getByTestId('filter-clear-all').click();
     await expect(page.getByTestId('game-row')).toHaveCount(2);
 
-    // Persisted across a reload (IndexedDB), list rows re-render.
-    await page.reload();
+    // Search alone finds the blitz game.
+    await page.getByTestId('library-search').fill('eagereddie');
+    await expect(page.getByTestId('game-row')).toHaveCount(1);
+    await page.getByTestId('library-search-clear').click();
     await expect(page.getByTestId('game-row')).toHaveCount(2);
 
-    // A second identical import adds nothing.
-    await page.getByTestId('import-run-chesscom').click();
-    await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
-    await expect(page.getByTestId('game-row')).toHaveCount(2);
+    // Select all (current filtered set = both), then delete with confirmation.
+    await page.getByTestId('library-select-all').click();
+    await expect(page.getByTestId('library-selection-bar')).toContainText('Selected: 2');
+    await page.getByTestId('library-delete').click();
+    await page.getByTestId('delete-confirm').click();
+    await expect(page.getByTestId('library-empty')).toBeVisible();
+    await expect(page.getByTestId('game-row')).toHaveCount(0);
 
     // No Stockfish worker was ever spawned.
     const engineWorkers = page.workers().filter((w) => w.url().includes('stockfish'));
