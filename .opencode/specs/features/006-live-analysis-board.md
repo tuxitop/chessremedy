@@ -14,6 +14,14 @@ This primitive is reused by:
 - **Feature 008** (Game Analysis) — the per-game review page.
 - **Feature 012** (Puzzle Training) — the post-solve puzzle review.
 
+Game Review (Feature 008) and this live board are the **same shared
+analysis-board surface** (ADR-033): the live board is the "live analysis"
+mode; Review adds a "stored review" mode that reads persisted
+`MoveAnalysis` (evaluation bar, per-move evaluations, stored engine
+lines/MultiPV, best-move arrows) without starting the engine. Live results
+never overwrite stored analysis except through an explicit re-analysis
+run.
+
 The primitive must be testable in isolation with deterministic fixtures
 (no network, no IndexedDB, no live Stockfish binary required for
 component tests).

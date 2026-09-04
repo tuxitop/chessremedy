@@ -31,9 +31,18 @@ One record per analyzed ply of a game. Each record:
 - `wdlBefore` / `wdlAfter` (per-mille, nullable — `fast` profile has no
   WDL, ADR-019)
 - `bestMove` and `bestPv` (principal variation after the move)
+- MultiPV lines when required by the selected profile; each retained line
+  carries its evaluation, WDL and the engine search **depth** reached
+  (or equivalent quality metadata) when the engine reported it
 - `legalMovesCount`
 - `inBook` (book/opening move tagging)
-- MultiPV lines when required by the selected profile
+- Optional per-move clock data (`clockAfterMs`) when the imported PGN
+  carried `[%clk …]` annotations — the mover's remaining time after the
+  move. Clock annotations are parsed structurally (`domain/clock.md`) and
+  are never rendered as ordinary comments. Absent clocks are omitted, not
+  fabricated. Time spent per move is always *derived* (from consecutive
+  same-color clocks plus the increment) and is not stored as a measured
+  value.
 - `classification` (`best`/`good`/`inaccuracy`/`mistake`/`blunder`)
   plus `classificationVersion` — canonical rules in
   `domain/classification.md` (ADR-023)
@@ -45,6 +54,12 @@ One record per analyzed ply of a game. Each record:
 - Engine metadata: `engineName`, `engineVersion`, `engineBuild`,
   `profile`
 - Record timestamps
+
+Stored review (ADR-033) reads only these persisted records — the
+evaluation bar, per-move evaluations, engine lines and best-move arrows in
+Review come from `MoveAnalysis` and are never recomputed in the view. Live
+analysis results are never written into persisted records except through an
+explicit analysis/re-analysis run with a new identity.
 
 ## Analysis identity
 

@@ -42,6 +42,12 @@ Aggregates must clearly indicate sample size.
   "insufficient data" placeholder.
 - Mixed-platform or mixed-time-control views must be explicitly labeled
   as such and are never the default.
+- Aggregates never combine different time-control categories
+  (`domain/time-control.md`); they may additionally group by the exact
+  time control when useful, in which case the label shows the exact
+  control (house style `M|I`). A source platform label (Lichess `speed`,
+  Chess.com `time_class`) is never used in place of the canonical
+  category in an aggregate.
 
 ## Cycle-training comparisons
 

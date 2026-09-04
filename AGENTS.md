@@ -140,6 +140,13 @@ alternatives considered (pin, replace, drop, force-install with
 documented justification), and ask the user before applying any
 workaround.
 
+**Toolchain exception (ADR-032):** TypeScript is deliberately kept at the
+latest stable release within the `peerDependencies` range of the installed
+`typescript-eslint` (currently `< 6.1.0`). The TypeScript major and
+`typescript-eslint` are reviewed and upgraded together; agents must not bump
+TypeScript to a major outside that peer range and must not force-install an
+override.
+
 Version pins in ADRs are removed. ADRs identify the **library** and
 its **policy**; the exact version lives in the lockfile. ADR-014
 (Chessground version pin) is the only ADR that retains a version pin

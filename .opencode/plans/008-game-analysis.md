@@ -1,90 +1,107 @@
-# Plan — Feature 008: Game Analysis & Game Review
+# Plan — Feature 008 (revised): Game Analysis, Time Controls & Analysis-Board Review
 
-## Objective
+Revises the shipped Feature 008 Game Analysis into a proper chess
+analysis/review experience and corrects the time-control model
+product-wide. Spec reconciliation + shared analysis board with Live
+Analysis (Feature 006) per ADR-033.
 
-Analyze imported games with the existing Stockfish service (Feature 005)
-and persist game-scoped `MoveAnalysis` with canonical classification and
-game phase. Ship the Game Review surface. Feature 008 is independently
-implementable/testable after Features 002/003/004/005/007 and never
-depends on Features 009/010/011.
+## 0. Dependency & doc context
 
-## Dependency contract (specs, already corrected)
+- Domain canonical rules: `domain/time-control.md`, `domain/clock.md`,
+  `domain/analysis-model.md`, `domain/classification.md`,
+  `domain/game-phase.md`, `domain/game-model.md`.
+- Decisions: ADR-013 (revised), ADR-033 (unified analysis board);
+  existing ADR-012/014/018/019/020/023.
+- Consumers unaffected in rules: Features 009/010/011/014 read persisted
+  `MoveAnalysis` unchanged in spirit; classification/phase algorithms and
+  the missed-tactic reserved contract are untouched.
 
-```
-Chess Domain (003) → Stockfish Service (005) → Game Analysis (008)
-  → persisted MoveAnalysis (classification + phase, canonical domain rules)
-  → Game Review / tactical detection (010) / puzzles (011) / stats (014)
-```
+## P1 — Time-control model (domain + persistence + display)
 
-Canonical rules consumed (never invented here): `domain/classification.md`
-(ADR-023), `domain/game-phase.md`, schema in `domain/analysis-model.md`.
-`missedTactic` is reserved on `MoveAnalysis` and filled later by Feature
-010 — Feature 008 must not compute detection.
+- Domain value object in `src/domain/chess/timeControl.ts`:
+  parse (dialects incl. `{sec}`, `{sec}+{inc}` fractional, `1/86400`,
+  `"N days per move"`, `-`/`?`), classify (canonical base+40×inc rule,
+  versioned), format (`M|I` house style with fallbacks). Keep raw verbatim;
+  keep `TIME_CONTROL_CATEGORIES`; add parse/classify/format versions.
+- Game model carries structured time control; providers may supply a
+  platform label hint (Lichess `speed`/Chess.com `time_class` where
+  available). Fixture corrections (lichess correspondence dialect; add a
+  `5+5` game; no regressions to existing fixtures).
+- Persistence: schema v5 (additive) stores the structured value on the
+  games row; `normalizedTimeControl` index retained; migration test
+  v4→v5 (backfill parses raw on read when the structured value is absent).
+- Display: Library and every time-control surface render
+  `TimeControl.display` (e.g. `5|5`, `10|0`, `3 days/move`); remove raw
+  seconds from display. Library filters remain category-based.
+- Tests: parse/classify/format tables incl. boundaries 179/180/479/480/
+  1499/1500, sub-second increments, day-words, `-`/unknown, ultraBullet
+  fold, display regression (`300+5 → 5|5`, never seconds-as-minutes);
+  migration + repository tests.
 
-## Domain changes (`src/domain/`)
+## P2 — PGN clocks
 
-- MoveAnalysis types + analysis identity/version (pure).
-- Position extraction over the chessops move tree (Feature 002/003).
-- Classification application + game-phase application functions calling
-  the canonical domain algorithms (versioned).
-- Missing: none — specs are now canonical.
+- `src/domain/chess/clock.ts`: structured `MoveClock { ply, color,
+  clockMs }` parser built on chessops `parseComment` (`%clk` extraction;
+  `%emt` kept separate; variations; missing/malformed tolerated).
+- MoveList comment rendering strips all structured tags (`%clk`, `%emt`,
+  `%eval`, `%cal`, `%csl`); no annotation is shown as prose.
+- Analysis plan/build may carry `clockAfterMs` when present.
+- Tests: parse placement white/black, fraction/leading-zero tolerance,
+  missing/malformed, variations, never-as-comment, `%emt` separation.
 
-## Data/storage changes (schema v4, additive)
+## P3 — Shared analysis board (006 migration)
 
-- Dexie `analyses` (per-game metadata + per-move `MoveAnalysis`) and
-  `analysisJobs` (persistent queue) tables; bump
-  `PERSISTENCE_SCHEMA_VERSION → 4` with an additive v4 migration test.
-- Analysis repository: save/get-by-game/query-by-(gameId, analysisId),
-  queue repository with statuses `queued | inProgress | completed |
-  cancelled | failed`, resume/cancel/retry + duplicate-job guard.
-- Extend the Feature 007 `deleteGames` cascade to remove game-scoped
-  analysis rows/jobs; **never** purge the FEN-keyed engine cache
-  (ADR-018). Covered by persistence tests.
+- Extract shared board surface (`src/components/analysis/board/…`):
+  board + eval bar + move list + engine-lines panel + controls + arrows,
+  driven by a single "mode" (stored | live). Move Live Analysis
+  (LiveAnalysisPage) onto the shared surface (behavior preserved; no
+  engine-start on stored mode).
+- Live mode reuses the Feature-005 controller (engine on/off, profile,
+  MultiPV/lines, depth/time, arrows, engine status/progress).
+- Component tests reuse the existing fake engine rig.
 
-## Application changes
+## P4 — Review rebuild (stored mode)
 
-- Analysis orchestrator built on the existing Feature 005 engine service
-  (injected transport; **no new worker/service/profile definitions**);
-  single-game and batch (one logical job per selected game, independent
-  failures, aggregate + per-game progress, restart-safe resume).
-- Feature 007 Game Library integration: enable the bulk `Analyze`
-  action, register per-row `Review`/`liveAnalysis` row actions and
-  expose analysis status (`unanalyzed|queued|inProgress|completed|
-  cancelled|failed`) through the Library capability/insight seams — no
-  duplicated filtering/selection/provider logic.
+- Review consumes persisted `MoveAnalysis`: eval bar (eval-after of the
+  selected ply, mate/orientation), per-move evals in the move list,
+  engine-lines panel from stored `bestMove`/`bestPv`/`multipvLines`,
+  best-move arrows toggle, classification glyphs, verdict panel
+  ("played vs recommended", swing, recommended continuation preview) for
+  user inaccuracy/mistake/blunder.
+- Navigation/keyboard/a11y: shared nav + `aria-current="step"`; responsive
+  desktop/tablet/mobile (mobile segmented Moves/Lines/Review + collapsible
+  panels).
+- States: missing, unanalyzed, queued/in-progress (progress), failed,
+  cancelled, obsolete (identity chip + opt-in re-analyze).
+- Live analysis on Review: separate mode, never overwrites stored records;
+  returns to stored mode.
+- Tests: review component suite (board sync, eval bar from stored evals,
+  lines single/multi/none, arrows toggle, verdict, live no-overwrite,
+  a11y, responsive) + domain summary/model updates.
 
-## UI changes
+## P5 — Library workflow & progress
 
-- Game Review at `/games/:id/review`: shared Chessground-10.1.1
-  `<Chessboard/>` (Feature 002), chessops move tree, ADR-023 glyphs,
-  click-to-seek + `aria-current="step"`, summary panel from persisted
-  records (user vs opponent separation; missed-tactic count from the
-  reserved attribute, zero until Feature 010), and explicit
-  no-analysis/in-progress/failed/obsolete-version states.
+- Row action/overflow + selection toolbar: Analyze, Review, Re-analyze,
+  Delete, Cancel as applicable; statuses incl. Outdated.
+- Batch/per-game progress surfacing from the persistent job queue
+  (completed/analyzing/queued/failed; positions done/total; profile); no
+  fabricated ETA.
+- Tests: actions availability, status rendering incl. outdated, progress,
+  batch flows.
 
-## Testing
+## P6 — Analysis model additions
 
-- Domain: position extraction, ply ordering, classification + phase
-  determinism, identity/version.
-- Persistence: save/get/restart, partial resume, completed retention,
-  deletion cascade (analysis gone, engine cache retained).
-- Service: fake Stockfish engine (existing test-support) covering
-  positions submitted, results stored, MultiPV preserved, failures,
-  cancellation, progress; ≥1 integration test against the real Feature
-  005 engine on a known position without blocking the UI.
-- Batch: single/multi/mixed success-failure/cancel/restart/retry/
-  duplicate suppression.
-- Review: board/move-list/seek/aria/glyphs/summary/user-opponent/
-  missing/failed/obsolete states; one e2e fixture workflow
-  (analyze → review → navigate → verify → delete).
+- `MoveAnalysis` optional per-line `depth`; optional `clockAfterMs`;
+  analysis-service/build adapters; tests.
 
-## Verification
+## P7 — Verification
 
 Focused vitest → full gate (`lint`, `typecheck`, `format:check`, `test`,
-`build`, `dev` smoke, `test:browser`, `audit`).
+`build`, `dev` smoke, `test:browser`, `audit`). New e2e: import game with
+`%clk` → analyze (fast, real engine) → Review shows eval bar/lines/arrows →
+enable live → return to stored → navigate; Library batch progress visible.
 
 ## Deferred (out of scope)
 
-Tactical detection and `missedTactic` population (Feature 010), puzzle
-generation/training (011/012/013), statistics (014) — all consume 008's
-persisted output later.
+Statistics UI (Feature 014/015), puzzle generation/training (010–013),
+time-pressure analytics, opening/repertoire tooling.

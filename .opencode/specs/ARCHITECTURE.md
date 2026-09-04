@@ -212,6 +212,30 @@ consumes the persisted `MoveAnalysis` records (Stage 1 needs no new
 engine work) and Feature 011 consumes verified candidates. Feature 008
 does not depend on Features 009/010/011.
 
+### Analysis board (stored review + live analysis)
+
+Game Review (Feature 008) and the Live Analysis board (Feature 006) are
+the same shared **analysis-board** surface (ADR-033): Chessboard
+(Chessground 10.1.1), evaluation bar, chessops move list, engine-lines
+panel, Chessground arrows, and analysis controls. Two modes over one
+component:
+
+- **Stored review** reads persisted `MoveAnalysis` only — evaluation bar,
+  per-move evaluations, engine lines/MultiPV, best-move arrows and
+  classifications come from stored records; no engine is started to
+  render them (ADR-004).
+- **Live analysis** runs the Feature-005 engine service on the selected
+  position, is labeled live, cancellable, and never overwrites persisted
+  `MoveAnalysis`. Persisting live results happens only through an explicit
+  analysis/re-analysis run with a new identity (ADR-019/020, §9).
+
+Exploration (best-line/PV previews, "show the recommended move") is
+non-destructive: it never mutates the stored `Game`/PGN. Evaluation
+semantics are unified: the bar and per-move values show the evaluation
+**after** the selected move; classifications are never recomputed in the
+view. Engine results and stored lines share the Feature-005/`MoveAnalysis`
+model (no second engine representation).
+
 ---
 
 ## 6a. Analytics Layer
@@ -257,7 +281,11 @@ Persistent entities include:
 - application settings
 - sync metadata
 
-Database schema must be versioned.
+Database schema must be versioned. The schema is currently **v5**
+(additive): v4 added the analysis tables; v5 adds the structured
+time-control value (base/increment/days/estimate/display, see
+`domain/time-control.md`) to the games row while retaining the verbatim
+`timeControl` string and the indexed `normalizedTimeControl` category.
 
 ### Data ownership & deletion
 

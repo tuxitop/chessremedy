@@ -27,7 +27,7 @@ Read order for any feature task:
 | [ADR-009](specs/decisions/ADR-009-testing-stack.md) | Vitest + Testing Library + happy-dom/jsdom + fake-indexeddb + MSW (consumer-installed) + Playwright | Accepted | Testing |
 | [ADR-010](specs/decisions/ADR-010-charting-library.md) | Recharts for dashboard charts | Accepted | Dashboard |
 | [ADR-012](specs/decisions/ADR-012-stockfish-wasm.md) | `stockfish` npm package (WASM); default single-thread lite build; profiles `fast`/`normal`/`tactical`/`deep` | Accepted | Engine |
-| [ADR-013](specs/decisions/ADR-013-time-control-categories.md) | Six canonical time-control categories; deterministic versioned mapping; never silently combine | Accepted | Statistics/Domain |
+| [ADR-013](specs/decisions/ADR-013-time-control-categories.md) | Structured time-control model: canonical platform-agnostic categories (base+40×inc boundaries), raw preserved, `M|I` display; source labels kept as hints | Accepted | Statistics/Domain |
 | [ADR-014](specs/decisions/ADR-014-chessground-version.md) | Chessground must stay `^10.1.1` within 10.x; major upgrades need a new ADR | Accepted | Board/UI |
 | [ADR-015](specs/decisions/ADR-015-sync-scope.md) | V1 sync uses Dropbox App Folder; single `sync.json.gz` | Accepted | Sync |
 | [ADR-016](specs/decisions/ADR-016-sync-file-format.md) | Sync payload = versioned gzipped JSON envelope of collections | Accepted | Sync |
@@ -43,6 +43,8 @@ Read order for any feature task:
 | [ADR-028](specs/decisions/ADR-028-chessops.md) | Chess rules/state/PGN via `chessops` (no chess.js) | Accepted | Chess domain |
 | [ADR-030](specs/decisions/ADR-030-drop-pgn-viewer.md) | Drop `@lichess-org/pgn-viewer`; custom `MoveList` on `chessops/pgn` | Accepted | Board/MoveList |
 | [ADR-031](specs/decisions/ADR-031-tactical-training-cycles.md) | V1 tactical training = cycle-based over fixed sets; no FSRS/per-puzzle scheduler | Accepted | Puzzle training |
+| [ADR-032](specs/decisions/ADR-032-typescript-version.md) | TypeScript tracks the latest stable supported by the current `typescript-eslint` peer range; no override | Accepted | Toolchain |
+| [ADR-033](specs/decisions/ADR-033-unified-analysis-board.md) | One shared analysis-board surface for Review (stored) and Live Analysis (engine); live never overwrites stored analysis; exploration non-destructive | Accepted | Analysis/Board |
 
 ## Critical Constraints
 

@@ -29,7 +29,7 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 001, 003; (playground engine placeholder: Feature 005).
 
 ### Feature 003 — Chess/Game Domain & Deterministic Fixtures
-- Required: `ARCHITECTURE.md`; ADRs `decisions/ADR-028`, `decisions/ADR-013`, `decisions/ADR-001`; domain `domain/game-model.md`; research `research/testing-stack.md`.
+- Required: `ARCHITECTURE.md`; ADRs `decisions/ADR-028`, `decisions/ADR-013`, `decisions/ADR-001`; domain `domain/game-model.md`, `domain/time-control.md`, `domain/clock.md`; research `research/testing-stack.md`.
 - Optional: `history/ADR-003` (rejected chess.js), research `research/game-import.md` (provider header shapes).
 - Dependencies: Features 001, 002 (none hard).
 
@@ -43,7 +43,7 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 001, 002, 003.
 
 ### Feature 006 — Live Analysis Board
-- Required: `ARCHITECTURE.md` §5; ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-009`; domain `domain/analysis-model.md`; research `research/browser-stockfish.md`.
+- Required: `ARCHITECTURE.md` §5; ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-033`, `decisions/ADR-009`; domain `domain/analysis-model.md`; research `research/browser-stockfish.md`.
 - Optional: ADR-023 + `domain/classification.md` (glyph rendering arrives with Feature 009; not computed here).
 - Dependencies: Features 002, 003, 005.
 
@@ -52,7 +52,7 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 001, 003, 004 (persistence + duplicate detection).
 
 ### Feature 008 — Game Analysis
-- Required: ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-009`; domain `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/game-model.md`; research `research/browser-stockfish.md`, `research/move-classification.md`.
+- Required: ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-033`, `decisions/ADR-009`; domain `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/game-model.md`, `domain/time-control.md`, `domain/clock.md`; research `research/browser-stockfish.md`, `research/move-classification.md`.
 - Dependencies: Features 002, 003, 004 (persistence), 005 (Stockfish service + profiles), 007 (Game Library entry/status). Classification and game-phase rules are canonical domain rules (never later features). Output consumed by Features 009/010/011/014.
 
 ### Feature 009 — Move Classification (post-008 tooling)
@@ -91,7 +91,7 @@ features, ADRs, research, or the whole documentation tree.
 
 ## Lookup: decisions by area
 
-- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020 · Analysis/classification: ADR-005/019/023/024/026 · Puzzles/training: ADR-006/025/031 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
+- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
 
 ## Lookup: research by consumer
 
@@ -115,6 +115,8 @@ features, ADRs, research, or the whole documentation tree.
 - `domain/game-library.md` → Features 007/008/011/014/016
 - `domain/analysis-model.md` → Features 005/006/008/009/010/014
 - `domain/classification.md` → Features 006/008/009/014
+- `domain/time-control.md` → Features 003/007/008/014/015
+- `domain/clock.md` → Features 003/008
 - `domain/game-phase.md` → Features 008/014/015
 - `domain/tactics.md` → Features 010/011
 - `domain/puzzle-model.md` → Features 010/011/012/013

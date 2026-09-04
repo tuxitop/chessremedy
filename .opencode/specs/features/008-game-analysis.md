@@ -357,402 +357,190 @@ The persisted phase must allow future statistics and puzzle generation without r
 
 ---
 
-# 12. Game Review
-
-## Route
-
-    /games/:id/review
-
-The Review page provides a read-only view of an analyzed game.
-
-It contains:
-
-- chessboard;
-- complete move tree/list;
-- classification highlights;
-- summary panel.
-
-The page must use existing application components and domain models.
-
----
-
-# 13. Chessboard
-
-Use the shared ChessRemedy `<Chessboard />` component from Feature 002.
-
-The chessboard implementation MUST remain based on:
-
-    Chessground 10.1.1
-
-Do not introduce another chessboard library or create a second board implementation.
-
-The board must:
-
-- display the current position;
-- update when a move is selected;
-- remain synchronized with the move list;
-- display classification highlights where appropriate;
-- work on desktop, tablet, and mobile.
-
----
-
-# 14. Move List
-
-Use the established chessops-based move-tree implementation from Feature 002 / ADR-028.
-
-Display the complete game sequence.
-
-Each move displays its classification glyph according to ADR-023:
-
-- `??`
-- `?`
-- `?!`
-- `!`
-- `!!`
-
-The glyph is read-only.
-
-The user cannot manually change classification from Game Review.
-
-Clicking a move:
-
-1. selects that ply;
-2. updates the board;
-3. updates the active move;
-4. sets `aria-current="step"` on the selected move.
-
-Move navigation must remain synchronized between the move list and chessboard.
-
----
-
-# 15. Review Summary
-
-The summary panel displays, for the user's moves:
-
-- classification counts: best; good; inaccuracy; mistake; blunder;
-- missed-tactic count derived from the persisted `missedTactic`
-  attribute (zero/absent until Feature 010 detection has run).
-
-Opponent moves are shown for game context but are not included in the user's statistics.
-
-The summary must distinguish the user's side from the opponent's side.
-
-Summary values must be derived from persisted `MoveAnalysis` records.
-
-The UI must not independently apply different classification rules.
-
----
-
-# 16. Game Library Integration
-
-The Game Library provides the primary analysis workflow.
-
-## Analyze
-
-The Library's selection toolbar exposes an `Analyze` action.
-
-When activated:
-
-- selected games are submitted to the analysis queue;
-- one job is created per selected game;
-- progress becomes visible;
-- per-game analysis status becomes available.
-
-If analysis is unavailable, the UI must display the actual unavailable/error state rather than pretending analysis occurred.
-
-## Review
-
-An analyzed game exposes a `Review` action.
-
-A game without completed analysis must not appear reviewable as though analysis were complete.
-
-## Analysis status
-
-The Game Library can display:
-
-- `unanalyzed`
-- `queued`
-- `inProgress`
-- `completed`
-- `cancelled`
-- `failed`
-
-Status must be derived from persisted analysis/job state.
-
----
-
-# 17. Game Deletion
-
-Game-scoped analysis belongs to the source game.
-
-When a game is deleted:
-
-- its `MoveAnalysis` records are deleted;
-- its game-scoped analysis metadata is deleted;
-- obsolete game-scoped analysis jobs are removed or transitioned according to queue rules;
-- no orphaned game-analysis records remain.
-
-The independent FEN/position-keyed Stockfish cache is NOT deleted.
-
-The engine cache follows ADR-018 and is shared independently of individual games.
-
-Future puzzle records derived from a game must follow the project's data-ownership/cascade rules.
-
-The relationship should conceptually be:
-
-    Game
-      ├── MoveAnalysis       ← delete
-      ├── Analysis metadata  ← delete
-      └── Generated puzzles  ← future dependent data
-
-    FEN Engine Cache
-      └── independent        ← retain
-
----
-
-# 18. Failure Handling
-
-Analysis failures must be persisted with enough information to diagnose the failure.
-
-Possible failures include:
-
-- Stockfish unavailable;
-- worker failure;
-- invalid position;
-- invalid/incomplete game;
-- analysis timeout;
-- storage failure;
-- unexpected engine response.
-
-A failed game must not prevent other games in the batch from completing.
-
-The user must be able to retry failed analysis.
-
-Retrying must not create duplicate active jobs for the same game and analysis identity.
-
----
-
-# 19. Invalid and Incomplete States
-
-The Review route must handle:
-
-- game does not exist;
-- game exists but has no analysis;
-- analysis is queued;
-- analysis is incomplete;
-- analysis failed;
-- analysis belongs to an obsolete analysis version.
-
-These states must not be rendered as a completed analysis.
-
-The UI must provide an appropriate action where possible.
-
-Examples:
-
-    No analysis:
-    "Analyze this game to review its moves."
-
-    Analysis failed:
-    "Analysis failed. Retry analysis."
-
----
-
-# 20. Responsive Design
-
-Game Review must work on:
-
-- desktop;
-- tablet;
-- mobile.
-
-The layout must adapt rather than simply scale the desktop layout down.
-
-The chessboard must remain usable at mobile widths.
-
-The move list must remain accessible without making the board unusably small.
-
-The summary must remain readable and accessible on narrow screens.
-
----
-
-# 21. Accessibility
-
-Game Review must provide:
-
-- keyboard-accessible move navigation;
-- semantic move-list structure;
-- `aria-current="step"` for the selected move;
-- accessible controls;
-- visible focus states;
-- accessible summary information;
-- no information conveyed by color alone.
-
----
-
-# 22. Testing
-
-The feature is incomplete without automated tests.
-
-## Domain/unit tests
-
-Test:
-
-- game reconstruction;
-- position extraction;
-- ply ordering;
-- phase assignment;
-- classification integration;
-- analysis identity;
-- analysis version handling;
-- queue state transitions;
-- cancellation;
-- retry behavior;
-- duplicate-job prevention;
-- progress calculation.
-
-## Persistence tests
-
-Test:
-
-- saving MoveAnalysis;
-- retrieving analysis by game ID;
-- persistence across application restart;
-- partial analysis/resume;
-- completed analysis persistence;
-- game deletion cascading to game-scoped analysis;
-- engine cache surviving game deletion.
-
-## Analysis service integration tests
-
-Use a deterministic fake/mock Stockfish service for most tests.
-
-Verify:
-
-- correct positions are submitted;
-- engine results are stored;
-- MultiPV results are preserved;
-- engine failures are handled;
-- cancellation is handled;
-- progress updates correctly.
-
-At least one integration test must exercise the real Feature 005 Stockfish service using a deterministic known position.
-
-The test must verify that analysis can execute without blocking the UI.
-
-## Batch tests
-
-Test:
-
-- single-game analysis;
-- multi-game analysis;
-- mixed success/failure;
-- cancellation;
-- restart/resume;
-- already-completed analysis;
-- retry;
-- duplicate requests.
-
-## Game Review component tests
-
-Test:
-
-- correct board position;
-- complete move list;
-- move selection;
-- board synchronization;
-- `aria-current="step"`;
-- classification glyphs;
-- summary counts;
-- user/opponent separation;
-- missing-analysis state;
-- failed-analysis state;
-- obsolete-analysis state.
-
-## End-to-end test
-
-At minimum:
-
-    Fixture game
-      ↓
-    Start analysis
-      ↓
-    Analysis completes
-      ↓
-    Open Game Review
-      ↓
-    Select a move
-      ↓
-    Board updates
-      ↓
-    Classification appears
-      ↓
-    Summary counts are displayed
-
-Use deterministic fixture games and deterministic engine responses where possible.
-
----
-
-# 23. Acceptance Criteria
-
-## Analysis
-
-- [ ] A single imported game can be analyzed.
-- [ ] Multiple selected games can be analyzed as a batch.
-- [ ] Feature 005's Stockfish service is used.
-- [ ] Analysis does not block the UI.
-- [ ] Progress is visible.
-- [ ] Analysis can be cancelled.
-- [ ] Individual game failures do not abort a batch.
-- [ ] Failed analysis can be retried.
-- [ ] Analysis jobs survive application restart.
-- [ ] Completed analysis survives application restart.
-- [ ] Interrupted analysis can resume.
-- [ ] Completed work is not unnecessarily repeated.
-- [ ] Results contain engine/profile/version metadata.
-- [ ] Results contain sufficient data for future puzzle generation.
-- [ ] Game phase is persisted.
-- [ ] Classification uses the canonical classification algorithm.
-
-## Persistence
-
-- [ ] MoveAnalysis records are persisted.
-- [ ] Analysis can be retrieved by game ID.
-- [ ] Analysis identity/configuration is identifiable.
-- [ ] Game deletion removes game-scoped analysis.
-- [ ] Game deletion retains the independent engine cache.
-
-## Game Library
-
-- [ ] Selected games can be submitted for analysis.
-- [ ] Analysis status is visible.
-- [ ] Batch progress is available.
-- [ ] Completed games expose Review.
-- [ ] Failed analysis exposes retry behavior.
-
-## Game Review
-
-- [ ] `/games/:id/review` loads an analyzed game.
-- [ ] The complete game is displayed.
-- [ ] The shared Chessground 10.1.1-based Chessboard is used.
-- [ ] The established chessops move tree is used.
-- [ ] Classification glyphs are displayed.
-- [ ] Clicking a move updates the board.
-- [ ] The selected move receives `aria-current="step"`.
-- [ ] Summary counts match persisted MoveAnalysis records.
-- [ ] User and opponent statistics are separated.
-- [ ] Review works on desktop, tablet, and mobile.
-- [ ] Missing, incomplete, failed, and obsolete analysis states are handled.
-
-## Testing
-
-- [ ] Domain logic is tested.
-- [ ] Persistence is tested.
-- [ ] Queue behavior is tested.
-- [ ] Cancellation and retry are tested.
-- [ ] Batch behavior is tested.
-- [ ] Review behavior is component tested.
-- [ ] At least one end-to-end analysis/review workflow is tested.
----
+# 12. Game Review is the Analysis Board
+
+Game Review (`/games/:id/review`) is not a separate game viewer: it is the
+**stored-review mode of the shared analysis board** (ADR-033) reused by the
+Live Analysis board (Feature 006). It composes the shared
+Chessground-10.1.1 `<Chessboard/>`, an evaluation bar, the chessops
+move list, an engine-lines panel, Chessground arrows and analysis
+controls. In stored mode it reads only persisted `MoveAnalysis` records —
+no engine is started to render an analyzed game (ADR-004) — and in live
+mode it runs the Feature-005 engine on the selected position.
+
+Layout (adapted per device, see §20): evaluation bar beside the board;
+move list; engine-lines/verdict panel; analysis controls. The evaluation
+bar and per-move values show the evaluation **after** the selected move
+from the persisted `MoveAnalysis` and stay synchronized with the board and
+move list.
+
+# 13. Evaluation Bar & Per-Move Evaluations
+
+- The Review evaluation bar reflects the persisted evaluation of the
+  currently selected position/move, updates on navigation, distinguishes
+  the side with the advantage, and handles mate scores consistently with
+  the Stockfish evaluation model. It does not rerun the engine for stored
+  positions.
+- Persisted `MoveAnalysis` retains enough per-move engine information to
+  display evaluations throughout the game: evaluation, mate score, search
+  depth reached, principal variation, MultiPV lines, engine identity,
+  profile and analysis version. Review never requests a new engine
+  calculation merely to display an already persisted evaluation.
+
+# 14. Engine Lines / MultiPV
+
+- The engine panel shows the best line and, when the stored profile used
+  MultiPV, the additional stored lines — each with its evaluation and
+  principal variation. The number of shown lines depends on what the
+  stored analysis contains; one line, multiple lines, no engine result and
+  incomplete analyses are all handled gracefully.
+- Stored engine lines reuse the Feature-005/`MoveAnalysis` model; no
+  second engine-result representation is invented.
+
+# 15. Best-Move Arrows & Board Controls
+
+- The board can visualize the engine's recommended move (and PV) as
+  Chessground auto-shapes, updating when the selected position changes.
+- The user can toggle engine suggestions on/off; arrows are never shown
+  when suggestions are disabled.
+- In live mode, live engine lines/evaluations/arrows update while the
+  engine is thinking.
+
+# 16. Live Analysis on Review
+
+- Live analysis is a distinct, explicit mode: it runs the Feature-005
+  engine service against the currently selected position, is clearly
+  labeled live, is cancellable, shows engine status/progress, and **never
+  writes into persisted `MoveAnalysis`**. The user can return to the
+  stored game analysis after using live analysis.
+- Persisting live results happens only through an explicit
+  analysis/re-analysis run, which creates a new analysis identity and never
+  silently replaces a newer analysis with an older configuration
+  (ADR-020, §4).
+
+# 17. Move Classification & Mistake Review
+
+- Each analyzed move displays its classification glyph (ADR-023:
+  `?? ? ?! ! !!`) read-only; classifications come from the persisted
+  `MoveAnalysis` and are never recomputed in the view.
+- For the user's inaccuracy/mistake/blunder (and later missed tactics),
+  Review helps the user understand the mistake: what was played, the
+  evaluation before/after, what should have been played, and the
+  recommended continuation where the engine data allows it. Played move
+  and recommended move are clearly distinguished; the recommended
+  continuation can be inspected without mutating the stored game.
+- Revealing engine recommendations is acceptable on the Review page
+  (analysis/review). Puzzle/training behavior (Features 011–013) stays
+  separate.
+
+# 18. Move Navigation & Move Tree
+
+- Navigation supports first/prev/next/last, clicking a move, board
+  synchronization and keyboard shortcuts consistent with the shared
+  analysis-board keyboard table; buttons are always present so keyboard
+  is never the only path. The selected move is visually obvious and
+  carries `aria-current="step"`.
+- The move list uses the chessops move-tree representation. Engine
+  variations are displayed separately from the played-game move tree
+  (preview overlays); exploring an engine line never mutates the imported
+  game.
+
+# 19. PGN Clocks & Time-Aware Data
+
+- PGN `[%clk …]` annotations are parsed as structured per-move clock data
+  (the mover's remaining time after the move) per `domain/clock.md` and are
+  never rendered as ordinary comments. Missing clocks are omitted, not
+  fabricated.
+- The analysis model preserves clock data when available so future work can
+  correlate classification, evaluation loss, game phase, remaining clock,
+  move time and time-control category. No time-pressure analytics are
+  implemented in V1.
+
+# 20. Responsive & Accessibility
+
+- Desktop: large board, evaluation bar, move list, engine lines, summary
+  and controls. Tablet: the panel adapts without making the board unusably
+  small. Mobile: a usable board and evaluation bar, move navigation, a
+  compact move list, and collapsible/stacked sections for engine lines and
+  summary — not a shrunk desktop layout. Board interaction supports mouse
+  and touch.
+- Accessibility: keyboard-accessible navigation, semantic move list,
+  `aria-current="step"` on the selected move, accessible controls, visible
+  focus, accessible summary/clock info, and no information conveyed by
+  color alone.
+
+# 21. Analysis Controls
+
+- A coherent control area exposes: live analysis on/off, engine profile,
+  MultiPV where supported, best-move arrow on/off, engine-line visibility,
+  evaluation visibility, analysis/re-analysis and cancel-analysis where
+  appropriate. Low-level engine settings belong in Settings, not the main
+  Review interface.
+
+# 22. Game Library Integration & Analysis Status
+
+- The Game Library is the primary analysis entry point with context-aware,
+  discoverable actions (no bottom-of-page dependency): selection/contextual
+  toolbars and per-row actions expose Analyze, Review, Re-analyze, Delete
+  and Cancel as applicable, without duplicating an action everywhere.
+- Each game communicates its analysis state: `unanalyzed`, `queued`,
+  `inProgress`, `completed`, `cancelled`, `failed`, and `outdated` (a
+  persisted analysis predates a newer engine/analysis version and can be
+  re-analyzed). Status is derived from persisted analysis/job state
+  (analysis-status domain) and the persistent queue is the source of
+  truth.
+
+# 23. Progress
+
+- Per-game progress: current status, current position/ply, total positions,
+  percentage and the engine profile used. Batches report completed /
+  analyzing / queued / failed counts and overall progress. An ETA is only
+  shown when it can be estimated reliably. Progress stays visible after
+  navigating away and returning.
+
+# 24. Invalid & Incomplete States
+
+The Review route handles: game missing; game present without analysis;
+analysis queued/in-progress; analysis failed; analysis cancelled; and an
+obsolete-analysis version. These are never rendered as a completed
+analysis, and an appropriate action is offered where possible.
+
+# 25. Testing
+
+Automated tests cover: domain (time-control parse/classify/format across
+dialects and boundaries; clock parsing), persistence (stored evaluation,
+mate, depth, MultiPV, engine metadata, analysis version, restart/resume,
+cancellation, re-analysis identity, deletion cascade with the engine cache
+retained), the analysis service (positions submitted, results stored,
+MultiPV preserved, failures, cancellation, progress; at least one
+integration test against the real Feature-005 engine), batch behavior,
+Game Library actions/statuses/progress, and Review (navigation, board
+sync, evaluation bar from stored evals, per-move evals, engine lines,
+best-move arrows, live mode without overwrite, classification display,
+mistake/best-move comparison, clocks, responsive and accessibility).
+At least one end-to-end test drives analyze → review → live → navigate and
+one covers PGN clock import.
+
+# 26. Acceptance Criteria
+
+- Time-control parsing/categorization follow `domain/time-control.md`; a
+  `5+5` game displays `5|5`, never a raw-seconds artifact; category and
+  exact control are separate; statistics can distinguish categories.
+- Game Library analysis actions are easy to discover and available without
+  scrolling; batch and per-game progress is shown; analysis state persists
+  across navigation/reload.
+- Game Review uses the shared analysis-board components; it has an
+  evaluation bar, persisted per-move evaluations, engine lines, toggleable
+  best-move arrows, and a separate live-analysis mode that never silently
+  overwrites stored analysis.
+- Users can navigate the whole game efficiently; mistakes clearly show the
+  played move and engine alternative; engine continuations can be
+  inspected.
+- PGN clock annotations are parsed and never shown as comments; clock data
+  is preserved for future time-pressure analysis.
+- Review works on desktop, tablet and mobile; all new behavior is tested;
+  existing tests keep passing; no contradictory time-control or analysis
+  rules remain across specs/ADRs.
 
 ## Context
 
@@ -760,9 +548,11 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
 
 - Architecture/decisions: `ARCHITECTURE.md`; `decisions/ADR-012`,
   `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`,
-  `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-009`
+  `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-033`,
+  `decisions/ADR-009`
 - Domain: `domain/analysis-model.md`, `domain/classification.md`,
-  `domain/game-phase.md`, `domain/game-model.md`
+  `domain/game-phase.md`, `domain/game-model.md`, `domain/time-control.md`,
+  `domain/clock.md`
 - Research: `research/browser-stockfish.md`,
   `research/move-classification.md`
 

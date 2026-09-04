@@ -43,16 +43,30 @@ The source model must be extensible for future providers.
 
 ## Time control
 
-The application must preserve the original provider time-control information
-and also provide a normalized time-control category.
+The application must preserve the original provider time-control
+information, represent the exact time control (base, increment,
+days-per-turn) separately from its normalized category, and persist both
+with the game.
 
 The normalized categories must be defined consistently across all domain,
-statistics and product specifications.
+statistics and product specifications (see `domain/time-control.md` and
+ADR-013). The canonical category is platform-agnostic; provider-specific
+labels are optional hints only.
 
 The design must allow statistics to be separated by time control.
 
 A rapid game must never be silently aggregated with a blitz game in statistics
 where time control is relevant.
+
+Time controls are displayed in `M|I` house style (`5|5`, `10|0`, `3|2`);
+raw seconds are never shown as if they were minutes.
+
+## PGN clocks
+
+`[%clk …]` clock annotations in PGN comments must be parsed as structured
+per-move clock data (the mover's remaining time after the move,
+`domain/clock.md`) and never displayed as ordinary comments. When absent,
+clock data is omitted.
 
 ## PGN
 
@@ -96,6 +110,11 @@ Fixtures must include:
 - short games
 - longer games
 - opening/middlegame/endgame examples
+- each time-control dialect (Lichess `300+5`, Chess.com `600`, chess.com
+  fractional `10+0.1`, chess.com daily `1/259200`, Lichess correspondence
+  `"14 days per move"`, `-`/unknown)
+- at least one game whose PGN carries `[%clk …]` clock annotations and one
+  without
 
 Fixture games must be deterministic and must not be stored as user data.
 
@@ -122,6 +141,10 @@ Test:
 - game reconstruction
 - move reconstruction
 - time-control normalization
+- time-control parse/classify/format across dialects (incl. boundary and
+  display cases)
+- PGN clock (`%clk`) parsing, association with the correct move, missing
+  and malformed annotations
 - source normalization
 - FEN reconstruction
 - fixture integrity

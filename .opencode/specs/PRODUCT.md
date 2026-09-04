@@ -80,6 +80,13 @@ Per-game rows expose future-ready actions and insights (live analysis,
 review, puzzles from this game, accuracy, mastered counts) supplied by
 Features 008–014; V1 does not fake analysis functionality.
 
+Analysis actions are context-aware and discoverable without scrolling to a
+long page: a selection/contextual toolbar and per-row actions expose
+Analyze, Review, Re-analyze, Delete and Cancel as applicable. Each game
+clearly shows its analysis state (Unanalyzed, Queued, Analyzing, Completed,
+Failed, Cancelled, Outdated), and batch/per-game progress is shown while
+analysis runs and remains visible after navigating away and back.
+
 The library works well from a few to thousands of games, on desktop,
 tablet and mobile (deliberate mobile design, not a shrunk table).
 
@@ -104,6 +111,34 @@ Analysis identifies:
 - game phase
 
 Analysis must be resumable.
+
+## 4a. Game Review
+
+Game Review is the product's analysis/review experience for one analyzed
+game. It is the **same shared analysis-board surface** used by the live
+analysis board (see `specs/features/006`, ADR-033), running in two modes:
+
+- **Stored review** reads the persisted analysis only — the evaluation
+  bar, per-move evaluations, engine lines and best-move arrows come from
+  the stored `MoveAnalysis` records and no engine is started.
+- **Live analysis** runs Stockfish against the selected position. It is
+  clearly labeled live, is cancellable, and never overwrites the stored
+  game analysis.
+
+Review surfaces an analysis identity (engine · profile · depth · version)
+and marks outdated analyses with an opt-in re-analysis. It shows what the
+user played versus the engine's recommendation and lets the user inspect
+the recommended continuation without mutating the stored game.
+
+PGN clock annotations (`[%clk …]`) are parsed as structured per-move clock
+data (remaining time after each move) and are never displayed as ordinary
+comments. When a game has no clock data the UI omits it.
+
+Analysis, Review and Training are separate concepts: Analysis produces
+persistent engine data, Review lets the user inspect it, and Training
+(Features 011–013) turns mistakes/missed tactics into puzzles. Review may
+expose information for future training but never implements puzzle
+behavior.
 
 ---
 
@@ -133,7 +168,8 @@ and 20 percentage points.
 
 Time control is a first-class dimension.
 
-The canonical V1 normalized time-control categories are:
+The exact time control and its category are separate concepts. The canonical
+V1 normalized time-control categories are:
 
 - bullet
 - blitz
@@ -142,9 +178,25 @@ The canonical V1 normalized time-control categories are:
 - correspondence
 - unknown
 
-The original source time-control string is preserved alongside the
-normalized category. Statistics must distinguish each category listed
-above and must not silently combine different time controls.
+The original source time-control string is preserved verbatim, and a
+structured exact-time-control model (base, increment, days-per-turn,
+estimated length) is persisted with each game so every consumer uses one
+model (`specs/domain/time-control.md`).
+
+The canonical category is computed with one platform-agnostic rule
+(estimated length `base + 40 × increment` with the Lichess-style boundaries)
+so identical clocks classify identically regardless of platform; each
+platform's own label is retained as a hint and never silently replaces the
+canonical category.
+
+Time controls are displayed in `M|I` house style (`5|5`, `10|0`, `3|2`,
+`15|10`); raw seconds are never shown as if they were minutes. The exact
+control is shown separately from its category (e.g. category `rapid`, control
+`10|5`).
+
+Statistics must distinguish each category listed above and must not silently
+combine different time controls. Statistics may additionally group by the
+exact time control when useful and labeled.
 
 Rating progress must be separated by:
 

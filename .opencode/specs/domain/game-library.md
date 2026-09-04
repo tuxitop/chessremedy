@@ -37,7 +37,9 @@ added without redesign). Reuse `GameSource`, `TimeControlCategory`
 
 - Time control, side, and platform are equality filters over stored
   normalized fields: `normalizedTimeControl`, `userColor`, `source`.
-  The UI never parses time-control strings.
+  The UI never parses time-control strings; rows display the formatted
+  exact control (`TimeControl.display`, house style `M|I` per
+  `domain/time-control.md`) separately from the category.
 - Time control includes every ADR-013 category (bullet, blitz, rapid,
   classical, correspondence, unknown) plus All; `unknown`/correspondence
   are kept distinct and never merged.
@@ -106,7 +108,9 @@ Rows are rendered from an extensible read model:
 type LibraryGameView = GameSummary & {
   insights: Partial<{
     accuracy: number;                 // Feature 008/009/014
-    analysisStatus: 'unanalyzed'|'inProgress'|'completed'|'failed'; // 008
+    analysisStatus:
+      | 'unanalyzed'|'queued'|'inProgress'|'completed'|'cancelled'|'failed'
+      | 'outdated';                   // Feature 008 (persisted jobs + version)
     classificationCounts: {...};      // 009
     missedTactics: number;            // 010
     puzzleCount: number;              // 011
@@ -122,13 +126,18 @@ values.
 Row actions are registered by capability:
 
 ```ts
-type GameActionCapability = 'liveAnalysis'|'review'|'puzzles'|'delete';
+type GameActionCapability =
+  | 'liveAnalysis'|'review'|'puzzles'|'analyze'|'delete';
 ```
 
-V1 registers only `delete`; bulk **Analyze** is a disabled, labelled
-placeholder until Feature 008 registers it. Future features register
-their row action (open Live Analysis with the game, review, puzzles
-from this game) without changing the Library layout.
+Feature 008 registers `analyze`/`review` (and re-analysis as an action on
+an analyzed row) and supplies analysis status incl. an `outdated` state
+(an older analysis exists but a newer engine/version supersedes it).
+Actions are surfaced through selection/contextual toolbars and per-row
+menus so they are discoverable without scrolling; bulk **Analyze** no
+longer requires the bottom of a long page. Future features register their
+row action (live analysis with the game, puzzles from this game) without
+changing the Library layout.
 
 ## 8. Deletion & data ownership
 
