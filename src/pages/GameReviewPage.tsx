@@ -12,7 +12,12 @@ import { Chessboard } from '@/components/chessboard/Chessboard';
 import type { Key } from '@lichess-org/chessground/types';
 import { MoveList } from '@/components/chessboard/MoveList';
 import { Navigation } from '@/components/chessboard/Navigation';
-import type { MoveAnalysis, MoveClassification } from '@/domain/chess';
+import type { EngineEvaluation } from '@/infrastructure/engine/types';
+import { formatEvaluation } from '@/components/analysis/engineFormat';
+import { gameFromPgn } from '@/domain/chess/parseGame';
+import { gameClocks, type MoveClock } from '@/domain/chess/clock';
+import { uciPvToSan } from '@/domain/chess';
+import type { EvalCpMate, MoveAnalysis, MoveClassification } from '@/domain/chess';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { summarizeAnalysis, CLASSIFICATION_LABELS } from '@/domain/analysis/summary';
 import type { AnalysisJob, GameAnalysisStatus } from '@/domain/analysis';
@@ -156,6 +161,12 @@ function GameReview({
   }, [path]);
   const nagOverrides = useMemo(() => buildNagOverrides(mainline, records), [mainline, records]);
   const summary = useMemo(() => summarizeAnalysis(records, userColor), [records, userColor]);
+  const clocks = useMemo(() => {
+    const parsed = gameFromPgn(pgn, { source: 'fixture', userColor });
+    return parsed.ok ? gameClocks(parsed.game.moves) : [];
+  }, [pgn, userColor]);
+  const clockByPlyId = useMemo(() => clockMapForMainline(mainline, clocks), [mainline, clocks]);
+  const evalByPlyId = useMemo(() => storedEvalsByPly(mainline, records), [mainline, records]);
 
   if (!tree || !position) {
     return (
@@ -173,6 +184,11 @@ function GameReview({
     }
   };
 
+  const activePly = path[path.length - 1];
+  const activeMainIndex = activePly ? mainline.findIndex((node) => node.id === activePly.id) : -1;
+  const selected = activeMainIndex >= 0 ? records[activeMainIndex] : undefined;
+  const clockMs = activePly ? clockByPlyId.get(activePly.id) : undefined;
+
   return (
     <div className={styles.page} data-testid="game-review-page">
       <header className={styles.header}>
@@ -184,6 +200,7 @@ function GameReview({
           <p className={styles.subtitle} data-testid="review-game-label">
             {playerLabel}
           </p>
+          <EngineChip record={records[0]} />
         </div>
         {obsolete ? (
           <div className={styles.obsolete} data-testid="review-obsolete" role="note">
@@ -215,9 +232,100 @@ function GameReview({
         </div>
         <aside className={styles.sidePanel}>
           <ReviewSummary summary={summary} userColor={userColor} />
-          <MoveList tree={tree} path={path} onSeek={setPath} nagOverrides={nagOverrides} />
+          <MoveDetails
+            record={selected}
+            userColor={userColor}
+            {...(clockMs !== undefined ? { clockMs } : {})}
+          />
+          <MoveList
+            tree={tree}
+            path={path}
+            onSeek={setPath}
+            nagOverrides={nagOverrides}
+            plyEvals={evalByPlyId}
+          />
         </aside>
       </div>
+    </div>
+  );
+}
+
+function EngineChip({ record }: { record: MoveAnalysis | undefined }): React.JSX.Element | null {
+  if (!record) {
+    return null;
+  }
+  const engine = record.engine;
+  return (
+    <p className={styles.engineChip} data-testid="review-engine-chip">
+      {engine.engineName} {engine.engineVersion} · {engine.profile}
+      {record.depth !== undefined ? ` · depth ${record.depth}` : ''}
+    </p>
+  );
+}
+
+/** Stored evaluation of the selected move/position, plus engine lines. */
+function MoveDetails({
+  record,
+  userColor,
+  clockMs,
+}: {
+  record: MoveAnalysis | undefined;
+  userColor: 'white' | 'black';
+  clockMs?: number;
+}): React.JSX.Element | null {
+  if (!record) {
+    return null;
+  }
+  const whiteAfter = evalAsWhite(record.evalAfter, record.side);
+  const isUserError =
+    record.side === userColor &&
+    (record.classification === 'inaccuracy' ||
+      record.classification === 'mistake' ||
+      record.classification === 'blunder');
+  return (
+    <section className={styles.details} data-testid="review-details" aria-label="Move details">
+      {clockMs !== undefined ? (
+        <p className={styles.clock} data-testid="review-clock">
+          Clock {formatClock(clockMs)}
+        </p>
+      ) : null}
+      {record.evalAfter ? (
+        <p className={styles.evalLine} data-testid="review-eval">
+          {whiteAfter ? formatEvaluation(whiteAfter) : ''} after this move
+        </p>
+      ) : null}
+      {isUserError && record.bestMove ? (
+        <div className={styles.verdict} data-testid="review-verdict">
+          <p className={styles.verdictPlayed}>
+            You played {record.playedMove.san} ({record.classification})
+          </p>
+          <p className={styles.verdictBest}>Best: {record.bestMove.san}</p>
+          <p className={styles.verdictSwing} data-testid="review-swing">
+            {evalBeforeAfter(record)}
+          </p>
+        </div>
+      ) : null}
+      <EngineLines record={record} />
+    </section>
+  );
+}
+
+function EngineLines({ record }: { record: MoveAnalysis }): React.JSX.Element | null {
+  if (record.multipvLines.length === 0) {
+    return null;
+  }
+  return (
+    <div className={styles.lines} data-testid="engine-lines">
+      <h3 className={styles.linesTitle}>Engine line</h3>
+      {record.multipvLines.map((line, index) => (
+        <p className={styles.line} key={`${record.analysisId}-${index}`}>
+          <span className={styles.lineEval}>{evalText(line.evaluation, record.side)}</span>
+          <span className={styles.linePv}>{pvText(record.positionFen, line.uci)}</span>
+          {line.depth !== undefined ? (
+            <span className={styles.lineMeta}>depth {line.depth}</span>
+          ) : null}
+        </p>
+      ))}
     </div>
   );
 }
@@ -396,4 +504,81 @@ function buildNagOverrides(
     }
   });
   return overrides;
+}
+
+/** Stored evaluation of a side's perspective, re-expressed from White's view. */
+function evalAsWhite(
+  evaluation: EvalCpMate | null | undefined,
+  side: MoveAnalysis['side'],
+): EngineEvaluation | null {
+  if (!evaluation) {
+    return null;
+  }
+  const flip = side === 'black';
+  if (evaluation.cp !== null) {
+    return { cp: flip ? -evaluation.cp : evaluation.cp };
+  }
+  if (evaluation.mate !== null) {
+    return { mate: flip ? -evaluation.mate : evaluation.mate };
+  }
+  return null;
+}
+
+function evalText(evaluation: EvalCpMate, side: MoveAnalysis['side']): string {
+  const white = evalAsWhite(evaluation, side);
+  return white ? formatEvaluation(white) : '';
+}
+
+function evalBeforeAfter(record: MoveAnalysis): string {
+  const before = evalAsWhite(record.evalBefore, record.side);
+  const after = evalAsWhite(record.evalAfter, record.side);
+  return `${before ? formatEvaluation(before) : '?'} → ${after ? formatEvaluation(after) : '?'}`;
+}
+
+function formatClock(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+}
+
+function pvText(fen: string, uci: readonly string[]): string {
+  if (uci.length === 0) {
+    return '';
+  }
+  const converted = uciPvToSan(fen, [...uci]);
+  return converted.ok ? converted.sans.join(' ') : uci.join(' ');
+}
+
+/** Per-move eval-after text keyed by mainline ply id (fed to the move list). */
+function storedEvalsByPly(
+  mainline: readonly MovePly[],
+  records: readonly MoveAnalysis[],
+): ReadonlyMap<number, string> {
+  const map = new Map<number, string>();
+  records.forEach((record, ply) => {
+    const node = mainline[ply];
+    const white = node && evalAsWhite(record.evalAfter, record.side);
+    if (node && white) {
+      map.set(node.id, formatEvaluation(white));
+    }
+  });
+  return map;
+}
+
+/** Mainline clocks keyed by ply id (mover's remaining time after the move). */
+function clockMapForMainline(
+  mainline: readonly MovePly[],
+  clocks: readonly MoveClock[],
+): ReadonlyMap<number, number> {
+  const map = new Map<number, number>();
+  for (const clock of clocks) {
+    const node = mainline[clock.ply];
+    if (node) {
+      map.set(node.id, clock.clockMs);
+    }
+  }
+  return map;
 }

@@ -153,6 +153,15 @@ describe('Game Review page (Feature 008)', () => {
     const last = chessboardProps.at(-1)!;
     expect(last.orientation).toBe('white');
     expect(last.lastMove).toEqual(['g2', 'g4']);
+
+    // Stored per-move evals, engine lines, engine identity and mistake review.
+    expect(screen.getAllByTestId('ply-eval').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('engine-lines')).toBeInTheDocument();
+    expect(screen.getByTestId('review-engine-chip')).toHaveTextContent('stockfish');
+    const verdict = screen.getByTestId('review-verdict');
+    expect(verdict).toHaveTextContent('blunder');
+    expect(verdict).toHaveTextContent('Best:');
+    expect(screen.getByTestId('review-swing')).toBeInTheDocument();
   });
 
   it('shows an obsolete-analysis banner and allows re-analysis', async () => {

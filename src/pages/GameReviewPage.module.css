@@ -163,3 +163,79 @@
     grid-template-columns: 1fr;
   }
 }
+
+.engineChip {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.details {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.clock,
+.evalLine {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.verdictPlayed {
+  margin: 0;
+  font-weight: 600;
+}
+
+.verdictBest {
+  margin: 0;
+  color: var(--color-accent, #15781b);
+}
+
+.verdictSwing {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.lines {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.linesTitle {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.line {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.lineEval {
+  font-weight: 600;
+  min-width: 3.5rem;
+}
+
+.lineMeta {
+  color: var(--color-fg-muted);
+}
