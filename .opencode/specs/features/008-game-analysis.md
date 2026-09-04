@@ -21,7 +21,7 @@ The feature must be independently usable and testable without puzzle generation 
 ### In scope
 
 - Extracting analyzable positions from imported games.
-- Submitting positions to the Feature 004 Stockfish analysis service.
+- Submitting positions to the Feature 005 Stockfish analysis service.
 - Single-game analysis.
 - Batch analysis of multiple games.
 - Persistent analysis queue state.
@@ -61,7 +61,7 @@ For each selected game:
 1. Validate that the game is analyzable.
 2. Reconstruct the game from its initial position.
 3. Extract the positions required by the analysis/classification model.
-4. Submit positions to the Feature 004 Stockfish analysis service.
+4. Submit positions to the Feature 005 Stockfish analysis service.
 5. Collect engine results.
 6. Apply the canonical move-classification algorithm.
 7. Determine the game phase for each relevant move/position.
@@ -119,13 +119,12 @@ Opponent moves may be analyzed when required for classification or tactical cont
 
 # 3. Analysis Profiles
 
-Feature 008 consumes the profiles defined by Feature 004.
-
-At minimum:
-
-- `fast`
-- `deep`
-- `tactical-verification`
+Feature 008 consumes the canonical profiles defined by Feature 005 /
+ADR-012 (`fast`, `normal`, `tactical`, `deep`). Analyses of the user's
+games typically use the configured default profile (`normal`) unless a
+game/batch is explicitly run at `fast` or `deep`; the `tactical`
+profile is reserved for tactical verification (Feature 010) and is not
+used for bulk game analysis.
 
 Feature 008 must record the profile used for each analysis.
 
@@ -310,14 +309,23 @@ Relevant specifications include:
 
 Feature 008 MUST NOT invent separate classification thresholds.
 
-The classification output supports at minimum:
+The canonical move-classification output is one of:
 
 - `best`
 - `good`
 - `inaccuracy`
 - `mistake`
 - `blunder`
-- `missedTactic`
+
+`missedTactic` is **not** a sixth classification category. Per the
+canonical domain model (ADR-023, `domain/classification.md`) it is a
+separate boolean attribute on `MoveAnalysis` that Feature 008 **reserves
+but does not compute**; Feature 010 (tactical detection) sets it from
+this feature's persisted analysis once engine-verified detection runs.
+Feature 008 therefore does not depend on Feature 010 or any later
+feature, and its `MoveAnalysis` schema carries the reserved
+`missedTactic` / `detectionVersion` fields so the contract exists before
+analysis is produced (`domain/analysis-model.md`).
 
 Classification must be deterministic for a fixed:
 
@@ -338,7 +346,8 @@ Each analyzed relevant move/position is assigned one game phase:
 - `middlegame`
 - `endgame`
 
-The canonical phase-classification algorithm belongs to the chess domain.
+The canonical phase-classification algorithm belongs to the chess domain
+(`specs/domain/game-phase.md`).
 
 Feature 008 consumes that algorithm and persists the resulting phase with `MoveAnalysis`.
 
@@ -418,14 +427,11 @@ Move navigation must remain synchronized between the move list and chessboard.
 
 # 15. Review Summary
 
-The summary panel displays classification counts for the user's moves:
+The summary panel displays, for the user's moves:
 
-- best;
-- good;
-- inaccuracy;
-- mistake;
-- blunder;
-- missed tactic.
+- classification counts: best; good; inaccuracy; mistake; blunder;
+- missed-tactic count derived from the persisted `missedTactic`
+  attribute (zero/absent until Feature 010 detection has run).
 
 Opponent moves are shown for game context but are not included in the user's statistics.
 
@@ -629,7 +635,7 @@ Verify:
 - cancellation is handled;
 - progress updates correctly.
 
-At least one integration test must exercise the real Feature 004 Stockfish service using a deterministic known position.
+At least one integration test must exercise the real Feature 005 Stockfish service using a deterministic known position.
 
 The test must verify that analysis can execute without blocking the UI.
 
@@ -692,7 +698,7 @@ Use deterministic fixture games and deterministic engine responses where possibl
 
 - [ ] A single imported game can be analyzed.
 - [ ] Multiple selected games can be analyzed as a batch.
-- [ ] Feature 004's Stockfish service is used.
+- [ ] Feature 005's Stockfish service is used.
 - [ ] Analysis does not block the UI.
 - [ ] Progress is visible.
 - [ ] Analysis can be cancelled.
@@ -746,3 +752,24 @@ Use deterministic fixture games and deterministic engine responses where possibl
 - [ ] Batch behavior is tested.
 - [ ] Review behavior is component tested.
 - [ ] At least one end-to-end analysis/review workflow is tested.
+---
+
+## Context
+
+Required reading (see `.opencode/CONTEXT-MAP.md`):
+
+- Architecture/decisions: `ARCHITECTURE.md`; `decisions/ADR-012`,
+  `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`,
+  `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-009`
+- Domain: `domain/analysis-model.md`, `domain/classification.md`,
+  `domain/game-phase.md`, `domain/game-model.md`
+- Research: `research/browser-stockfish.md`,
+  `research/move-classification.md`
+
+Feature dependencies: Features 002, 003, 004 (persistence), 005
+(Stockfish service + profiles), 007 (Game Library entry point and
+analysis status/actions). Feature 008 is independently implementable
+and testable after those features; it never depends on Features 009/010
+or later. Output (persisted `MoveAnalysis[]` with canonical
+classification, phase and reserved missed-tactic contract) is consumed
+by Features 009/010/011/014.

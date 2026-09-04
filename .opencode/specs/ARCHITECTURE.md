@@ -203,6 +203,15 @@ verification step use the engine profiles defined in ADR-012
 (Stockfish WASM build) and the position-keyed cache defined in
 ADR-018 (engine analysis cache).
 
+Feature 008 (Game Analysis) performs classification and game-phase
+assignment **while producing `MoveAnalysis`** using the canonical domain
+rules (`specs/domain/classification.md`, `specs/domain/game-phase.md`);
+the "Classification" stage in the diagram is that in-pipeline domain
+step, not a later feature. Tactical detection (Feature 010) then
+consumes the persisted `MoveAnalysis` records (Stage 1 needs no new
+engine work) and Feature 011 consumes verified candidates. Feature 008
+does not depend on Features 009/010/011.
+
 ---
 
 ## 6a. Analytics Layer

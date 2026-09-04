@@ -52,12 +52,12 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 001, 003, 004 (persistence + duplicate detection).
 
 ### Feature 008 — Game Analysis
-- Required: ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-009`; domain `domain/analysis-model.md`, `domain/classification.md`, `domain/game-model.md`; research `research/browser-stockfish.md`, `research/move-classification.md`.
-- Dependencies: Features 002, 003, 005, 006; classification/missed-tactic output (Features 009/010).
+- Required: ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-009`; domain `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/game-model.md`; research `research/browser-stockfish.md`, `research/move-classification.md`.
+- Dependencies: Features 002, 003, 004 (persistence), 005 (Stockfish service + profiles), 007 (Game Library entry/status). Classification and game-phase rules are canonical domain rules (never later features). Output consumed by Features 009/010/011/014.
 
-### Feature 009 — Move Classification
-- Required: ADRs `decisions/ADR-005`, `decisions/ADR-019`, `decisions/ADR-023`, `decisions/ADR-026`; domain `domain/classification.md`, `domain/analysis-model.md`; research `research/move-classification.md`, `research/move-accuracy.md`.
-- Dependencies: Feature 008 (input `MoveAnalysis[]`); output to Features 008/014.
+### Feature 009 — Move Classification (post-008 tooling)
+- Required: ADRs `decisions/ADR-005`, `decisions/ADR-019`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-026`; domain `domain/classification.md`, `domain/analysis-model.md`; research `research/move-classification.md`, `research/move-accuracy.md`.
+- Dependencies: Feature 008 (persisted `MoveAnalysis[]` input). The canonical classifier is domain-owned and applied inside Feature 008, so Feature 009 never gates 008. Output: classification tooling (glyph/accuracy surfacing per ADR-024) and statistics helpers consumed by Features 008 (review polish)/014/015.
 
 ### Feature 010 — Tactical Detection
 - Required: ADRs `decisions/ADR-026`, `decisions/ADR-023`, `decisions/ADR-025`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`; domain `domain/tactics.md`, `domain/analysis-model.md`, `domain/puzzle-model.md`; research `research/tactical-detection.md`, `research/move-classification.md`.
@@ -115,6 +115,7 @@ features, ADRs, research, or the whole documentation tree.
 - `domain/game-library.md` → Features 007/008/011/014/016
 - `domain/analysis-model.md` → Features 005/006/008/009/010/014
 - `domain/classification.md` → Features 006/008/009/014
+- `domain/game-phase.md` → Features 008/014/015
 - `domain/tactics.md` → Features 010/011
 - `domain/puzzle-model.md` → Features 010/011/012/013
 - `domain/tactical-training.md` → Features 011/012/013/014/015/016
