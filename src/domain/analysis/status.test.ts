@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EngineMetadata } from '@/domain/chess';
 import type { AnalysisJob } from './job';
 import { createAnalysisJob, markCancelled, markCompleted, markFailed } from './job';
-import { analysisStatusOf } from './status';
+import { analysisLibraryStatus, analysisStatusOf } from './status';
 
 const ENGINE: EngineMetadata = {
   engineName: 'stockfish',
@@ -48,5 +48,42 @@ describe('analysisStatusOf (Game Library status)', () => {
     expect(analysisStatusOf([job('failed')])).toBe('failed');
     expect(analysisStatusOf([job('cancelled'), job('failed')])).toBe('failed');
     expect(analysisStatusOf([job('cancelled')])).toBe('cancelled');
+  });
+});
+
+describe('analysisLibraryStatus (outdated detection)', () => {
+  const CURRENT = {
+    engineName: 'stockfish',
+    engineVersion: '18.0.8',
+    engineBuild: 'stockfish-18-lite-single',
+  };
+
+  function completedWith(engine: Partial<EngineMetadata>): AnalysisJob {
+    const base = { ...ENGINE, ...engine };
+    return markCompleted(createAnalysisJob('lichess:abc', base, 10, 1), 2);
+  }
+
+  it('reports completed when the analysis matches the current engine', () => {
+    expect(analysisLibraryStatus([completedWith(ENGINE)], CURRENT)).toBe('completed');
+  });
+
+  it('reports outdated when a completed analysis predates the current engine', () => {
+    const older = completedWith({
+      engineVersion: '17.0.0',
+      engineBuild: 'stockfish-17-lite-single',
+    });
+    expect(analysisLibraryStatus([older], CURRENT)).toBe('outdated');
+  });
+
+  it('reports outdated when versions are stale and keeps completed when unknown engine', () => {
+    const stale = {
+      ...markCompleted(createAnalysisJob('lichess:abc', ENGINE, 10, 1), 2),
+      analysisVersion: 0,
+    };
+    expect(analysisLibraryStatus([stale], CURRENT)).toBe('outdated');
+    // No current engine → version-only check still flags stale.
+    expect(analysisLibraryStatus([stale], undefined)).toBe('outdated');
+    const fresh = markCompleted(createAnalysisJob('lichess:abc', ENGINE, 10, 1), 2);
+    expect(analysisLibraryStatus([fresh], undefined)).toBe('completed');
   });
 });

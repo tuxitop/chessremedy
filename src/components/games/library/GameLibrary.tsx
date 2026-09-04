@@ -145,33 +145,15 @@ export function GameLibrary({
             </p>
           ) : null}
 
-          {shownRows.length > 0 ? (
-            <>
-              <GameRows
-                rows={shownRows}
-                selectedIds={library.selected.ids}
-                onToggle={library.toggleRow}
-                analysis={analysis.enabled ? analysis : null}
-                statuses={analysis.statuses}
-              />
-              <Pagination
-                totalCount={totalCount}
-                pageSize={pageSize}
-                page={currentPage}
-                totalPages={totalPages}
-                onPageSize={(size) => {
-                  setPageSize(size);
-                  setPage(1);
-                }}
-                onPrevious={() => setPage((p) => Math.max(1, p - 1))}
-                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
-              />
-            </>
-          ) : null}
-
           {analysis?.error ? (
             <p role="alert" className={styles.error} data-testid="analysis-error">
               {analysis.error}
+            </p>
+          ) : null}
+
+          {analysis?.running && analysis.progressLine ? (
+            <p className={styles.progress} data-testid="library-progress" aria-live="polite">
+              {analysis.progressLine}
             </p>
           ) : null}
 
@@ -210,6 +192,30 @@ export function GameLibrary({
                 Delete
               </Button>
             </div>
+          ) : null}
+
+          {shownRows.length > 0 ? (
+            <>
+              <GameRows
+                rows={shownRows}
+                selectedIds={library.selected.ids}
+                onToggle={library.toggleRow}
+                analysis={analysis.enabled ? analysis : null}
+                statuses={analysis.statuses}
+              />
+              <Pagination
+                totalCount={totalCount}
+                pageSize={pageSize}
+                page={currentPage}
+                totalPages={totalPages}
+                onPageSize={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
+            </>
           ) : null}
         </>
       )}
@@ -461,7 +467,7 @@ function GameRows({
               <AnalysisCell
                 gameId={row.id}
                 status={statuses[row.id] ?? 'unanalyzed'}
-                onRetry={analysis.retry}
+                onRun={analysis.retry}
               />
             </span>
           ) : null}
@@ -478,16 +484,18 @@ const STATUS_LABELS: Readonly<Record<GameAnalysisStatus, string>> = {
   completed: 'Completed',
   cancelled: 'Cancelled',
   failed: 'Failed',
+  outdated: 'Outdated',
 };
 
 function AnalysisCell({
   gameId,
   status,
-  onRetry,
+  onRun,
 }: {
   gameId: string;
   status: GameAnalysisStatus;
-  onRetry: (gameId: string) => void;
+  /** Run an analysis for this game (Analyze / Retry / Re-analyze). */
+  onRun: (gameId: string) => void;
 }): React.JSX.Element {
   if (status === 'completed') {
     return (
@@ -500,6 +508,28 @@ function AnalysisCell({
       </Link>
     );
   }
+  if (status === 'outdated') {
+    return (
+      <span className={styles.statusWrap}>
+        <span className={styles.statusLabel}>{STATUS_LABELS[status]}</span>
+        <Link
+          className={styles.reviewLink}
+          data-testid={`game-review-${gameId}`}
+          to={`/games/${gameId}/review`}
+        >
+          Review
+        </Link>
+        <Button
+          variant="ghost"
+          className={styles.retryButton!}
+          data-testid={`game-reanalyze-${gameId}`}
+          onClick={() => onRun(gameId)}
+        >
+          Re-analyze
+        </Button>
+      </span>
+    );
+  }
   if (status === 'failed' || status === 'cancelled') {
     return (
       <span className={styles.statusWrap}>
@@ -508,9 +538,23 @@ function AnalysisCell({
           variant="ghost"
           className={styles.retryButton!}
           data-testid={`game-retry-${gameId}`}
-          onClick={() => onRetry(gameId)}
+          onClick={() => onRun(gameId)}
         >
           Retry
+        </Button>
+      </span>
+    );
+  }
+  if (status === 'unanalyzed') {
+    return (
+      <span className={styles.statusWrap}>
+        <Button
+          variant="ghost"
+          className={styles.retryButton!}
+          data-testid={`game-analyze-${gameId}`}
+          onClick={() => onRun(gameId)}
+        >
+          Analyze
         </Button>
       </span>
     );

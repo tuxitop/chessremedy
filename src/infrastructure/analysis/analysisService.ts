@@ -24,7 +24,7 @@ import type { EngineMetadata, AnalysisProfile, EvalCpMate } from '@/domain/chess
 import type { GameId } from '@/domain/chess/game';
 import {
   analysisJobId,
-  analysisStatusOf,
+  analysisLibraryStatus,
   buildMoveAnalyses,
   jobForRun,
   markCancelled,
@@ -34,6 +34,7 @@ import {
   patchJob,
   planGameAnalysis,
   type AnalysisJob,
+  type EngineIdentity,
   type GameAnalysisStatus,
   type InputPositionResult,
 } from '@/domain/analysis';
@@ -63,6 +64,13 @@ type PositionOutcome =
   | { readonly kind: 'result'; readonly result: EngineAnalysisResult }
   | { readonly kind: 'failed'; readonly message: string };
 
+export interface GameAnalysisProgress {
+  readonly state: 'queued' | 'inProgress';
+  readonly completedPositions: number;
+  readonly totalPositions: number;
+  readonly profile: AnalysisProfile;
+}
+
 export class AnalysisServiceError extends Error {}
 
 export class AnalysisService {
@@ -73,6 +81,7 @@ export class AnalysisService {
   private readonly engineCache: EngineAnalysisCache | null;
   private readonly engineMetadata: (profile: AnalysisProfile) => EngineMetadata;
   private readonly now: () => number;
+  private readonly currentEngine: EngineIdentity | null;
 
   constructor(options: AnalysisServiceOptions) {
     this.games = options.games;
@@ -82,11 +91,28 @@ export class AnalysisService {
     this.engineCache = options.engineCache ?? null;
     this.engineMetadata = options.engineMetadata ?? this.defaultEngineMetadata.bind(this);
     this.now = options.now ?? (() => Date.now());
+    this.currentEngine = this.resolveCurrentEngine();
+  }
+
+  private resolveCurrentEngine(): EngineIdentity | null {
+    try {
+      const meta = this.engineMetadata('normal');
+      return {
+        engineName: meta.engineName,
+        engineVersion: meta.engineVersion,
+        engineBuild: meta.engineBuild,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /** UI-facing: analysis status of one game, from persisted state only. */
   async statusOf(gameId: GameId): Promise<GameAnalysisStatus> {
-    return analysisStatusOf(await this.jobs.listByGame(gameId));
+    return analysisLibraryStatus(
+      await this.jobs.listByGame(gameId),
+      this.currentEngine ?? undefined,
+    );
   }
 
   /** UI-facing: analysis status of many games (Game Library). */
@@ -106,7 +132,7 @@ export class AnalysisService {
     }
     const out: Record<string, GameAnalysisStatus> = {};
     for (const id of ids) {
-      out[id] = analysisStatusOf(byGame.get(id) ?? []);
+      out[id] = analysisLibraryStatus(byGame.get(id) ?? [], this.currentEngine ?? undefined);
     }
     return out;
   }
@@ -116,6 +142,45 @@ export class AnalysisService {
     const queued = await this.jobs.listByState('queued');
     const inProgress = await this.jobs.listByState('inProgress');
     return [...inProgress, ...queued];
+  }
+
+  /**
+   * Live progress for the selected games: the most recent active
+   * (`queued`/`inProgress`) job per game, or `undefined` when the game is not
+   * actively being analyzed. Used by the Library to surface per-game and
+   * batch progress without fabricating ETAs.
+   */
+  async jobProgress(
+    gameIds: readonly GameId[],
+  ): Promise<Readonly<Record<string, GameAnalysisProgress | undefined>>> {
+    const ids = [...new Set(gameIds)];
+    if (ids.length === 0) {
+      return {};
+    }
+    const jobs = await this.jobs.listByGames(ids);
+    const byGame = new Map<string, AnalysisJob[]>();
+    for (const job of jobs) {
+      const list = byGame.get(job.gameId) ?? [];
+      list.push(job);
+      byGame.set(job.gameId, list);
+    }
+    const out: Record<string, GameAnalysisProgress | undefined> = {};
+    for (const id of ids) {
+      const candidates = (byGame.get(id) ?? []).filter(
+        (job): job is AnalysisJob & { state: 'queued' | 'inProgress' } =>
+          job.state === 'queued' || job.state === 'inProgress',
+      );
+      const active = [...candidates].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      out[id] = active
+        ? {
+            state: active.state,
+            completedPositions: active.completedPositions,
+            totalPositions: active.totalPositions,
+            profile: active.engine.profile,
+          }
+        : undefined;
+    }
+    return out;
   }
 
   /**

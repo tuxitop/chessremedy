@@ -7,6 +7,7 @@
  */
 
 import { ANALYSIS_VERSION } from '@/domain/chess';
+import type { EngineMetadata } from '@/domain/chess';
 import { CLASSIFICATION_VERSION } from '@/domain/chess/classification';
 import { GAME_PHASE_VERSION } from '@/domain/chess/gamePhase';
 import type { AnalysisJob } from './job';
@@ -18,6 +19,7 @@ export const GAME_ANALYSIS_STATUSES = [
   'completed',
   'cancelled',
   'failed',
+  'outdated',
 ] as const;
 export type GameAnalysisStatus = (typeof GAME_ANALYSIS_STATUSES)[number];
 
@@ -69,4 +71,39 @@ export function isAnalysisObsolete(job: AnalysisJob): boolean {
     job.classificationVersion < CLASSIFICATION_VERSION ||
     job.gamePhaseVersion < GAME_PHASE_VERSION
   );
+}
+
+export type EngineIdentity = Pick<EngineMetadata, 'engineName' | 'engineVersion' | 'engineBuild'>;
+
+function sameEngine(a: EngineIdentity, b: EngineIdentity | undefined): boolean {
+  return (
+    b !== undefined &&
+    a.engineName === b.engineName &&
+    a.engineVersion === b.engineVersion &&
+    a.engineBuild === b.engineBuild
+  );
+}
+
+/**
+ * Library-facing status: like `analysisStatusOf`, but a completed run that is
+ * superseded — either by a stale pipeline/classification/phase version or by
+ * the current engine identity (`currentEngine`) — is reported as `outdated`
+ * so the user is offered an opt-in re-analysis.
+ */
+export function analysisLibraryStatus(
+  jobs: readonly AnalysisJob[],
+  currentEngine?: EngineIdentity,
+): GameAnalysisStatus {
+  const status = analysisStatusOf(jobs);
+  if (status === 'completed') {
+    const latest = latestCompletedJob(jobs);
+    if (
+      latest &&
+      (isAnalysisObsolete(latest) ||
+        (currentEngine !== undefined && !sameEngine(latest.engine, currentEngine)))
+    ) {
+      return 'outdated';
+    }
+  }
+  return status;
 }

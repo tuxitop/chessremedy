@@ -22,9 +22,11 @@ export type { GameAnalysisPlan, PlannedMove, PlanErrorCode, PlanResult } from '.
 export { buildMoveAnalyses, negateEval, swapWdl, terminalEvalFor } from './build';
 export type { BuildInput, InputLine, InputPositionResult } from './build';
 export {
+  analysisLibraryStatus,
   analysisStatusOf,
   GAME_ANALYSIS_STATUSES,
   isAnalysisObsolete,
   latestCompletedJob,
 } from './status';
 export type { GameAnalysisStatus } from './status';
+export type { EngineIdentity } from './status';

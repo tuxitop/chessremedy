@@ -7,7 +7,7 @@ import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { gameFromPgn } from '@/domain/chess/parseGame';
-import { planGameAnalysis } from '@/domain/analysis';
+import { planGameAnalysis, createAnalysisJob, markCompleted } from '@/domain/analysis';
 import { createFakeImportService } from '@/components/games/test-support/fakeImportService';
 import {
   createFakeAnalysisService,
@@ -216,5 +216,46 @@ describe('GamesPage analysis workflow (Feature 008)', () => {
     screen.getByTestId(`game-retry-${game.id}`);
     await user.click(screen.getByTestId(`game-retry-${game.id}`));
     await waitFor(() => expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument());
+  });
+
+  it('marks an analysis as outdated and re-analyzes it under the current engine', async () => {
+    const game = fixtureGame('cc-blitz-clean');
+    await gamesRepository.saveGame(game);
+
+    // A completed analysis produced by an older engine build.
+    const older = createAnalysisJob(
+      game.id,
+      {
+        engineName: 'stockfish',
+        engineVersion: '17.0.0',
+        engineBuild: 'stockfish-17-lite-single',
+        profile: 'normal',
+      },
+      14,
+      1,
+    );
+    await analysisJobsRepository.putJob(markCompleted(older, 2));
+
+    const fake = createFakeAnalysisService();
+    renderWithAnalysis(fake);
+
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'outdated',
+      ),
+    );
+    expect(screen.getByTestId(`game-reanalyze-${game.id}`)).toBeInTheDocument();
+
+    await user.click(screen.getByTestId(`game-reanalyze-${game.id}`));
+    await waitFor(async () => expect(await analysesRepository.countForGame(game.id)).toBe(14));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'completed',
+      ),
+    );
+    expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument();
   });
 });

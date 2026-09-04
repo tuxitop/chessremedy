@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnalysisJob } from '@/domain/analysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
-import type { AnalysisRunOptions } from '@/infrastructure/analysis';
+import type { AnalysisProfile } from '@/domain/chess';
+import type { AnalysisRunOptions, GameAnalysisProgress } from '@/infrastructure/analysis';
 
 /** UI-facing surface of the game-analysis service (injectable fake in tests). */
 export interface AnalysisServiceLike {
   analyzeGames(
     gameIds: readonly string[],
-    profile?: 'fast' | 'normal' | 'tactical' | 'deep',
+    profile?: AnalysisProfile,
     run?: AnalysisRunOptions,
   ): Promise<readonly AnalysisJob[]>;
   statusesOf(gameIds: readonly string[]): Promise<Readonly<Record<string, GameAnalysisStatus>>>;
   listActiveJobs(): Promise<readonly AnalysisJob[]>;
+  /** Optional live per-game progress (queued/in-progress positions). */
+  jobProgress?(
+    gameIds: readonly string[],
+  ): Promise<Readonly<Record<string, GameAnalysisProgress | undefined>>>;
 }
 
 export interface UseGameAnalysis {
@@ -19,10 +24,7 @@ export interface UseGameAnalysis {
   /** User-facing error from a failed run (or `null`). */
   readonly error: string | null;
   /** Analyze/resume/retry the given games under the default profile. */
-  analyze(
-    gameIds: readonly string[],
-    profile?: 'fast' | 'normal' | 'tactical' | 'deep',
-  ): Promise<readonly AnalysisJob[]>;
+  analyze(gameIds: readonly string[], profile?: AnalysisProfile): Promise<readonly AnalysisJob[]>;
   /** Abort the active batch (queued + in-progress jobs become cancelled). */
   cancel(): void;
 }
@@ -47,7 +49,7 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
   const analyze = useCallback(
     async (
       gameIds: readonly string[],
-      profile: 'fast' | 'normal' | 'tactical' | 'deep' = 'normal',
+      profile: AnalysisProfile = 'normal',
     ): Promise<readonly AnalysisJob[]> => {
       controllerRef.current?.abort();
       if (!service) {
