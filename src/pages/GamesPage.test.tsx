@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
+import { gameFromPgn } from '@/domain/chess/parseGame';
 import { createFakeImportService } from '@/components/games/test-support/fakeImportService';
 import { renderWithProviders } from '@/test/test-utils';
 import { GamesPage } from './GamesPage';
@@ -92,6 +93,37 @@ describe('GamesPage (Game Library)', () => {
 
     await user.click(screen.getByTestId('library-select-all'));
     expect(screen.getByTestId('library-selection-bar')).toHaveTextContent('Selected: 2');
+  });
+
+  it('paginates the result set and honours the chosen page size', async () => {
+    const many: string[] = [];
+    for (let index = 0; index < 55; index += 1) {
+      const day = (index % 27) + 1;
+      const date = `2026.03.${day.toString().padStart(2, '0')}`;
+      const pgn = `[Event "p ${index}"]\n[Date "${date}"]\n[White "w${index}"]\n[Black "b${index}"]\n[Result "1-0"]\n[TimeControl "300"]\n\n1. e4 e5 1-0`;
+      many.push(pgn);
+    }
+    const parsed = many.map((pgn) => {
+      const result = gameFromPgn(pgn, { source: 'local', userColor: 'white' });
+      if (!result.ok) throw new Error(result.error.message);
+      return result.game;
+    });
+    await gamesRepository.saveGames(parsed);
+    renderGames();
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(50));
+    expect(screen.getByTestId('library-page-status')).toHaveTextContent('Page 1 of 2');
+    expect(screen.getByTestId('library-page-prev')).toBeDisabled();
+
+    await user.click(screen.getByTestId('library-page-next'));
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(5));
+    expect(screen.getByTestId('library-page-status')).toHaveTextContent('Page 2 of 2');
+    expect(screen.getByTestId('library-page-next')).toBeDisabled();
+
+    await user.selectOptions(screen.getByTestId('library-page-size'), '100');
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(55));
+    expect(screen.getByTestId('library-page-status')).toHaveTextContent('Page 1 of 1');
   });
 
   it('clears the selection when filters change', async () => {

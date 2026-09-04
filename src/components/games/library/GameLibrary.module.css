@@ -209,6 +209,45 @@
   gap: var(--space-2);
 }
 
+.checkHeader {
+  visibility: hidden;
+}
+
+.pagination {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.paginationField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.paginationField select {
+  font-family: inherit;
+  font-size: var(--font-size-md);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface);
+  color: var(--color-fg);
+}
+
+.paginationStatus {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.paginationActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 @media (max-width: 640px) {
   .header {
     display: none;

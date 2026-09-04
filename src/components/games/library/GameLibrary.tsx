@@ -29,7 +29,8 @@ const TIME_FRAME_LABELS: Readonly<Record<string, string>> = {
   custom: 'Custom range',
 };
 
-const ROW_PAGE = 100;
+const PAGE_SIZES = [25, 50, 100, 250] as const;
+const DEFAULT_PAGE_SIZE = 50;
 
 interface GameLibraryProps {
   readonly refreshKey: number;
@@ -38,10 +39,15 @@ interface GameLibraryProps {
 export function GameLibrary({ refreshKey }: GameLibraryProps): React.JSX.Element {
   const library = useGameLibrary(refreshKey);
   const { filters } = library;
-  const [visible, setVisible] = useState(ROW_PAGE);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [page, setPage] = useState(1);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const shownRows = library.rows.slice(0, visible);
+  const totalCount = library.rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const shownRows = library.rows.slice(start, start + pageSize);
   const selectedCount = library.selected.count;
   const customTimeFrame = isCustomTimeFrame(filters.timeFrame) ? filters.timeFrame : null;
   const timeFrameError =
@@ -50,7 +56,7 @@ export function GameLibrary({ refreshKey }: GameLibraryProps): React.JSX.Element
       : null;
 
   const update = (next: GameLibraryFilters, replace?: boolean): void => {
-    setVisible(ROW_PAGE);
+    setPage(1);
     library.update(next, replace);
   };
 
@@ -129,15 +135,18 @@ export function GameLibrary({ refreshKey }: GameLibraryProps): React.JSX.Element
                 selectedIds={library.selected.ids}
                 onToggle={library.toggleRow}
               />
-              {library.rows.length > shownRows.length ? (
-                <Button
-                  variant="secondary"
-                  data-testid="library-show-more"
-                  onClick={() => setVisible((v) => v + ROW_PAGE)}
-                >
-                  Show more ({library.rows.length - shownRows.length} remaining)
-                </Button>
-              ) : null}
+              <Pagination
+                totalCount={totalCount}
+                pageSize={pageSize}
+                page={currentPage}
+                totalPages={totalPages}
+                onPageSize={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
             </>
           ) : null}
 
@@ -346,7 +355,7 @@ function GameRows({
       data-testid="library-rows"
     >
       <div className={styles.header} role="row">
-        <span role="columnheader" className={styles.srOnly}>
+        <span role="columnheader" className={styles.checkHeader} aria-label="Select">
           Select
         </span>
         <span role="columnheader">White</span>
@@ -398,6 +407,64 @@ function GameRows({
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function Pagination({
+  totalCount,
+  pageSize,
+  page,
+  totalPages,
+  onPageSize,
+  onPrevious,
+  onNext,
+}: {
+  totalCount: number;
+  pageSize: number;
+  page: number;
+  totalPages: number;
+  onPageSize: (size: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+}): React.JSX.Element {
+  return (
+    <div className={styles.pagination} data-testid="library-pagination">
+      <label className={styles.paginationField}>
+        <span className={styles.fieldLabel}>Rows per page</span>
+        <select
+          data-testid="library-page-size"
+          value={pageSize}
+          onChange={(e) => onPageSize(Number(e.target.value))}
+        >
+          {PAGE_SIZES.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className={styles.paginationStatus} data-testid="library-page-status">
+        Page {page} of {totalPages} · {totalCount} games
+      </span>
+      <div className={styles.paginationActions}>
+        <Button
+          variant="secondary"
+          data-testid="library-page-prev"
+          disabled={page <= 1}
+          onClick={onPrevious}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="secondary"
+          data-testid="library-page-next"
+          disabled={page >= totalPages}
+          onClick={onNext}
+        >
+          Next
+        </Button>
+      </div>
     </div>
   );
 }
