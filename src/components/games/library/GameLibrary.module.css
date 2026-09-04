@@ -334,3 +334,11 @@
     justify-content: flex-end;
   }
 }
+
+.timeControl {
+  font-weight: 600;
+}
+
+.timeControlCategory {
+  color: var(--color-fg-muted);
+}

@@ -236,7 +236,7 @@ export const GAME_FIXTURE_DEFS: readonly GameFixtureDef[] = [
 [UTCTime "07:03:19"]
 [WhiteElo "1950"]
 [BlackElo "1930"]
-[TimeControl "1/259200"]
+[TimeControl "14 days per move"]
 [Termination "Normal"]
 
 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Na5 10. Bc2 c5 11. d4 Qc7 12. Nbd2 Nc6 13. dxc5 dxc5 14. Nf1 h6 15. Ng3 Be6 16. Qe2 Rad8 1/2-1/2`,

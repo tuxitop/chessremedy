@@ -2,6 +2,7 @@ import type * as React from 'react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
+import { parseTimeControl } from '@/domain/chess/timeControl';
 import { TIME_CONTROL_CATEGORIES } from '@/domain/chess/timeControl';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import {
@@ -438,8 +439,8 @@ function GameRows({
             {row.result}
           </span>
           <span role="cell" data-testid="game-timecontrol" data-col="Time control">
-            {row.normalizedTimeControl}
-            {row.timeControl === '' ? '' : ` (${row.timeControl})`}
+            <span className={styles.timeControl}>{parseTimeControl(row.timeControl).display}</span>
+            <span className={styles.timeControlCategory}> · {row.normalizedTimeControl}</span>
           </span>
           <span role="cell" data-testid="game-source" data-col="Platform">
             {GAME_SOURCE_LABELS[row.source]}

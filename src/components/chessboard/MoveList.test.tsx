@@ -91,6 +91,19 @@ describe('MoveList', () => {
     expect(screen.getByText('A solid response')).toBeInTheDocument();
   });
 
+  it('never renders %clk/%emt/%eval clock or evaluation tags as comments', () => {
+    render(
+      <MoveList
+        tree={treeOf('1. e4 { [%clk 0:04:37] [%eval 0.18] } e5 { [%clk 0:03:59] } 2. Nf3')}
+        path={[]}
+      />,
+    );
+    const list = screen.getByTestId('move-list');
+    expect(list.textContent).not.toContain('%clk');
+    expect(list.textContent).not.toContain('%eval');
+    expect(list.textContent).not.toContain('0:04:37');
+  });
+
   it('renders an empty state when the tree has no moves', () => {
     const built = buildTreeFromPgn('[FEN "4k3/8/8/8/8/8/8/4K3 w - - 0 1"]');
     expect(built.error).toBeUndefined();

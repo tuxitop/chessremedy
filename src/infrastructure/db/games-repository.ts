@@ -16,6 +16,7 @@ import {
   type GameResult,
   type Player,
 } from '@/domain/chess/game';
+import { parseTimeControl, type TimeControl } from '@/domain/chess/timeControl';
 import type { GameSource } from '@/domain/chess/gameSource';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { Color } from 'chessops/types';
@@ -35,6 +36,8 @@ export interface GameRow {
   readonly timeControl: string;
   /** Category as normalized at import time (ADR-013 retention). */
   readonly normalizedTimeControl: TimeControlCategory;
+  /** Structured exact time control (ADR-013, domain/time-control.md). */
+  readonly timeControlModel?: TimeControl;
   readonly userColor: Color;
   /** Verbatim PGN for exactly one game. */
   readonly pgn: string;
@@ -55,6 +58,7 @@ export interface GameSummary {
   readonly result: GameResult;
   readonly timeControl: string;
   readonly normalizedTimeControl: TimeControlCategory;
+  readonly timeControlModel?: TimeControl;
   readonly userColor: Color;
   readonly importedAt: number;
   readonly updatedAt: number;
@@ -279,6 +283,7 @@ function contentFieldsOf(game: Game): ContentFields {
     result: game.result,
     timeControl: game.timeControl,
     normalizedTimeControl: game.normalizedTimeControl,
+    timeControlModel: parseTimeControl(game.timeControl),
     userColor: game.userColor,
     pgn: game.pgn,
   };

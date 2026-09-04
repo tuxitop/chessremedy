@@ -2,10 +2,18 @@ export { GAME_SOURCES, GAME_SOURCE_LABELS, normalizeGameSource, isGameSource } f
 export type { GameSource } from './gameSource';
 export {
   TIME_CONTROL_CATEGORIES,
+  TIME_CONTROL_CATEGORY_VERSION,
   TIME_CONTROL_NORMALIZATION_VERSION,
+  TIME_CONTROL_PARSE_VERSION,
   normalizeTimeControl,
+  parseTimeControl,
 } from './timeControl';
-export type { NormalizedTimeControl, TimeControlCategory } from './timeControl';
+export type {
+  NormalizedTimeControl,
+  TimeControl,
+  TimeControlCategory,
+  TimeControlKind,
+} from './timeControl';
 export { outcomeOf, makeGameId } from './game';
 export type { Game, GameId, GameOutcome, GameResult, Player } from './game';
 export { parsePositionFen, fenOf, resolveStartPosition } from './position';
@@ -18,6 +26,8 @@ export { uciPvToSan } from './san';
 export type { UciPvToSanResult } from './san';
 export { gameFromPgn } from './parseGame';
 export type { GameParseErrorCode, GameParseResult, ImportContext } from './parseGame';
+export { gameClocks, extractClockSeconds } from './clock';
+export type { GameClocks, MoveClock } from './clock';
 export { GAME_PHASES, ANALYSIS_JOB_STATES, ANALYSIS_PROFILES, ANALYSIS_VERSION } from './analysis';
 export type {
   AnalysisJobState,

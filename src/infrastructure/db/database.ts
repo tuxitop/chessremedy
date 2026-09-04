@@ -1,5 +1,11 @@
 import Dexie, { type Table } from 'dexie';
-import { applyV1Schema, applyV2Schema, applyV3Schema, applyV4Schema } from './schema';
+import {
+  applyV1Schema,
+  applyV2Schema,
+  applyV3Schema,
+  applyV4Schema,
+  applyV5Schema,
+} from './schema';
 import type { GameRow } from './games-repository';
 import type { AnalysisJob } from '@/domain/analysis';
 import type { MoveAnalysis } from '@/domain/chess';
@@ -31,14 +37,15 @@ export class ChessRemedyDatabase extends Dexie {
     applyV2Schema(this);
     applyV3Schema(this);
     applyV4Schema(this);
+    applyV5Schema(this);
   }
 }
 
 export const db = new ChessRemedyDatabase();
 
-if (PERSISTENCE_SCHEMA_VERSION !== 4) {
+if (PERSISTENCE_SCHEMA_VERSION !== 5) {
   throw new Error(
-    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v4. ` +
+    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v5. ` +
       `Bump PERSISTENCE_SCHEMA_VERSION in app-config.ts and add a new schema module ` +
       `when extending the database.`,
   );

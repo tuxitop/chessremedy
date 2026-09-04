@@ -62,7 +62,9 @@ function emptyCell(): MoveRowCell {
 function commentTexts(ply: MovePly): string[] {
   const out: string[] = [];
   for (const comment of ply.comments) {
-    const text = comment.replace(/\[%(cal|csl)\s+[^\]]*\]/g, '').trim();
+    // Strip every structured PGN percent tag (%clk/%emt/%eval/%cal/%csl)
+    // so annotations are never rendered as ordinary prose.
+    const text = comment.replace(/\[%[a-z]+\s+[^\]]*\]/gi, '').trim();
     if (text) {
       out.push(text);
     }
