@@ -122,4 +122,44 @@ describe('buildMoveAnalyses', () => {
     expect(negateEval(evalCp(30))).toEqual(evalCp(-30));
     expect(negateEval({ cp: null, mate: 2 })).toEqual({ cp: null, mate: -2 });
   });
+
+  it('retains per-line depth and the mover clock when present', () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    const plan = planGameAnalysis(game);
+    if (!plan.ok) throw new Error(plan.message);
+    const { moves, analyzeFens } = plan.plan;
+    const results = new Map<string, InputPositionResult>();
+    for (const fen of analyzeFens) {
+      results.set(fen, {
+        fen,
+        profile: 'normal',
+        lines: [
+          {
+            multipv: 1,
+            uci: [],
+            evaluation: evalCp(0),
+            wdl: WDL,
+            depth: 20,
+          },
+        ],
+      });
+    }
+    const job = createAnalysisJob(game.id, ENGINE, analyzeFens.length, 1);
+    const records = buildMoveAnalyses({
+      job,
+      moves,
+      results,
+      clocks: [
+        { ply: 0, color: 'white', clockMs: 300000 },
+        { ply: 1, color: 'black', clockMs: 290000 },
+        { ply: 2, color: 'white', clockMs: 250000 },
+        { ply: 3, color: 'black', clockMs: 200000 },
+      ],
+      nowMs: 1,
+    });
+    expect(records[0]!.depth).toBe(20);
+    expect(records[0]!.multipvLines[0]!.depth).toBe(20);
+    expect(records[0]!.clockAfterMs).toBe(300000);
+    expect(records[3]!.clockAfterMs).toBe(200000);
+  });
 });

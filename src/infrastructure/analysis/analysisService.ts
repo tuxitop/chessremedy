@@ -19,6 +19,7 @@ import type { EngineService, EngineAnalysisResult } from '@/infrastructure/engin
 import type { EngineEvaluation } from '@/infrastructure/engine/types';
 import type { EngineAnalysisCache } from '@/infrastructure/engine/cache';
 import { analysisCacheKey } from '@/infrastructure/engine/cache';
+import { gameClocks } from '@/domain/chess';
 import type { EngineMetadata, AnalysisProfile, EvalCpMate } from '@/domain/chess';
 import type { GameId } from '@/domain/chess/game';
 import {
@@ -234,7 +235,13 @@ export class AnalysisService {
 
     let records;
     try {
-      records = buildMoveAnalyses({ job: current, moves: plan.moves, results, nowMs: this.now() });
+      records = buildMoveAnalyses({
+        job: current,
+        moves: plan.moves,
+        results,
+        clocks: gameClocks(game.moves),
+        nowMs: this.now(),
+      });
     } catch (err) {
       const failed = markFailed(
         current,
@@ -311,6 +318,7 @@ function toInputPositionResult(result: EngineAnalysisResult): InputPositionResul
       uci: line.principalVariation.map((move) => move.uci),
       evaluation: toEvalCpMate(line.evaluation),
       wdl: line.wdl,
+      ...(line.depth !== undefined ? { depth: line.depth } : {}),
     })),
   };
 }

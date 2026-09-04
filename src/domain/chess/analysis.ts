@@ -77,6 +77,8 @@ export interface MultiPvLine {
   readonly evaluation: EvalCpMate;
   /** `null` for the `fast` profile (ADR-019). */
   readonly wdl: Wdl | null;
+  /** Search depth the engine reported for this line, when available. */
+  readonly depth?: number;
 }
 
 /**
@@ -108,6 +110,10 @@ export interface MoveAnalysis {
   readonly bestPv: readonly string[];
   /** MultiPV lines when the profile requested them, else just the top line. */
   readonly multipvLines: readonly MultiPvLine[];
+  /** Search depth reached for the position (top line), when reported. */
+  readonly depth?: number;
+  /** Mover's remaining clock after the move (from `[%clk]`), when present. */
+  readonly clockAfterMs?: number;
   readonly legalMovesCount: number;
   /** Book/opening tagging; reserved (V1 leaves every move `false`). */
   readonly inBook: boolean;

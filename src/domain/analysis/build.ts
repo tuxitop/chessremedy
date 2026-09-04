@@ -21,6 +21,7 @@ import type {
   PlayedMove,
   Wdl,
 } from '@/domain/chess';
+import type { MoveClock } from '@/domain/chess/clock';
 import { classifyMove, CLASSIFICATION_VERSION, cpValueOf } from '@/domain/chess/classification';
 import { GAME_PHASE_VERSION } from '@/domain/chess/gamePhase';
 import type { AnalysisJob } from './job';
@@ -33,6 +34,8 @@ export interface InputLine {
   readonly uci: readonly string[];
   readonly evaluation: EvalCpMate;
   readonly wdl: Wdl | null;
+  /** Search depth reached, when the engine reported it. */
+  readonly depth?: number;
 }
 
 export interface InputPositionResult {
@@ -46,6 +49,8 @@ export interface BuildInput {
   readonly moves: readonly PlannedMove[];
   /** Results keyed by the canonical FEN of every planned position. */
   readonly results: ReadonlyMap<string, InputPositionResult>;
+  /** Mainline clocks (mover's remaining time after each move), when present. */
+  readonly clocks?: readonly MoveClock[];
   readonly nowMs: number;
 }
 
@@ -109,6 +114,10 @@ function missingResult(fen: string): Error {
  */
 export function buildMoveAnalyses(input: BuildInput): readonly MoveAnalysis[] {
   const { job, moves, results, nowMs } = input;
+  const clockByPly = new Map<number, number>();
+  for (const clock of input.clocks ?? []) {
+    clockByPly.set(clock.ply, clock.clockMs);
+  }
   const records: MoveAnalysis[] = [];
 
   for (const move of moves) {
@@ -143,6 +152,7 @@ export function buildMoveAnalyses(input: BuildInput): readonly MoveAnalysis[] {
       uci: line.uci,
       evaluation: line.evaluation,
       wdl: line.wdl,
+      ...(line.depth !== undefined ? { depth: line.depth } : {}),
     }));
 
     const classification = classifyMove({
@@ -157,6 +167,8 @@ export function buildMoveAnalyses(input: BuildInput): readonly MoveAnalysis[] {
       inBook: false,
       topCpValues: resultBefore.lines.map((line) => cpValueOf(line.evaluation)),
     });
+
+    const clockAfterMs = clockByPly.get(move.ply);
 
     records.push({
       analysisId: job.id,
@@ -173,6 +185,8 @@ export function buildMoveAnalyses(input: BuildInput): readonly MoveAnalysis[] {
       bestMove: bestMoveOf(move.positionFen, bestPv),
       bestPv,
       multipvLines,
+      ...(top.depth !== undefined ? { depth: top.depth } : {}),
+      ...(clockAfterMs !== undefined ? { clockAfterMs } : {}),
       legalMovesCount: move.legalMovesCount,
       inBook: false,
       classification,
