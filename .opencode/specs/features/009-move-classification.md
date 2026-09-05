@@ -87,6 +87,12 @@ highlight. Colour is never the only signal — the canonical glyph/label on
 the chip, the move list and the summary use the same classification
 colour/tone.
 
+When live analysis is on, moves played/explored on the board are also
+classified ephemerally from the live engine evaluations (ADR-023) and
+rendered with the same canonical mapping (glyph, chip, start/end-square
+highlight) as persisted classifications. These ephemeral classifications
+never write into or override the persisted `MoveAnalysis`.
+
 ## Acceptance Criteria
 
 - [ ] Every persisted `MoveAnalysis` carries exactly one of the five

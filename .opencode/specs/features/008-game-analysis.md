@@ -395,6 +395,9 @@ continuation to the move list; the stored game/PGN and its persisted
   depth reached, principal variation, MultiPV lines, engine identity,
   profile and analysis version. Review never requests a new engine
   calculation merely to display an already persisted evaluation.
+- Toggling live analysis on never dismisses the saved per-move evaluations:
+  every ply keeps its stored value, and only plies whose position has a
+  fresh live result this session show the live evaluation instead.
 
 # 14. Engine Lines / MultiPV
 
@@ -435,6 +438,12 @@ continuation to the move list; the stored game/PGN and its persisted
   analysis/re-analysis run, which creates a new analysis identity and never
   silently replaces a newer analysis with an older configuration
   (ADR-020, §4).
+- While the engine is live, played/explored moves are classified
+  **ephemerally** from the live evaluations (ADR-023): the move list shows
+  the classification glyph and the active move gets the classification
+  chip/start-end-square highlight, exactly like stored classifications.
+  These ephemeral classifications are presentation-only and never overwrite
+  the persisted `MoveAnalysis` classifications.
 
 # 17. Move Classification & Mistake Review
 

@@ -61,6 +61,12 @@ engine-lines visibility behave identically across the two modes.
   an identity chip) and are never recomputed in the view.
 - Live mode results update eval bar/engine lines/arrows while thinking and
   may be stored only through an explicit, versioned analysis run.
+- In live mode, plies whose neighbouring positions were analysed this
+  session are classified ephemerally (ADR-023) and rendered through the same
+  glyph/chip/highlight presentation as stored classifications; these live
+  classifications never overwrite persisted `MoveAnalysis`. Per-move
+  evaluations keep their stored values when live analysis is on, with only
+  freshly analysed plies showing the live value.
 - Evaluation semantics are unified: the eval bar and per-move values show the
   evaluation **after** the selected move; classifications come from the
   canonical domain classifier (ADR-023) and are never recomputed in the UI.
