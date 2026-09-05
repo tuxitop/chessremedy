@@ -1,56 +1,68 @@
-# Feature 009 — Move Classification (post-008 tooling)
+# Feature 009 — Classification & Accuracy Tooling
 
 ## Goal
 
-Provide classification **presentation and accuracy tooling** over the
-analyses that Feature 008 persists. Feature 009 runs after Feature 008
-and never gates it.
+Provide presentation and accuracy tooling over the classifications and
+engine analyses persisted by Feature 008.
 
-The canonical classifier is a chess-domain rule (implemented as a
-domain function) that Feature 008 applies while producing `MoveAnalysis`
-records (ADR-023, `specs/domain/classification.md`). Feature 009 does
-**not** define or duplicate the classification algorithm, and Feature
-008 does **not** depend on Feature 009.
+Feature 009 does not classify moves.
+
+The canonical classifier is a chess-domain rule applied by Feature 008.
 
 ## Scope
 
-- Glyph rendering utilities (ADR-023 `?? ? ?! ! !!`) consumed by Game
-  Review polish and Live Analysis preview.
-- Per-move / per-game accuracy (ADR-024) computed from persisted
-  `MoveAnalysis` records.
-- Classification summary/count helpers used by review UI and statistics
-  (Features 008/014).
-- Deterministic fixtures and tests over persisted analyses.
+- Classification glyph rendering.
+- Classification labels and explanations.
+- Per-game classification summaries.
+- Accuracy calculations.
+- Statistics helpers.
+- Deterministic fixtures and tests.
 
-Missed tactical opportunities remain the separate `missedTactic`
-attribute on `MoveAnalysis`, owned by Feature 010.
+## Classification
 
-## Categories
+A persisted MoveAnalysis may have no classification.
 
-Consumed (never re-defined): `best`, `good`, `inaccuracy`, `mistake`,
-`blunder`.
+The UI must NOT assume every analyzed move has a classification.
+
+Unclassified moves:
+
+- show no classification glyph;
+- remain fully navigable;
+- still have their engine evaluation available;
+- may still be displayed in the move list.
+
+Only classified moves receive classification glyphs such as:
+
+    ??  ?  ?!  !  !!
+
+The exact mapping is defined by ADR-023.
+
+## Accuracy
+
+Accuracy is calculated from persisted analysis data and must not be
+derived from the presence or absence of classification glyphs.
+
+Accuracy calculations must follow ADR-024 and the relevant research.
+
+## Game Review
+
+The Review UI should emphasize classified moves rather than visually
+classifying every move.
+
+Users must be able to navigate every move and inspect its evaluation,
+while meaningful mistakes/blunders/etc. are visually highlighted.
 
 ## Acceptance Criteria
 
-Glyph/accuracy helpers produce the same results as Feature 008's
-persisted classifications for identical records.
-
-Classification version is preserved from the persisted records.
-
-All tooling is deterministic over persisted `MoveAnalysis` fixtures.
-
----
-
-## Context
-
-Required reading (see `.opencode/CONTEXT-MAP.md`):
-
-- Architecture/decisions: `decisions/ADR-005`, `decisions/ADR-019`,
-  `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-026`
-- Domain: `domain/classification.md`, `domain/analysis-model.md`,
-  `domain/game-phase.md`
-- Research: `research/move-classification.md`,
-  `research/move-accuracy.md`
-
-Feature dependencies: Feature 008 (persisted `MoveAnalysis[]` input).
-Output consumed by Features 008 (review polish)/014/015.
+- [ ] Unclassified moves are supported by the data model.
+- [ ] Most ordinary moves in representative fixtures remain
+      unclassified.
+- [ ] Opening/book-like ordinary moves are not automatically classified
+      merely because they were analyzed.
+- [ ] Classified moves display the appropriate glyph.
+- [ ] Unclassified moves display no classification glyph.
+- [ ] Evaluation remains available for unclassified moves.
+- [ ] Accuracy calculations do not depend on every move having a
+      classification.
+- [ ] Classification version is preserved.
+- [ ] Tooling is deterministic over persisted MoveAnalysis fixtures.

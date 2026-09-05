@@ -11,6 +11,10 @@ import {
 import type { MovePly, MoveTree, Path } from '@/components/chessboard/positionTree';
 import { Chessboard } from '@/components/chessboard/Chessboard';
 import { useBoardSize, type UseBoardSize } from '@/components/chessboard/useBoardSize';
+import { BOARD_SIZE_DEFAULT } from '@/components/chessboard/boardSize';
+import { SettingsPopover, type SettingsState } from '@/components/chessboard/SettingsPopover';
+import { DEFAULT_BOARD_THEME, DEFAULT_PIECE_SET } from '@/components/chessboard/themes';
+import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import type { Key } from '@lichess-org/chessground/types';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import { MoveList } from '@/components/chessboard/MoveList';
@@ -195,6 +199,42 @@ function GameReview({
   const boardSize = useBoardSize();
   const engine = useBrowserAnalysisEngine();
   const { defaults: engineDefaults, isReady: engineDefaultsReady } = useEngineDefaults();
+  const [orientation, setOrientation] = useState<'white' | 'black'>(userColor);
+  const [boardPrefs, setBoardPrefs] = useState<Omit<SettingsState, 'orientation'>>({
+    coordinates: true,
+    showLegalMoves: false,
+    animation: true,
+    drawable: false,
+    interactive: false,
+    boardTheme: DEFAULT_BOARD_THEME,
+    pieceSet: DEFAULT_PIECE_SET,
+  });
+  const { defaults: boardAppearance, isReady: boardAppearanceReady } = useBoardAppearance();
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled || !boardAppearanceReady || !boardAppearance) {
+        return;
+      }
+      setBoardPrefs((current) => ({
+        ...current,
+        boardTheme: boardAppearance.boardTheme,
+        pieceSet: boardAppearance.pieceSet,
+        coordinates: boardAppearance.coordinates,
+        animation: boardAppearance.animation,
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [boardAppearanceReady, boardAppearance]);
+  const boardSettings: SettingsState = { ...boardPrefs, orientation };
+
+  const handleBoardSettings = (next: SettingsState): void => {
+    setOrientation(next.orientation);
+    const { orientation: _o, ...rest } = next;
+    setBoardPrefs(rest);
+  };
 
   const mainline = useMemo(() => mainlineOf(tree), [tree]);
   const position = useMemo(() => (tree ? positionAtPath(tree, path) : null), [tree, path]);
@@ -248,21 +288,19 @@ function GameReview({
     const control = parseTimeControl(gameMeta.timeControl);
     return control.baseSeconds !== null ? control.baseSeconds * 1000 : null;
   }, [gameMeta]);
-  const opponentName =
+  const topSide = oppositeOf(orientation);
+  const nameOfSide = (side: 'white' | 'black'): string =>
     gameMeta === null
-      ? 'Opponent'
-      : userColor === 'white'
-        ? gameMeta.blackName
-        : gameMeta.whiteName;
-  const userName =
-    gameMeta === null ? 'You' : userColor === 'white' ? gameMeta.whiteName : gameMeta.blackName;
-  const opponentMs = remainingClockForColor(
-    path.length,
-    oppositeOf(userColor),
-    clocks,
-    initialClockMs,
-  );
-  const userMs = remainingClockForColor(path.length, userColor, clocks, initialClockMs);
+      ? side === userColor
+        ? 'You'
+        : 'Opponent'
+      : side === 'white'
+        ? gameMeta.whiteName
+        : gameMeta.blackName;
+  const opponentName = nameOfSide(topSide);
+  const userName = nameOfSide(orientation);
+  const opponentMs = remainingClockForColor(path.length, topSide, clocks, initialClockMs);
+  const userMs = remainingClockForColor(path.length, orientation, clocks, initialClockMs);
 
   const navHandlers = useMemo(
     () => ({
@@ -472,7 +510,7 @@ function GameReview({
           <BoardPane
             boardSize={boardSize}
             position={position}
-            userColor={userColor}
+            settings={boardSettings}
             lastMove={lastMove}
             arrows={effectiveArrows}
             opponentName={opponentName}
@@ -484,7 +522,7 @@ function GameReview({
         bar={
           <EvaluationBar
             evaluation={barEvaluation}
-            bottomColor={userColor}
+            bottomColor={orientation}
             sideToMove={barSideToMove}
           />
         }
@@ -494,9 +532,18 @@ function GameReview({
               controller={controller}
               capabilities={engine.capabilities}
               fen={currentFen ?? ''}
-              bottomColor={userColor}
+              bottomColor={orientation}
               sideToMove={sideToMove}
               stored={storedPanel}
+              rightSlot={
+                <SettingsPopover
+                  state={boardSettings}
+                  onChange={handleBoardSettings}
+                  onResetBoardSize={() => boardSize.setSize(BOARD_SIZE_DEFAULT)}
+                  onClearArrows={() => undefined}
+                  boardSize={boardSize.size}
+                />
+              }
             />
             <MoveListPane>
               <MoveList
@@ -524,7 +571,7 @@ function GameReview({
 function BoardPane({
   boardSize,
   position,
-  userColor,
+  settings,
   lastMove,
   arrows,
   opponentName,
@@ -534,7 +581,7 @@ function BoardPane({
 }: {
   boardSize: UseBoardSize;
   position: ReturnType<typeof positionAtPath>;
-  userColor: 'white' | 'black';
+  settings: SettingsState;
   lastMove: readonly [Key, Key] | null;
   arrows: readonly DrawShape[];
   opponentName: string;
@@ -548,7 +595,12 @@ function BoardPane({
       <Chessboard
         position={position}
         interactive={false}
-        orientation={userColor}
+        orientation={settings.orientation}
+        coordinates={settings.coordinates}
+        showLegalMoves={settings.showLegalMoves}
+        animation={settings.animation}
+        boardTheme={settings.boardTheme}
+        pieceSet={settings.pieceSet}
         lastMove={lastMove}
         autoShapes={arrows}
         boardSize={boardSize}
