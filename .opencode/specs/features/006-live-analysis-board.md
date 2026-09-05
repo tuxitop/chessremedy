@@ -62,6 +62,11 @@ In scope:
 - Lines and the evaluation bar update live with each reached depth — the
   freshest per-rank lines reported during the search are shown before the
   search completes.
+- The engine-lines region is reserved as soon as the engine is enabled, so
+  it never collapses while the engine is thinking (before the first line
+  arrives the configured line slots are shown as stable placeholders); when
+  the engine is off and there is no stored content the region is hidden
+  rather than rendered as an empty area.
 - The move list shows a greyed evaluation on the right of each ply's
   column once that position has an evaluation.
 - Engine toggle is **on by default on `/analysis/live`** and **off by

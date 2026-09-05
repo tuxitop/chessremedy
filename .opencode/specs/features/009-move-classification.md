@@ -80,6 +80,13 @@ its chip; ordinary `good` moves and positions without a played move show
 none. The live-overlay path follows the same rule from the ephemeral
 classification.
 
+An emphasized classification additionally tints the move's **start and end
+squares** with the classification colour on the board (replacing the plain
+last-move highlight); ordinary `good` moves keep the default last-move
+highlight. Colour is never the only signal — the canonical glyph/label on
+the chip, the move list and the summary use the same classification
+colour/tone.
+
 ## Acceptance Criteria
 
 - [ ] Every persisted `MoveAnalysis` carries exactly one of the five

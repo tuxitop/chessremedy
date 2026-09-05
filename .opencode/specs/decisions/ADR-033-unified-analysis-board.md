@@ -30,6 +30,14 @@ Exploration is non-destructive: previewing an engine continuation ("best
 line", a PV move, a mistake's recommended move) plays an ephemeral overlay
 that never mutates the stored `Game`/PGN or the analysis tree.
 
+The board is interactive and drawable in **both** modes: the user can play
+legal exploration moves (which append transient variations/continuations to
+the on-screen move tree) and draw Chessground arrows/circles, and the
+board-settings overlay (orientation, legal-move hints, coordinates,
+animation, drawable, interactive, theme/pieces, clear arrows) applies to
+Review exactly as on the Live board. Classification-colored highlights and
+engine-lines visibility behave identically across the two modes.
+
 ## Reasons
 
 - Both Lichess and Chess.com reuse one board core across analysis/review;
@@ -58,6 +66,10 @@ that never mutates the stored `Game`/PGN or the analysis tree.
   canonical domain classifier (ADR-023) and are never recomputed in the UI.
 - Best-move/PV arrows use Chessground auto-shapes and are toggleable; arrows
   are never shown when the user has disabled engine suggestions.
+- The engine-lines panel never renders an empty area while the engine is
+  off: stored lines show only where they exist, otherwise the region is
+  hidden; while the engine is enabled the region is always reserved (even
+  before the first line arrives) so the panel never collapses mid-search.
 
 ## Sources
 

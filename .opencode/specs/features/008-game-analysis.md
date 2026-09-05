@@ -374,6 +374,15 @@ bar and per-move values show the evaluation **after** the selected move
 from the persisted `MoveAnalysis` and stay synchronized with the board and
 move list.
 
+The Review board is a **fully interactive analysis board** (mouse and
+touch), identical to the Live Analysis board: the user can play any legal
+move, use the board-settings overlay (orientation, legal-move hints,
+coordinates, animation, drawable, interactive, board theme, piece set,
+reset size, clear arrows), and draw Chessground arrows and circles on the
+board. Playing an alternate move appends a transient variation or
+continuation to the move list; the stored game/PGN and its persisted
+`MoveAnalysis` records are never mutated (ADR-033).
+
 # 13. Evaluation Bar & Per-Move Evaluations
 
 - The Review evaluation bar reflects the persisted evaluation of the
@@ -394,6 +403,12 @@ move list.
   principal variation. The number of shown lines depends on what the
   stored analysis contains; one line, multiple lines, no engine result and
   incomplete analyses are all handled gracefully.
+- The engine-lines panel never renders an **empty area when the engine is
+  off**: stored lines are shown only where they actually exist, otherwise
+  the region is hidden (an idle hint invites live analysis). When the
+  engine is on the region is always reserved — even before the first line
+  arrives — so the panel never collapses while the engine thinks, and
+  stored content is never padded with empty placeholder rows.
 - Stored engine lines reuse the Feature-005/`MoveAnalysis` model; no
   second engine-result representation is invented.
 
@@ -405,6 +420,9 @@ move list.
   when suggestions are disabled.
 - In live mode, live engine lines/evaluations/arrows update while the
   engine is thinking.
+- The user can also draw their own Chessground arrows and circles (drawable
+  is on by default) and clear them from the board-settings overlay. Drawn
+  shapes are ephemeral presentation state and are never persisted.
 
 # 16. Live Analysis on Review
 
@@ -430,6 +448,11 @@ move list.
   board chip anchored to the move's destination square, using the same
   SquareBadges style/formatting as the Playground's NAG badges. Ordinary
   (`good`) moves render no chip.
+- An emphasized classification also tints the move's **start and end
+  squares** with the classification colour (replacing the plain last-move
+  highlight); ordinary (`good`) moves keep the default last-move
+  highlight. Colour never carries information alone — glyphs, labels and
+  the move-list text use the same classification colour/tone.
 - For the user's inaccuracy/mistake/blunder (and later missed tactics),
   Review helps the user understand the mistake: what was played, the
   evaluation before/after, what should have been played, and the
@@ -451,6 +474,12 @@ move list.
   variations are displayed separately from the played-game move tree
   (preview overlays); exploring an engine line never mutates the imported
   game.
+- The user can play exploration moves directly on the board: a legal move
+  that matches an existing continuation just navigates to it, anything else
+  is appended to the **transient analysis tree** as a variation (rendered
+  indented in the move list) or, from the end of the game, as a further
+  mainline continuation. These appended moves are analysed live when the
+  engine is on and are never written to the persisted game/PGN.
 
 # 19. PGN Clocks & Time-Aware Data
 
@@ -545,6 +574,12 @@ one covers PGN clock import.
   evaluation bar, persisted per-move evaluations, engine lines, toggleable
   best-move arrows, and a separate live-analysis mode that never silently
   overwrites stored analysis.
+- The Review board is interactive and drawable with a working board-settings
+  overlay: alternate moves appear as transient variations in the move list
+  and are analysed live when the engine is on; drawn arrows/circles are
+  ephemeral. Emphasized classifications highlight their start and end
+  squares with the classification colour, and the engine-lines area is
+  never an empty placeholder when the engine is off.
 - Users can navigate the whole game efficiently; mistakes clearly show the
   played move and engine alternative; engine continuations can be
   inspected.
