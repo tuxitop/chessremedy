@@ -239,6 +239,15 @@ export class AnalysisService {
   }
 
   /**
+   * Serializes full analysis batches: while one `analyzeGames` run is active,
+   * further requests wait and start only after the current run finishes. A
+   * later request never aborts an earlier run (Feature 008 §5). Each request
+   * keeps its own `AbortSignal`; aborting it mid-run cancels its own jobs and
+   * lets the next queued request proceed.
+   */
+  private runTail: Promise<unknown> = Promise.resolve();
+
+  /**
    * Analyze (or resume analyzing) the selected games under a profile. One
    * logical job per game, processed sequentially through the engine. A failure
    * in one game never aborts the batch; `completed` games are skipped.
@@ -250,6 +259,24 @@ export class AnalysisService {
     run?: AnalysisRunOptions,
   ): Promise<readonly AnalysisJob[]> {
     const ids = [...new Set(gameIds)];
+    return this.enqueueRun(() => this.runAnalysisBatch(ids, profile, run));
+  }
+
+  /** Chain one batch after any currently running batch (FIFO, resilient). */
+  private enqueueRun<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.runTail.then(task, task);
+    this.runTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async runAnalysisBatch(
+    ids: readonly GameId[],
+    profile: AnalysisProfile,
+    run?: AnalysisRunOptions,
+  ): Promise<readonly AnalysisJob[]> {
     const engine = this.engineMetadata(profile);
     // A new explicit run supersedes any earlier per-row cancels for these
     // games (e.g. a cancel-then-retry on the same game).
@@ -380,6 +407,21 @@ export class AnalysisService {
     const stoppedAtEnd = await this.maybeCancel(current, run);
     if (stoppedAtEnd) {
       return stoppedAtEnd;
+    }
+
+    // Completeness invariant (Feature 008 §24): a run is only ever persisted
+    // `completed` when every required position produced a result. If the loop
+    // above left a gap (e.g. a future resume path skips positions), fail the
+    // job loudly instead of presenting a partial run as analyzed.
+    const missing = plan.analyzeFens.filter((fen) => !results.has(fen));
+    if (missing.length > 0) {
+      const failed = markFailed(
+        current,
+        `Analysis incomplete: ${missing.length} required position(s) were not analyzed.`,
+        this.now(),
+      );
+      await this.persist(failed, run);
+      return failed;
     }
 
     let records;

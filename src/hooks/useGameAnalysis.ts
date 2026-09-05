@@ -31,19 +31,25 @@ export interface UseGameAnalysis {
     profile?: AnalysisProfile,
     force?: boolean,
   ): Promise<readonly AnalysisJob[]>;
-  /** Abort the active batch (queued + in-progress jobs become cancelled). */
+  /** Abort the active run(s); queued requests become cancelled in turn. */
   cancel(): void;
 }
 
 /**
  * Runs analysis batches to completion (or cancellation), streaming nothing into
  * transient state — progress is read from persisted jobs by the caller.
- * Unmounting while a run is active cancels it (jobs stay resumable).
+ *
+ * The service serializes batches (Feature 008 §5), so a new `analyze` while one
+ * is running is queued behind it and never aborts the active run. All `analyze`
+ * calls issued from this hook share a single AbortController so `cancel` stops
+ * the running batch and the queued requests behind it; unmounting aborts too
+ * (jobs stay resumable).
  */
 export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAnalysis {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -58,7 +64,6 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
       profile: AnalysisProfile = 'normal',
       force = false,
     ): Promise<readonly AnalysisJob[]> => {
-      controllerRef.current?.abort();
       if (!service) {
         setError('Game analysis is unavailable right now.');
         return [];
@@ -66,12 +71,20 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
       if (gameIds.length === 0) {
         return [];
       }
-      const controller = new AbortController();
-      controllerRef.current = controller;
+      // A new analyze queues behind the active run (service-level serialization)
+      // — it must not abort it. Start a fresh controller only when the previous
+      // session was explicitly cancelled (so a post-cancel analyze is not
+      // instantly aborted by the stale signal).
+      let controller = controllerRef.current;
+      if (!controller || controller.signal.aborted) {
+        controller = new AbortController();
+        controllerRef.current = controller;
+      }
+      inFlightRef.current += 1;
       setBusy(true);
       setError(null);
       try {
-        const jobs = await service.analyzeGames(gameIds, profile, {
+        const jobs = await service.analyzeGames([...gameIds], profile, {
           signal: controller.signal,
           ...(force ? { force: true } : {}),
         });
@@ -82,10 +95,11 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
         }
         return [];
       } finally {
-        if (controllerRef.current === controller) {
+        inFlightRef.current -= 1;
+        if (inFlightRef.current === 0) {
           controllerRef.current = null;
+          setBusy(false);
         }
-        setBusy(false);
       }
     },
     [service],

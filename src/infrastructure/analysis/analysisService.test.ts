@@ -48,6 +48,40 @@ async function seedFixture(id: string): Promise<string> {
   return game.id;
 }
 
+/** Let pending microtasks / timer work run once. */
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Yield ticks until `predicate` holds (capped); lets async prep make progress. */
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !predicate(); i += 1) {
+    await tick();
+  }
+  expect(predicate()).toBe(true);
+}
+
+/**
+ * Drive a held fake engine to completion: repeatedly release every held job and
+ * yield until `promise` (an `analyzeGames` call) settles.
+ */
+async function drainHeld<T>(rig: FakeEngineRig, promise: Promise<T>): Promise<T> {
+  let settled = false;
+  promise.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  for (let i = 0; i < 300 && !(settled && rig.held.length === 0); i += 1) {
+    rig.releaseAll();
+    await tick();
+  }
+  return promise;
+}
+
 describe('AnalysisService batch orchestration', () => {
   beforeEach(async () => {
     await db.games.clear();
@@ -117,6 +151,112 @@ describe('AnalysisService batch orchestration', () => {
     expect(jobs.map((j) => j.state)).toEqual(['cancelled', 'cancelled']);
     expect(rig.requests).toHaveLength(0);
     expect(await service.statusOf(a)).toBe('cancelled');
+  });
+
+  it('queues a second batch instead of cancelling the running one, then completes both in order', async () => {
+    const a = await seedFixture('cc-bullet-blunder');
+    const b = await seedFixture('cc-blitz-clean');
+    const planA = planGameAnalysis(fixtureGame('cc-bullet-blunder'));
+    const planB = planGameAnalysis(fixtureGame('cc-blitz-clean'));
+    if (!planA.ok || !planB.ok) throw new Error('plans must be ok');
+    // FENs that only game B produces (game A never submits them).
+    const bExclusive = planB.plan.analyzeFens.filter(
+      (fen) => !planA.plan.analyzeFens.includes(fen),
+    );
+    expect(bExclusive.length).toBeGreaterThan(0);
+    const rig = createFakeEngine({ hold: true });
+    const service = serviceOf(rig);
+
+    const first = service.analyzeGames([a]);
+    await waitFor(() => rig.requests.length > 0);
+    // The first batch starts immediately and is a prefix of A's planned fens.
+    expect(rig.requests).toEqual(planA.plan.analyzeFens.slice(0, rig.requests.length));
+
+    const second = service.analyzeGames([b]);
+    await tick();
+    // The second batch is queued behind the first: it has not started (no B-only
+    // FEN submitted) and has not cancelled the running batch.
+    expect(rig.requests.some((fen) => bExclusive.includes(fen))).toBe(false);
+
+    const jobsA = await drainHeld(rig, first);
+    expect(jobsA.map((job) => job.state)).toEqual(['completed']);
+    // Every one of A's planned positions was searched before B ran.
+    expect(rig.requests.slice(0, planA.plan.analyzeFens.length)).toEqual(planA.plan.analyzeFens);
+
+    const jobsB = await drainHeld(rig, second);
+    expect(jobsB.map((job) => job.state)).toEqual(['completed']);
+    expect(await service.statusOf(a)).toBe('completed');
+    expect(await service.statusOf(b)).toBe('completed');
+  });
+
+  it('an explicit cancel stops the running batch but lets a separately-queued request proceed', async () => {
+    const a = await seedFixture('cc-bullet-blunder');
+    const b = await seedFixture('cc-blitz-clean');
+    const rig = createFakeEngine({ hold: true });
+    const service = serviceOf(rig);
+
+    const controller = new AbortController();
+    const first = service.analyzeGames([a], 'normal', { signal: controller.signal });
+    await waitFor(() => rig.requests.length > 0);
+    const second = service.analyzeGames([b]);
+    await tick();
+
+    // Cancel the running batch (explicit cancel); its jobs are persisted cancelled.
+    controller.abort();
+    const jobsA = await drainHeld(rig, first);
+    expect(jobsA.map((job) => job.state)).toEqual(['cancelled']);
+    expect(await service.statusOf(a)).toBe('cancelled');
+
+    // The queued request (its own live signal) then runs to completion.
+    const jobsB = await drainHeld(rig, second);
+    expect(jobsB.map((job) => job.state)).toEqual(['completed']);
+    expect(await service.statusOf(b)).toBe('completed');
+  });
+
+  it('a queued batch whose signal is aborted before it starts runs nothing and persists cancelled jobs', async () => {
+    const a = await seedFixture('cc-bullet-blunder');
+    const b = await seedFixture('cc-blitz-clean');
+    const planA = planGameAnalysis(fixtureGame('cc-bullet-blunder'));
+    const planB = planGameAnalysis(fixtureGame('cc-blitz-clean'));
+    if (!planA.ok || !planB.ok) throw new Error('plans must be ok');
+    // FENs that only game B produces (the shared starting position is not a
+    // signal that B started).
+    const bExclusive = planB.plan.analyzeFens.filter(
+      (fen) => !planA.plan.analyzeFens.includes(fen),
+    );
+    const rig = createFakeEngine({ hold: true });
+    const service = serviceOf(rig);
+
+    const first = service.analyzeGames([a]);
+    await waitFor(() => rig.requests.length > 0);
+    const controller = new AbortController();
+    const second = service.analyzeGames([b], 'normal', { signal: controller.signal });
+    controller.abort();
+    await tick();
+
+    const jobsA = await drainHeld(rig, first);
+    expect(jobsA.map((job) => job.state)).toEqual(['completed']);
+    // B never touched the engine and ended cancelled.
+    const jobsB = await drainHeld(rig, second);
+    expect(jobsB.map((job) => job.state)).toEqual(['cancelled']);
+    expect(rig.requests.some((fen) => bExclusive.includes(fen))).toBe(false);
+    expect(await service.statusOf(b)).toBe('cancelled');
+  });
+
+  it('a fully analysed game is never persisted completed when a position was missed', async () => {
+    const gameId = await seedFixture('cc-bullet-blunder');
+    const plan = planGameAnalysis(fixtureGame('cc-bullet-blunder'));
+    if (!plan.ok) throw new Error(plan.message);
+    // Fail every engine request for the final planned position so the batch
+    // would otherwise have to choose between partial-complete and failed.
+    const lastFen = plan.plan.analyzeFens[plan.plan.analyzeFens.length - 1]!;
+    const rig = createFakeEngine({ failures: new Map([[lastFen, 'Engine crashed']]) });
+    const service = serviceOf(rig);
+
+    const jobs = await service.analyzeGames([gameId]);
+    expect(jobs[0]!.state).toBe('failed');
+    expect(jobs[0]!.lastError).toMatch(/Engine crashed/);
+    expect(await service.statusOf(gameId)).toBe('failed');
   });
 
   it('cancels a queued job via cancelGame and leaves completed work untouched', async () => {

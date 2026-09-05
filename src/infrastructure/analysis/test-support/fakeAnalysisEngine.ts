@@ -29,6 +29,12 @@ export interface FakeEngineConfig {
   readonly failures?: ReadonlyMap<string, string>;
   /** Default result for unknown FENs. */
   readonly defaultResult?: EngineAnalysisResult;
+  /**
+   * When `true`, submitted jobs stay pending (never settle on a microtask)
+   * until `releaseAll` is called — lets tests interleave and assert queue /
+   * cancellation ordering across batches.
+   */
+  readonly hold?: boolean;
 }
 
 export interface FakeEngineRig {
@@ -36,6 +42,10 @@ export interface FakeEngineRig {
   /** Every FEN submitted to `analyze`, in order. */
   readonly requests: string[];
   readonly activeJobs: AnalysisJobHandle[];
+  /** Jobs held pending while the rig runs in `hold` mode (FIFO). */
+  readonly held: AnalysisJobHandle[];
+  /** Settle up to `count` held jobs (default: all) in submission order. */
+  releaseAll(count?: number): number;
   /** Configure (or, with `null`, clear) a per-FEN failure. */
   setFailure(fen: string, message: string | null): void;
   /** Remove every configured failure. */
@@ -56,7 +66,24 @@ function evalResult(fen: string): EngineAnalysisResult {
 export function createFakeEngine(config: FakeEngineConfig = {}): FakeEngineRig {
   const requests: string[] = [];
   const activeJobs: AnalysisJobHandle[] = [];
+  const held: AnalysisJobHandle[] = [];
   const failures = new Map(config.failures ?? []);
+  const hold = config.hold === true;
+
+  const settle = (handle: AnalysisJobHandle): void => {
+    if (handle.cancelRequested || handle.status !== 'queued') {
+      return;
+    }
+    handle.setStatus('running');
+    const failure = failures.get(handle.fen);
+    if (failure !== undefined) {
+      handle.fail({ reason: 'malformed-response', message: failure });
+      return;
+    }
+    handle.complete(
+      config.results?.get(handle.fen) ?? config.defaultResult ?? evalResult(handle.fen),
+    );
+  };
 
   const status: EngineServiceStatus = {
     lifecycle: 'ready',
@@ -75,18 +102,11 @@ export function createFakeEngine(config: FakeEngineConfig = {}): FakeEngineRig {
       );
       requests.push(fen);
       activeJobs.push(handle);
-      queueMicrotask(() => {
-        if (handle.cancelRequested || handle.status !== 'queued') {
-          return;
-        }
-        handle.setStatus('running');
-        const failure = failures.get(fen);
-        if (failure !== undefined) {
-          handle.fail({ reason: 'malformed-response', message: failure });
-          return;
-        }
-        handle.complete(config.results?.get(fen) ?? config.defaultResult ?? evalResult(fen));
-      });
+      if (hold) {
+        held.push(handle);
+      } else {
+        queueMicrotask(() => settle(handle));
+      }
       return handle;
     },
     cancel(jobId: string) {
@@ -109,10 +129,23 @@ export function createFakeEngine(config: FakeEngineConfig = {}): FakeEngineRig {
     },
   };
 
+  const releaseAll = (count = held.length): number => {
+    let released = 0;
+    while (count > 0 && held.length > 0) {
+      const handle = held.shift()!;
+      settle(handle);
+      released += 1;
+      count -= 1;
+    }
+    return released;
+  };
+
   return {
     service,
     requests,
     activeJobs,
+    held,
+    releaseAll,
     setFailure(fen, message) {
       if (message === null) {
         failures.delete(fen);
