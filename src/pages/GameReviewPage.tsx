@@ -5,18 +5,28 @@ import {
   buildTreeFromPgn,
   positionAtPath,
   pathToEnd,
+  sideToMoveAt,
   step,
 } from '@/components/chessboard/positionTree';
 import type { MovePly, MoveTree, Path } from '@/components/chessboard/positionTree';
 import { Chessboard } from '@/components/chessboard/Chessboard';
+import { useBoardSize, type UseBoardSize } from '@/components/chessboard/useBoardSize';
 import type { Key } from '@lichess-org/chessground/types';
+import type { DrawShape } from '@lichess-org/chessground/draw';
 import { MoveList } from '@/components/chessboard/MoveList';
-import { Navigation } from '@/components/chessboard/Navigation';
+import { Navigation, type NavigationTarget } from '@/components/chessboard/Navigation';
 import type { EngineEvaluation } from '@/infrastructure/engine/types';
 import { formatEvaluation } from '@/components/analysis/engineFormat';
+import { EvaluationBar } from '@/components/analysis/EvaluationBar';
+import { engineArrowBrush, engineArrowShapes } from '@/components/analysis/engineArrows';
+import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
+import { useAnalysisController } from '@/components/analysis/useAnalysisController';
+import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
+import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
+import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { gameFromPgn } from '@/domain/chess/parseGame';
 import { gameClocks, type MoveClock } from '@/domain/chess/clock';
-import { uciPvToSan } from '@/domain/chess';
+import { fenOf, uciPvToSan } from '@/domain/chess';
 import type { EvalCpMate, MoveAnalysis, MoveClassification } from '@/domain/chess';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { summarizeAnalysis, CLASSIFICATION_LABELS } from '@/domain/analysis/summary';
@@ -152,6 +162,11 @@ function GameReview({
   const built = useMemo(() => buildTreeFromPgn(pgn), [pgn]);
   const tree = built.error ? null : built.tree;
   const [path, setPath] = useState<Path>([]);
+  const [live, setLive] = useState(false);
+  const [showArrows, setShowArrows] = useState(true);
+  const [showLines, setShowLines] = useState(true);
+  const [showEvals, setShowEvals] = useState(true);
+  const boardSize = useBoardSize();
 
   const mainline = useMemo(() => mainlineOf(tree), [tree]);
   const position = useMemo(() => (tree ? positionAtPath(tree, path) : null), [tree, path]);
@@ -167,6 +182,80 @@ function GameReview({
   }, [pgn, userColor]);
   const clockByPlyId = useMemo(() => clockMapForMainline(mainline, clocks), [mainline, clocks]);
   const evalByPlyId = useMemo(() => storedEvalsByPly(mainline, records), [mainline, records]);
+  const onMainlinePrefix = useMemo(() => isMainlinePrefix(path, mainline), [path, mainline]);
+
+  const navigate = useMemo(
+    () =>
+      (target: NavigationTarget): void => {
+        if (!tree) {
+          return;
+        }
+        if (target === 'first') {
+          setPath([]);
+        } else if (target === 'last') {
+          setPath(pathToEnd(tree, path));
+        } else {
+          setPath(step(tree, path, target === 'next' ? 1 : -1));
+        }
+      },
+    [tree, path],
+  );
+
+  const activePly = path[path.length - 1];
+  const activeMainIndex = activePly ? mainline.findIndex((node) => node.id === activePly.id) : -1;
+
+  // Stored evaluation shown on the bar: the evaluation of the currently
+  // displayed position, re-expressed from that position's side-to-move
+  // perspective (EvaluationBar contract). `evalAfter` is stored from the
+  // mover's perspective, so for a position after the selected move the bar
+  // value is its negation (the opponent is to move there). The start
+  // position has no record of its own — use the first move's `evalBefore`
+  // (its mover is White, the side to move at the start).
+  const barView = useMemo(() => {
+    if (!showEvals) {
+      return { evaluation: null, sideToMove: 'white' as const };
+    }
+    if (path.length === 0) {
+      const first = records[0];
+      return first
+        ? {
+            evaluation: fromCpMate(first.evalBefore),
+            sideToMove: 'white' as const,
+          }
+        : { evaluation: null, sideToMove: 'white' as const };
+    }
+    if (onMainlinePrefix && activeMainIndex >= 0) {
+      const record = records[activeMainIndex];
+      if (record) {
+        return {
+          evaluation: negateEngineEval(fromCpMate(record.evalAfter)),
+          sideToMove: oppositeOf(record.side),
+        };
+      }
+    }
+    return { evaluation: null, sideToMove: 'white' as const };
+  }, [showEvals, path, onMainlinePrefix, activeMainIndex, records]);
+
+  // Best-move arrows describe the currently displayed position: the move the
+  // engine recommends for the side to move there (stored in the record whose
+  // `positionFen` is the displayed one).
+  const arrows = useMemo<readonly DrawShape[]>(() => {
+    if (!showArrows || !onMainlinePrefix) {
+      return [];
+    }
+    const record = records[path.length];
+    const uci = record?.bestMove?.uci ?? record?.bestPv[0];
+    if (!record || !uci) {
+      return [];
+    }
+    return [
+      {
+        orig: uci.slice(0, 2) as Key,
+        dest: uci.slice(2, 4) as Key,
+        brush: engineArrowBrush(0),
+      },
+    ];
+  }, [showArrows, onMainlinePrefix, path, records]);
 
   if (!tree || !position) {
     return (
@@ -174,18 +263,6 @@ function GameReview({
     );
   }
 
-  const navigate = (target: 'first' | 'prev' | 'next' | 'last'): void => {
-    if (target === 'first') {
-      setPath([]);
-    } else if (target === 'last') {
-      setPath(pathToEnd(tree, path));
-    } else {
-      setPath(step(tree, path, target === 'next' ? 1 : -1));
-    }
-  };
-
-  const activePly = path[path.length - 1];
-  const activeMainIndex = activePly ? mainline.findIndex((node) => node.id === activePly.id) : -1;
   const selected = activeMainIndex >= 0 ? records[activeMainIndex] : undefined;
   const clockMs = activePly ? clockByPlyId.get(activePly.id) : undefined;
 
@@ -202,7 +279,7 @@ function GameReview({
           </p>
           <EngineChip record={records[0]} />
         </div>
-        {obsolete ? (
+        {obsolete && !live ? (
           <div className={styles.obsolete} data-testid="review-obsolete" role="note">
             <span>This analysis used an older analysis version.</span>
             <Button
@@ -217,35 +294,287 @@ function GameReview({
         ) : null}
       </header>
 
-      <div className={styles.layout} data-testid="review-layout">
-        <div className={styles.boardColumn}>
-          <Chessboard
+      {live ? (
+        <ReviewLiveSurface
+          tree={tree}
+          path={path}
+          position={position}
+          userColor={userColor}
+          lastMove={lastMove}
+          mainlineLength={mainline.length}
+          onNavigate={navigate}
+          onSeek={setPath}
+          boardSize={boardSize}
+          onExitLive={() => setLive(false)}
+        />
+      ) : (
+        <div className={styles.layout} data-testid="review-layout">
+          <BoardPane
+            boardSize={boardSize}
             position={position}
-            interactive={false}
-            orientation={userColor}
-            lastMove={lastMove}
-          />
-          <Navigation currentPly={path.length} totalPlies={mainline.length} onNavigate={navigate} />
-          <p className={styles.gameId} data-testid="review-game-id">
-            {gameId}
-          </p>
-        </div>
-        <aside className={styles.sidePanel}>
-          <ReviewSummary summary={summary} userColor={userColor} />
-          <MoveDetails
-            record={selected}
             userColor={userColor}
-            {...(clockMs !== undefined ? { clockMs } : {})}
+            lastMove={lastMove}
+            arrows={arrows}
+            currentPly={path.length}
+            totalPlies={mainline.length}
+            onNavigate={navigate}
+            footer={<p className={styles.gameId}>{gameId}</p>}
           />
-          <MoveList
-            tree={tree}
-            path={path}
-            onSeek={setPath}
-            nagOverrides={nagOverrides}
-            plyEvals={evalByPlyId}
-          />
-        </aside>
+          {showEvals ? (
+            <div
+              className={styles.evalBarColumn}
+              style={!boardSize.isMobile ? { height: boardSize.size } : undefined}
+              data-testid="review-eval-bar-column"
+            >
+              <EvaluationBar
+                evaluation={barView.evaluation}
+                bottomColor={userColor}
+                sideToMove={barView.sideToMove}
+              />
+            </div>
+          ) : null}
+          <aside className={styles.sidePanel}>
+            <ReviewControls
+              arrows={showArrows}
+              lines={showLines}
+              evals={showEvals}
+              onArrows={setShowArrows}
+              onLines={setShowLines}
+              onEvals={setShowEvals}
+              onEnterLive={() => setLive(true)}
+            />
+            <ReviewSummary summary={summary} userColor={userColor} />
+            <MoveDetails
+              record={selected}
+              userColor={userColor}
+              showEvals={showEvals}
+              showLines={showLines}
+              {...(clockMs !== undefined ? { clockMs } : {})}
+            />
+            <MoveList
+              tree={tree}
+              path={path}
+              onSeek={setPath}
+              nagOverrides={nagOverrides}
+              {...(showEvals ? { plyEvals: evalByPlyId } : {})}
+            />
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Shared board + navigation column of both Review modes. */
+function BoardPane({
+  boardSize,
+  position,
+  userColor,
+  lastMove,
+  arrows,
+  currentPly,
+  totalPlies,
+  onNavigate,
+  footer,
+}: {
+  boardSize: UseBoardSize;
+  position: ReturnType<typeof positionAtPath>;
+  userColor: 'white' | 'black';
+  lastMove: readonly [Key, Key] | null;
+  arrows: readonly DrawShape[];
+  currentPly: number;
+  totalPlies: number;
+  onNavigate: (target: NavigationTarget) => void;
+  footer?: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className={styles.boardColumn}>
+      <Chessboard
+        position={position}
+        interactive={false}
+        orientation={userColor}
+        lastMove={lastMove}
+        autoShapes={arrows}
+        boardSize={boardSize}
+      />
+      <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={onNavigate} />
+      {footer}
+    </div>
+  );
+}
+
+/** Display toggles + live-analysis entry for the stored surface. */
+function ReviewControls({
+  arrows,
+  lines,
+  evals,
+  onArrows,
+  onLines,
+  onEvals,
+  onEnterLive,
+}: {
+  arrows: boolean;
+  lines: boolean;
+  evals: boolean;
+  onArrows: (next: boolean) => void;
+  onLines: (next: boolean) => void;
+  onEvals: (next: boolean) => void;
+  onEnterLive: () => void;
+}): React.JSX.Element {
+  return (
+    <section
+      className={styles.controls}
+      data-testid="review-controls"
+      aria-label="Analysis controls"
+    >
+      <ToggleButton
+        dataTestId="review-toggle-arrows"
+        label="Best-move arrows"
+        checked={arrows}
+        onChange={onArrows}
+      />
+      <ToggleButton
+        dataTestId="review-toggle-lines"
+        label="Engine lines"
+        checked={lines}
+        onChange={onLines}
+      />
+      <ToggleButton
+        dataTestId="review-toggle-evals"
+        label="Evaluations"
+        checked={evals}
+        onChange={onEvals}
+      />
+      <button
+        type="button"
+        className={styles.liveButton}
+        onClick={onEnterLive}
+        data-testid="review-enter-live"
+      >
+        Live analysis
+      </button>
+    </section>
+  );
+}
+
+function ToggleButton({
+  dataTestId,
+  label,
+  checked,
+  onChange,
+}: {
+  dataTestId: string;
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={checked ? styles.toggleOn : styles.toggleOff}
+      onClick={() => onChange(!checked)}
+      data-testid={dataTestId}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Live-analysis mode of the Review board (ADR-033): runs the engine on the
+ * selected position. Results are session-only and never persist (no write
+ * path exists here); the user returns to the stored review. */
+function ReviewLiveSurface({
+  tree,
+  path,
+  position,
+  userColor,
+  lastMove,
+  mainlineLength,
+  onNavigate,
+  onSeek,
+  boardSize,
+  onExitLive,
+}: {
+  tree: MoveTree;
+  path: Path;
+  position: ReturnType<typeof positionAtPath>;
+  userColor: 'white' | 'black';
+  lastMove: readonly [Key, Key] | null;
+  mainlineLength: number;
+  onNavigate: (target: NavigationTarget) => void;
+  onSeek: (path: Path) => void;
+  boardSize: UseBoardSize;
+  onExitLive: () => void;
+}): React.JSX.Element {
+  const engine = useBrowserAnalysisEngine();
+  const { defaults: engineDefaults, isReady: engineDefaultsReady } = useEngineDefaults();
+  const currentFen = useMemo(() => fenOf(position), [position]);
+  const sideToMove = useMemo(() => sideToMoveAt(tree, path), [tree, path]);
+
+  const controller = useAnalysisController({
+    service: engine.service,
+    fen: currentFen,
+    capabilities: engine.capabilities,
+    autoStart: true,
+    defaults: engineDefaultsReady ? engineDefaults : null,
+  });
+
+  const arrows = useMemo(
+    () => engineArrowShapes(controller.lines, controller.settings.arrows),
+    [controller.lines, controller.settings.arrows],
+  );
+  const plyEvals = useMemo(
+    () => buildPlyEvaluations(tree, controller.evalsByFen),
+    [tree, controller.evalsByFen],
+  );
+
+  return (
+    <div className={styles.layout} data-testid="review-live-layout">
+      <BoardPane
+        boardSize={boardSize}
+        position={position}
+        userColor={userColor}
+        lastMove={lastMove}
+        arrows={arrows}
+        currentPly={path.length}
+        totalPlies={mainlineLength}
+        onNavigate={onNavigate}
+      />
+      <div
+        className={styles.evalBarColumn}
+        style={!boardSize.isMobile ? { height: boardSize.size } : undefined}
+        data-testid="review-live-eval-bar-column"
+      >
+        <EvaluationBar
+          evaluation={controller.lines.length > 0 ? controller.lines[0]!.evaluation : null}
+          bottomColor={userColor}
+          sideToMove={sideToMove}
+        />
       </div>
+      <aside className={styles.sidePanel} data-testid="review-live-panel">
+        <div className={styles.liveBanner} data-testid="review-live-label">
+          <strong>Live analysis</strong>
+          <span className={styles.liveHint}>
+            Engine results are temporary and never overwrite the stored analysis.
+          </span>
+          <Button variant="secondary" data-testid="review-exit-live" onClick={onExitLive}>
+            Return to stored review
+          </Button>
+        </div>
+        <AnalysisPanel
+          controller={controller}
+          capabilities={engine.capabilities}
+          fen={currentFen}
+          bottomColor={userColor}
+          sideToMove={sideToMove}
+        />
+        <div className={styles.liveMoveList} aria-label="Moves">
+          <MoveList tree={tree} path={path} onSeek={onSeek} plyEvals={plyEvals} />
+        </div>
+      </aside>
     </div>
   );
 }
@@ -258,7 +587,6 @@ function EngineChip({ record }: { record: MoveAnalysis | undefined }): React.JSX
   return (
     <p className={styles.engineChip} data-testid="review-engine-chip">
       {engine.engineName} {engine.engineVersion} · {engine.profile}
-      {record.depth !== undefined ? ` · depth ${record.depth}` : ''}
     </p>
   );
 }
@@ -268,10 +596,14 @@ function MoveDetails({
   record,
   userColor,
   clockMs,
+  showEvals,
+  showLines,
 }: {
   record: MoveAnalysis | undefined;
   userColor: 'white' | 'black';
   clockMs?: number;
+  showEvals: boolean;
+  showLines: boolean;
 }): React.JSX.Element | null {
   if (!record) {
     return null;
@@ -289,9 +621,14 @@ function MoveDetails({
           Clock {formatClock(clockMs)}
         </p>
       ) : null}
-      {record.evalAfter ? (
+      {showEvals && record.evalAfter ? (
         <p className={styles.evalLine} data-testid="review-eval">
           {whiteAfter ? formatEvaluation(whiteAfter) : ''} after this move
+        </p>
+      ) : null}
+      {record.depth !== undefined ? (
+        <p className={styles.depth} data-testid="review-depth">
+          Depth {record.depth}
         </p>
       ) : null}
       {isUserError && record.bestMove ? (
@@ -305,7 +642,7 @@ function MoveDetails({
           </p>
         </div>
       ) : null}
-      <EngineLines record={record} />
+      {showLines ? <EngineLines record={record} /> : null}
     </section>
   );
 }
@@ -491,6 +828,20 @@ function mainlineOf(tree: MoveTree | null): readonly MovePly[] {
   return out;
 }
 
+/** True when `path` walks only the mainline (each ply is the first child). */
+function isMainlinePrefix(path: Path, mainline: readonly MovePly[]): boolean {
+  for (let i = 0; i < path.length; i += 1) {
+    if (path[i]!.id !== mainline[i]?.id) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function oppositeOf(color: 'white' | 'black'): 'white' | 'black' {
+  return color === 'white' ? 'black' : 'white';
+}
+
 /** Map each persisted record (by ply) onto the mainline ply's classification NAG. */
 function buildNagOverrides(
   mainline: readonly MovePly[],
@@ -522,6 +873,25 @@ function evalAsWhite(
     return { mate: flip ? -evaluation.mate : evaluation.mate };
   }
   return null;
+}
+
+/** `EvalCpMate` → display evaluation (cp-only or mate-only), or `null`. */
+function fromCpMate(evaluation: EvalCpMate): EngineEvaluation | null {
+  if (evaluation.cp !== null) {
+    return { cp: evaluation.cp };
+  }
+  if (evaluation.mate !== null) {
+    return { mate: evaluation.mate };
+  }
+  return null;
+}
+
+/** Negate a display evaluation to the opposite side's perspective. */
+function negateEngineEval(evaluation: EngineEvaluation | null): EngineEvaluation | null {
+  if (!evaluation) {
+    return null;
+  }
+  return 'mate' in evaluation ? { mate: -evaluation.mate } : { cp: -evaluation.cp };
 }
 
 function evalText(evaluation: EvalCpMate, side: MoveAnalysis['side']): string {

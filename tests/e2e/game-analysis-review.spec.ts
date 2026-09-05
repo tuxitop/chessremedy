@@ -118,5 +118,24 @@ test.describe('Game analysis & review (Feature 008)', () => {
     );
     await page.getByTestId('nav-first').click();
     await expect(page.getByTestId('move-navigation')).toBeVisible();
+
+    // Enter the distinct live-analysis mode: the engine analyses the current
+    // position but never writes into the stored analysis.
+    await page.getByTestId('review-enter-live').click();
+    await expect(page.getByTestId('review-live-layout')).toBeVisible();
+    await expect(page.getByTestId('review-live-label')).toContainText('Live analysis');
+    await expect(page.getByTestId('position-eval')).not.toHaveText('\u2014', {
+      timeout: RESULT_TIMEOUT,
+    });
+
+    // Return to the stored review and navigate again.
+    await page.getByTestId('review-exit-live').click();
+    await expect(page.getByTestId('review-layout')).toBeVisible();
+    await expect(page.getByTestId('review-summary')).toBeVisible();
+    await page.getByTestId('nav-last').click();
+    await expect(page.locator('[data-testid="move-list-move"][data-san="Qh4#"]')).toHaveAttribute(
+      'aria-current',
+      'step',
+    );
   });
 });

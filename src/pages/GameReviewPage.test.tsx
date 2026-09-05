@@ -56,7 +56,9 @@ function renderReviewAt(analysisService: AnalysisServiceLike | null, url: string
   );
 }
 
-async function seedCompleted(): Promise<string> {
+async function seedCompleted(
+  overrides: ReadonlyArray<Partial<MoveAnalysis>> = [],
+): Promise<string> {
   await gamesRepository.saveGame(GAME);
   const job = createAnalysisJob(GAME.id, TEST_ENGINE, 4, 1);
   await analysisJobsRepository.putJob(markCompleted(job, 2));
@@ -97,7 +99,7 @@ async function seedCompleted(): Promise<string> {
         classification: 'best',
       }),
     },
-  ];
+  ].map((record, index) => ({ ...record, ...overrides[index] }));
   await analysesRepository.replaceAnalysis(records);
   return job.id;
 }
@@ -222,5 +224,72 @@ describe('Game Review page (Feature 008)', () => {
     const state = await screen.findByText('Analysis in progress');
     expect(state).toBeInTheDocument();
     expect(screen.getByTestId('review-state')).toHaveTextContent('2 of 4');
+  });
+
+  it('shows a stored evaluation bar and toggleable arrows/lines/evaluations', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    // Stored evaluation bar shows the start position's stored evaluation.
+    const bar = screen.getByTestId('evaluation-bar');
+    expect(bar).toBeInTheDocument();
+    expect(bar.getAttribute('aria-label')).toMatch(/^Evaluation:/);
+
+    // Best-move arrows default on and draw the stored top move (f2–f3).
+    const board = () => chessboardProps.at(-1)!;
+    expect(board().autoShapes).toEqual([{ orig: 'f2', dest: 'f3', brush: 'best' }]);
+
+    // The analysis-controls area toggles display options.
+    expect(screen.getByTestId('review-toggle-arrows')).toHaveAttribute('aria-checked', 'true');
+    await userEvent.setup().click(screen.getByTestId('review-toggle-arrows'));
+    expect(screen.getByTestId('review-toggle-arrows')).toHaveAttribute('aria-checked', 'false');
+    expect(board().autoShapes).toEqual([]);
+
+    // Engine lines and per-move evaluations appear once a move is selected and
+    // can be hidden independently.
+    const user = userEvent.setup();
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!);
+    expect(screen.getByTestId('engine-lines')).toBeInTheDocument();
+    expect(screen.getAllByTestId('ply-eval').length).toBeGreaterThan(0);
+    await user.click(screen.getByTestId('review-toggle-lines'));
+    expect(screen.queryByTestId('engine-lines')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('review-toggle-evals'));
+    expect(screen.queryByTestId('evaluation-bar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ply-eval')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('review-eval')).not.toBeInTheDocument();
+  });
+
+  it('shows the selected move’s engine depth', async () => {
+    await seedCompleted([{ depth: 21 }]);
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const user = userEvent.setup();
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'f3')!);
+    expect(screen.getByTestId('review-depth')).toHaveTextContent('Depth 21');
+  });
+
+  it('offers a distinct live-analysis mode that never overwrites stored records', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('review-enter-live'));
+    await screen.findByTestId('review-live-layout');
+    expect(screen.getByTestId('review-live-label')).toBeInTheDocument();
+    expect(screen.getByTestId('review-exit-live')).toBeInTheDocument();
+    // Stored panels are not rendered while live.
+    expect(screen.queryByTestId('review-summary')).not.toBeInTheDocument();
+
+    // Nothing was persisted: the stored analysis is untouched.
+    expect(await analysesRepository.countForGame(GAME.id)).toBe(4);
+
+    // Returning to stored review restores the stored surface.
+    await user.click(screen.getByTestId('review-exit-live'));
+    await screen.findByTestId('review-layout');
+    expect(screen.getByTestId('review-summary')).toBeInTheDocument();
   });
 });
