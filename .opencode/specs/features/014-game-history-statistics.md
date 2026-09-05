@@ -550,11 +550,31 @@ All deterministic fixtures must produce deterministic statistics.
 
 ## Game Library integration
 
-This feature is the single authoritative source for the per-game values
-shown in Game Library **insights** — per-game accuracy, classification
-counts, and puzzles-from-game vs mastered-from-game totals
-(`domain/game-library.md` row view). The Library is a read-only consumer,
-exactly as the Dashboard consumes Feature 014.
+The Game Library is a read-only consumer of per-game **insights**
+(`domain/game-library.md` row view): it renders present values and never
+calculates them. Per-game accuracy, classification counts and
+missed-tactic counts shown in Library rows are produced by the
+analysis/detection pipeline and persisted as game-scoped **per-analysis
+summaries** when an analysis run — and, for missed tactics, a
+Feature-010 detection pass — completes (canonical Feature-009 summary
+and accuracy functions over the latest completed analysis's persisted
+`MoveAnalysis`; ADR-024 accuracy; `features/010-tactical-detection.md`,
+"Game Library Integration"). This feature is not the producer of those
+individual per-game row values; per-game puzzle and mastered-from-game
+totals remain the data of the puzzle/training features and their
+consumers (read-model comments in `domain/game-library.md` §7) and are
+unaffected by this refinement.
+
+This feature owns the **aggregate and history statistics** computed over
+those persisted per-analysis summaries and over puzzle attempts/cycles
+(Features 012/013): time-control- and platform-separated accuracy and
+mistake/blunder/missed-tactic aggregates, trends, weekly and date-range
+series, rating history, and dashboard-ready values. It is the
+authoritative source for every aggregate and history statistic it
+exposes; consumers read them read-only — the Dashboard (Feature 015)
+exactly as the Game Library reads the persisted per-analysis summaries.
+Un-detected analyses contribute no missed-tactic value to aggregates
+(absent is not zero), consistent with the empty-vs-zero rules above.
 
 Date-range filtering across surfaces (Library, statistics queries,
 dashboard filters) uses the single canonical definition of **local

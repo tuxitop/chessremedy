@@ -78,7 +78,7 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Feature 011 (puzzle source), Feature 012 (solve interaction); consumers Features 014/015.
 
 ### Feature 014 — Game Analysis History & Statistics
-- Required: ADRs `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-019`, `decisions/ADR-020`; domain `domain/statistics.md`, `domain/game-model.md`, `domain/analysis-model.md`, `domain/classification.md`, `domain/tactical-training.md`; research `research/move-accuracy.md`, `research/move-classification.md`.
+- Required: ADRs `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-019`, `decisions/ADR-020`; domain `domain/statistics.md`, `domain/game-model.md`, `domain/analysis-model.md`, `domain/classification.md`, `domain/tactical-training.md`, `domain/game-library.md` (row-view insights + per-analysis summaries); research `research/move-accuracy.md`, `research/move-classification.md`.
 - Dependencies: Features 008/009/010 (game data), 012/013 (attempts/cycles); output consumed by Feature 015.
 
 ### Feature 015 — Dashboard

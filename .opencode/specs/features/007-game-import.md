@@ -67,7 +67,13 @@ Desktop layout (conceptual):
 - **Search** field (top-level, always visible).
 - **Filter bar**: Time, Time control, Side, Platform selects with an
   "All" default; a **Clear filters** action; custom date-range controls
-  appear when Time = Custom.
+  appear when Time = Custom. The analysis-result filters — **Analysis**
+  (All / Analyzed / Not analyzed), **Has blunders** (All / Yes / No) and
+  **Has missed tactics** (All / Yes / No) — are contributed by the
+  Feature-010 milestone (`features/010-tactical-detection.md`, "Game
+  Library Integration"); their canonical semantics and read model live in
+  `domain/game-library.md` (§1, §2, §7) and they follow the same filter
+  state/URL rules as every other dimension.
 - **Results toolbar**: result count ("N of M games") and **Select all**.
 - **Rows**: selection checkbox, White player, Black player, Result,
   Date, Time control (verbatim string + category), Platform, Your side,
