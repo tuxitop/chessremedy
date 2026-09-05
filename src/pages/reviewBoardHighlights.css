@@ -1,0 +1,26 @@
+/*
+ * Game Review — classification square highlights.
+ *
+ * The Chessboard wrapper forwards `customSquareClasses` to Chessground's
+ * `highlight.custom`, which toggles these class names on the affected
+ * `<square>` elements. When a move's classification is visually emphasized
+ * its start and end squares are tinted with the classification colour
+ * (instead of the default last-move highlight). Rules are intentionally
+ * plain (not CSS-module) because Chessground owns the square DOM.
+ */
+
+cg-board square.review-cls-best {
+  background-color: rgba(21, 120, 27, 0.42);
+}
+
+cg-board square.review-cls-inaccuracy {
+  background-color: rgba(216, 144, 0, 0.42);
+}
+
+cg-board square.review-cls-mistake {
+  background-color: rgba(199, 116, 0, 0.48);
+}
+
+cg-board square.review-cls-blunder {
+  background-color: rgba(196, 38, 28, 0.5);
+}

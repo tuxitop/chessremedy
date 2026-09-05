@@ -1,19 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   buildTreeFromPgn,
+  play as playMove,
   positionAtPath,
   pathToEnd,
   sideToMoveAt,
   step,
 } from '@/components/chessboard/positionTree';
 import type { MovePly, MoveTree, Path } from '@/components/chessboard/positionTree';
-import { Chessboard } from '@/components/chessboard/Chessboard';
+import { hasLegalMoves } from '@/components/chessboard/chessopsAdapter';
+import { Chessboard, type ChessboardHandle } from '@/components/chessboard/Chessboard';
 import { useBoardSize, type UseBoardSize } from '@/components/chessboard/useBoardSize';
 import { BOARD_SIZE_DEFAULT } from '@/components/chessboard/boardSize';
 import { SettingsPopover, type SettingsState } from '@/components/chessboard/SettingsPopover';
 import { DEFAULT_BOARD_THEME, DEFAULT_PIECE_SET } from '@/components/chessboard/themes';
+import { PromotionDialog, type PromotionRole } from '@/components/chessboard/PromotionDialog';
 import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import type { Key } from '@lichess-org/chessground/types';
 import type { DrawShape } from '@lichess-org/chessground/draw';
@@ -46,6 +49,7 @@ import {
   CLASSIFICATION_LABELS,
   CLASSIFICATION_LABEL_TEXT,
   CLASSIFICATION_EXPLANATION,
+  isEmphasized,
   nagForClassification,
 } from '@/domain/analysis/classificationMeta';
 import { summarizeAnalysis } from '@/domain/analysis/summary';
@@ -55,6 +59,7 @@ import { useGameAnalysis, type AnalysisServiceLike } from '@/hooks/useGameAnalys
 import { getBrowserAnalysisService } from '@/infrastructure/analysis';
 import { Button } from '@/components/ui/Button';
 import styles from './GameReviewPage.module.css';
+import './reviewBoardHighlights.css';
 
 /** Approx. height added to the board column by the two player clock bars. */
 const CLOCK_BAR_COLUMN_EXTRA_PX = 76;
@@ -193,18 +198,25 @@ function GameReview({
   reanalyzing: boolean;
 }): React.JSX.Element {
   const built = useMemo(() => buildTreeFromPgn(pgn), [pgn]);
-  const tree = built.error ? null : built.tree;
+  // The review tree is owned as state so the user can play exploration moves
+  // that append variations/continuations to the move list. The persisted PGN
+  // and its `MoveAnalysis` records are never mutated (ADR-033).
+  const [tree, setTree] = useState<MoveTree | null>(built.error ? null : built.tree);
   const [path, setPath] = useState<Path>([]);
+  const chessboardRef = useRef<ChessboardHandle | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(
+    null,
+  );
   const boardSize = useBoardSize();
   const engine = useBrowserAnalysisEngine();
   const { defaults: engineDefaults, isReady: engineDefaultsReady } = useEngineDefaults();
   const [orientation, setOrientation] = useState<'white' | 'black'>(userColor);
   const [boardPrefs, setBoardPrefs] = useState<Omit<SettingsState, 'orientation'>>({
     coordinates: true,
-    showLegalMoves: false,
+    showLegalMoves: true,
     animation: true,
-    drawable: false,
-    interactive: false,
+    drawable: true,
+    interactive: true,
     boardTheme: DEFAULT_BOARD_THEME,
     pieceSet: DEFAULT_PIECE_SET,
   });
@@ -237,6 +249,18 @@ function GameReview({
 
   const mainline = useMemo(() => mainlineOf(tree), [tree]);
   const position = useMemo(() => (tree ? positionAtPath(tree, path) : null), [tree, path]);
+  const finished = useMemo(() => {
+    if (!position) {
+      return true;
+    }
+    return (
+      position.isCheckmate() ||
+      position.isStalemate() ||
+      position.isInsufficientMaterial() ||
+      position.halfmoves >= 100 ||
+      !hasLegalMoves(position)
+    );
+  }, [position]);
   const lastMove = useMemo(() => {
     const last = path[path.length - 1];
     return last ? ([last.from, last.to] as readonly [Key, Key]) : null;
@@ -250,22 +274,74 @@ function GameReview({
   const evalByPlyId = useMemo(() => storedEvalsByPly(mainline, records), [mainline, records]);
   const onMainlinePrefix = useMemo(() => isMainlinePrefix(path, mainline), [path, mainline]);
 
-  const navigate = useMemo(
-    () =>
-      (target: NavigationTarget): void => {
-        if (!tree) {
-          return;
-        }
-        if (target === 'first') {
-          setPath([]);
-        } else if (target === 'last') {
-          setPath(pathToEnd(tree, path));
-        } else {
-          setPath(step(tree, path, target === 'next' ? 1 : -1));
-        }
-      },
-    [tree, path],
+  const navigate = useCallback(
+    (target: NavigationTarget): void => {
+      setPendingPromotion(null);
+      if (!tree) {
+        return;
+      }
+      if (target === 'first') {
+        setPath([]);
+      } else if (target === 'last') {
+        setPath((cur) => pathToEnd(tree, cur));
+      } else {
+        setPath((cur) => step(tree, cur, target === 'next' ? 1 : -1));
+      }
+    },
+    [tree],
   );
+
+  const handleSeek = useCallback((target: Path): void => {
+    setPendingPromotion(null);
+    setPath(target);
+  }, []);
+
+  // Interactive exploration: play any legal move on the review board. A move
+  // that matches an existing continuation just navigates to it; anything else
+  // is appended to the (transient) tree as a variation/continuation and shown
+  // in the move list — never written to the stored game.
+  const handleMove = useCallback(
+    (from: string, to: string): void => {
+      if (!tree || finished) {
+        return;
+      }
+      const result = playMove(tree, path, from, to);
+      if (result.error) {
+        return;
+      }
+      setTree(result.tree);
+      setPath(result.path);
+    },
+    [tree, path, finished],
+  );
+
+  const handlePromotionSelect = useCallback(
+    (role: PromotionRole): void => {
+      if (!tree || !pendingPromotion) {
+        return;
+      }
+      const { from, to } = pendingPromotion;
+      const result = playMove(tree, path, from, to, role);
+      setPendingPromotion(null);
+      requestAnimationFrame(() => chessboardRef.current?.clearPendingPromotion());
+      if (result.error) {
+        return;
+      }
+      setTree(result.tree);
+      setPath(result.path);
+    },
+    [tree, path, pendingPromotion],
+  );
+
+  const handlePromotionCancel = useCallback(() => {
+    setPendingPromotion(null);
+    requestAnimationFrame(() => {
+      chessboardRef.current?.clearPendingPromotion();
+      if (pendingPromotion) {
+        chessboardRef.current?.selectSquare(pendingPromotion.from as Key);
+      }
+    });
+  }, [pendingPromotion]);
 
   // Player names + initial clock (fallback before any %clk) for the bars
   // around the board.
@@ -448,21 +524,49 @@ function GameReview({
     return map;
   }, [nagOverridesBase, liveOverlay]);
 
+  // Classification of the active (selected) ply: the ephemeral live overlay
+  // when the engine is analysing it, else the stored record on the mainline.
+  const activeClassification = useMemo<MoveClassification | undefined>(() => {
+    if (activePly === undefined) {
+      return undefined;
+    }
+    return (
+      liveOverlay?.classification ??
+      (onMainlinePrefix && selected ? selected.classification : undefined)
+    );
+  }, [activePly, liveOverlay, onMainlinePrefix, selected]);
+
   // Board glyph chips (same style/formatting as the Playground): the active
   // ply's classification renders as a small NAG badge on its destination
   // square when it is visually emphasized (never for ordinary `good` moves).
-  const boardBadges = useMemo<readonly SquareBadgeItem[]>(() => {
-    if (activePly === undefined) {
-      return [];
+  const boardBadges = useMemo<readonly SquareBadgeItem[]>(
+    () =>
+      classificationBoardBadges({
+        classification: activeClassification,
+        square: activePly?.to,
+      }),
+    [activePly, activeClassification],
+  );
+
+  // An emphasized classification also tints the move's start and end squares
+  // with the classification colour (instead of the plain last-move highlight).
+  const emphasizedSquares = useMemo<readonly [Key, Key] | null>(() => {
+    if (activePly === undefined || !activeClassification || !isEmphasized(activeClassification)) {
+      return null;
     }
-    const classification =
-      liveOverlay?.classification ??
-      (onMainlinePrefix && selected ? selected.classification : undefined);
-    return classificationBoardBadges({
-      classification,
-      square: activePly.to,
-    });
-  }, [activePly, liveOverlay, onMainlinePrefix, selected]);
+    return [activePly.from, activePly.to] as readonly [Key, Key];
+  }, [activePly, activeClassification]);
+
+  const customSquareClasses = useMemo(() => {
+    if (!emphasizedSquares || !activeClassification) {
+      return undefined;
+    }
+    const cls = `review-cls-${activeClassification}`;
+    return new Map<Key, string>([
+      [emphasizedSquares[0], cls],
+      [emphasizedSquares[1], cls],
+    ]);
+  }, [emphasizedSquares, activeClassification]);
 
   if (!tree || !position) {
     return (
@@ -527,12 +631,19 @@ function GameReview({
             boardSize={boardSize}
             position={position}
             settings={boardSettings}
-            lastMove={lastMove}
+            lastMove={emphasizedSquares ? null : lastMove}
             arrows={effectiveArrows}
             opponentName={opponentName}
             opponentMs={opponentMs}
             userName={userName}
             userMs={userMs}
+            chessboardRef={chessboardRef}
+            interactive={boardSettings.interactive}
+            drawable={boardSettings.drawable}
+            moving={pendingPromotion === null && !finished}
+            onMove={handleMove}
+            onPromotionRequired={(p) => setPendingPromotion(p)}
+            {...(customSquareClasses !== undefined ? { customSquareClasses } : {})}
             overlay={
               boardBadges.length > 0 ? (
                 <SquareBadges orientation={orientation} items={boardBadges} />
@@ -561,7 +672,7 @@ function GameReview({
                   state={boardSettings}
                   onChange={handleBoardSettings}
                   onResetBoardSize={() => boardSize.setSize(BOARD_SIZE_DEFAULT)}
-                  onClearArrows={() => undefined}
+                  onClearArrows={() => chessboardRef.current?.clearArrows()}
                   boardSize={boardSize.size}
                 />
               }
@@ -570,7 +681,7 @@ function GameReview({
               <MoveList
                 tree={tree}
                 path={path}
-                onSeek={setPath}
+                onSeek={handleSeek}
                 nagOverrides={effectiveNagOverrides}
                 plyEvals={plyEvals}
               />
@@ -583,6 +694,13 @@ function GameReview({
             </div>
           </>
         }
+      />
+
+      <PromotionDialog
+        open={pendingPromotion !== null}
+        pieceSet={boardSettings.pieceSet}
+        onSelect={handlePromotionSelect}
+        onCancel={handlePromotionCancel}
       />
     </div>
   );
@@ -600,6 +718,13 @@ function BoardPane({
   userName,
   userMs,
   overlay,
+  chessboardRef,
+  interactive,
+  drawable,
+  moving,
+  onMove,
+  onPromotionRequired,
+  customSquareClasses,
 }: {
   boardSize: UseBoardSize;
   position: ReturnType<typeof positionAtPath>;
@@ -612,13 +737,25 @@ function BoardPane({
   userMs: number | null;
   /** Optional board overlay (classification/NAG chips). */
   overlay?: React.ReactNode;
+  /** Chessboard handle (clear arrows / promotions). */
+  chessboardRef: React.RefObject<ChessboardHandle | null>;
+  interactive: boolean;
+  drawable: boolean;
+  moving: boolean;
+  onMove: (from: string, to: string) => void;
+  onPromotionRequired: (pending: { from: string; to: string }) => void;
+  /** Classification-colored start/end-square highlight classes. */
+  customSquareClasses?: ReadonlyMap<Key, string>;
 }): React.JSX.Element {
   return (
     <div className={styles.boardStack}>
       <ClockBar name={opponentName} timeMs={opponentMs} dataTestId="review-clock-opponent" />
       <Chessboard
+        ref={chessboardRef}
         position={position}
-        interactive={false}
+        interactive={interactive}
+        drawable={drawable}
+        moving={moving}
         orientation={settings.orientation}
         coordinates={settings.coordinates}
         showLegalMoves={settings.showLegalMoves}
@@ -628,6 +765,9 @@ function BoardPane({
         lastMove={lastMove}
         autoShapes={arrows}
         boardSize={boardSize}
+        onMove={onMove}
+        onPromotionRequired={onPromotionRequired}
+        {...(customSquareClasses !== undefined ? { customSquareClasses } : {})}
         {...(overlay !== undefined ? { overlay } : {})}
       />
       <ClockBar name={userName} timeMs={userMs} dataTestId="review-clock-user" />

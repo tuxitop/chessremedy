@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { db } from '@/infrastructure/db/database';
@@ -127,6 +127,15 @@ describe('Game Review page (Feature 008)', () => {
     await screen.findByTestId('review-layout');
 
     const user = userEvent.setup();
+    const custom = (): ReadonlyMap<string, string> | undefined =>
+      (chessboardProps.at(-1)! as { customSquareClasses?: ReadonlyMap<string, string> })
+        .customSquareClasses;
+
+    // Ordinary (good) move keeps the plain last-move highlight, no color class.
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'f3')!);
+    expect(chessboardProps.at(-1)!.lastMove).toEqual(['f2', 'f3']);
+    expect(custom()).toBeUndefined();
+
     await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!);
 
     await waitFor(() => {
@@ -135,7 +144,15 @@ describe('Game Review page (Feature 008)', () => {
     });
     const last = chessboardProps.at(-1)!;
     expect(last.orientation).toBe('white');
-    expect(last.lastMove).toEqual(['g2', 'g4']);
+    // The blunder replaces the plain last-move highlight with classification
+    // coloring on the move's start and end squares.
+    expect(last.lastMove).toBeNull();
+    expect(custom()).toEqual(
+      new Map([
+        ['g2', 'review-cls-blunder'],
+        ['g4', 'review-cls-blunder'],
+      ]),
+    );
 
     // Stored per-move evals + the shared engine panel fed by cached data
     // (engine off): stored lines and the analysis identity in the header.
@@ -316,6 +333,80 @@ describe('Game Review page (Feature 008)', () => {
     expect(activeSan()).toBe('f3');
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}');
     expect(activeSan()).toBeUndefined();
+  });
+
+  it('renders the board interactive and drawable with working settings toggles', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const board = () => chessboardProps.at(-1)!;
+    // Board is a working analysis board by default: interactive + drawable.
+    expect(board().interactive).toBe(true);
+    expect(board().drawable).toBe(true);
+    expect(typeof board().onMove).toBe('function');
+    expect(typeof board().onPromotionRequired).toBe('function');
+
+    // Board settings act on the Review board (e.g. turn interactivity off).
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('settings-cog'));
+    await user.click(screen.getByTestId('setting-interactive'));
+    await user.click(screen.getByTestId('settings-cog'));
+    expect(board().interactive).toBe(false);
+    // Clearing arrows is wired to the board handle.
+    await user.click(screen.getByTestId('settings-cog'));
+    expect(screen.getByTestId('setting-clear-arrows')).toBeInTheDocument();
+  });
+
+  it('lets the user play an alternate move that appears as a variation', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const board = () => chessboardProps.at(-1)!;
+    const moves = (): string[] =>
+      screen.getAllByTestId('move-list-move').map((b) => b.dataset.san ?? '');
+
+    const user = userEvent.setup();
+    expect(moves()).toHaveLength(4);
+
+    // After 1...e5 it is White to move; deviate with 2.Nc3 instead of 2.g4.
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'e5')!);
+    await waitFor(() => expect(board()).toBeTruthy());
+    act(() => {
+      (board() as { onMove: (from: string, to: string) => void }).onMove('b1', 'c3');
+    });
+
+    await waitFor(() => expect(moves()).toHaveLength(5));
+    const nc3 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Nc3');
+    expect(nc3).toBeTruthy();
+    expect(nc3).toHaveAttribute('aria-current', 'step');
+
+    // The appended variation is transient: nothing is persisted to the game.
+    expect(await analysesRepository.countForGame(GAME.id)).toBe(4);
+  });
+
+  it('hides the empty engine-lines area when off and reserves it while on', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const user = userEvent.setup();
+    // A stored mainline position (engine off) still shows its stored lines.
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'e5')!);
+    expect(screen.getByTestId('engine-result')).toBeInTheDocument();
+
+    // The final position has no stored lines → no empty engine-lines area.
+    await user.click(
+      screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!,
+    );
+    await waitFor(() => expect(screen.queryByTestId('engine-result')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('engine-line-placeholder')).not.toBeInTheDocument();
+
+    // Turning the engine on reserves the region even before any line arrives.
+    await user.click(screen.getByTestId('engine-toggle'));
+    expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('engine-result')).toBeInTheDocument();
   });
 
   it('toggles the engine on in place without ever overwriting stored records', async () => {

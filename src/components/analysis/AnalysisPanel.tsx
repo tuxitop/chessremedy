@@ -59,7 +59,10 @@ export function AnalysisPanel({
   stored = null,
 }: AnalysisPanelProps): React.JSX.Element {
   const { enabled, analyzing, lines, error, reachedDepth, engineLabel } = controller;
-  const storedActive = stored !== null && !enabled;
+  // Stored content counts only while it actually fills the lines area: the
+  // engine-lines region must never render an *empty* area when the engine is
+  // off. A stored panel with no lines behaves like the plain "off" state.
+  const storedActive = stored !== null && !enabled && stored.lines.length > 0;
 
   const liveBestEval: EngineEvaluation | null =
     enabled && lines.length > 0 ? (lines[0]!.evaluation ?? null) : null;
@@ -94,7 +97,11 @@ export function AnalysisPanel({
         }))
       : [];
 
-  const showRegion = (enabled && displayLines.length > 0) || storedActive;
+  // The lines region is reserved whenever the engine is on (even before the
+  // first line arrives, so the panel never collapses while thinking) or when
+  // stored lines actually exist to fill it. It is never an empty placeholder
+  // area when the engine is off.
+  const showRegion = enabled || storedActive;
   const showIdle = !enabled && !storedActive;
   const versionLabel = engineLabel ?? (storedActive ? stored!.engineLabel : null);
 
@@ -183,17 +190,19 @@ export function AnalysisPanel({
             </div>
           ))}
           {/* Keep the configured number of lines occupied so the panel height
-              is stable while the engine is still reporting them. */}
-          {Array.from({
-            length: Math.max(0, controller.settings.lines - displayLines.length),
-          }).map((_, index) => (
-            <div
-              className={styles.placeholderLine}
-              aria-hidden="true"
-              key={`placeholder-${index}`}
-              data-testid="engine-line-placeholder"
-            />
-          ))}
+              is stable while the engine is still reporting them (live mode
+              only — stored content is never padded with empty rows). */}
+          {enabled &&
+            Array.from({
+              length: Math.max(0, controller.settings.lines - displayLines.length),
+            }).map((_, index) => (
+              <div
+                className={styles.placeholderLine}
+                aria-hidden="true"
+                key={`placeholder-${index}`}
+                data-testid="engine-line-placeholder"
+              />
+            ))}
         </div>
       )}
     </section>
