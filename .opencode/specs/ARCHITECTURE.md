@@ -271,6 +271,7 @@ Persistent entities include:
 - games
 - moves
 - analyses
+- analysis summaries
 - puzzle candidates
 - puzzles
 - training sets
@@ -281,11 +282,15 @@ Persistent entities include:
 - application settings
 - sync metadata
 
-Database schema must be versioned. The schema is currently **v5**
+Database schema must be versioned. The schema is currently **v7**
 (additive): v4 added the analysis tables; v5 adds the structured
 time-control value (base/increment/days/estimate/display, see
 `domain/time-control.md`) to the games row while retaining the verbatim
-`timeControl` string and the indexed `normalizedTimeControl` category.
+`timeControl` string and the indexed `normalizedTimeControl` category;
+v6 backfills the Library row's full-move count and board-detectable
+end; v7 adds the Feature-010 game-scoped derived tables `analysisSummaries`
+(per-analysis summary rows) and `puzzleCandidates` (verified missed-tactic
+candidates).
 
 ### Data ownership & deletion
 
@@ -294,6 +299,7 @@ Derived data is owned by its source game and is removed with it:
 ```
 Game
  ├── Analysis          (per game)
+ ├── Analysis Summary  (per game)
  ├── Puzzle Candidate
  └── Puzzle(s)
        └── Puzzle attempts / training-set membership
@@ -328,7 +334,7 @@ whole table into the UI when it can be avoided:
    features (008 bulk/review, 011 puzzles-from-game, 014 accuracy) and
    never force a Library redesign.
 
-Schema stays additive (currently v3). Indexed pagination or
+Schema stays additive (currently v7). Indexed pagination or
 virtualization is introduced behind these seams when a measured dataset
 demands it — the model does not couple the Library to "render every row".
 
