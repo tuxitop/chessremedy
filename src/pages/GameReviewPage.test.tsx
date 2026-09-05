@@ -57,7 +57,7 @@ function renderReviewAt(analysisService: AnalysisServiceLike | null, url: string
 }
 
 async function seedCompleted(
-  overrides: ReadonlyArray<Partial<MoveAnalysis>> = [],
+  overrides: ReadonlyArray<Partial<MoveAnalysis> | undefined> = [],
   engine: EngineMetadata = TEST_ENGINE,
 ): Promise<string> {
   await gamesRepository.saveGame(GAME);
@@ -157,14 +157,12 @@ describe('Game Review page (Feature 008)', () => {
     expect(last.orientation).toBe('white');
     expect(last.lastMove).toEqual(['g2', 'g4']);
 
-    // Stored per-move evals, engine lines, engine identity and mistake review.
+    // Stored per-move evals + the shared engine panel fed by cached data
+    // (engine off): stored lines and the analysis identity in the header.
     expect(screen.getAllByTestId('ply-eval').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('engine-lines')).toBeInTheDocument();
-    expect(screen.getByTestId('review-engine-chip')).toHaveTextContent('stockfish');
-    const verdict = screen.getByTestId('review-verdict');
-    expect(verdict).toHaveTextContent('blunder');
-    expect(verdict).toHaveTextContent('Best:');
-    expect(screen.getByTestId('review-swing')).toBeInTheDocument();
+    expect(screen.getAllByTestId('stored-line').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('engine-version')).toHaveTextContent('stockfish');
+    expect(screen.getByTestId('position-eval')).toHaveTextContent(/\d/);
   });
 
   it('shows an obsolete-analysis banner and allows re-analysis', async () => {
@@ -187,7 +185,7 @@ describe('Game Review page (Feature 008)', () => {
 
     expect(await screen.findByTestId('review-obsolete')).toBeInTheDocument();
     expect(screen.getByTestId('review-reanalyze')).toBeInTheDocument();
-    expect(screen.getByTestId('review-engine-chip')).toHaveTextContent('stockfish 18.0.0');
+    expect(screen.getByTestId('engine-version')).toHaveTextContent('18.0.0');
   });
 
   it('shows the no-analysis state and analyzes the game on demand', async () => {
@@ -237,7 +235,7 @@ describe('Game Review page (Feature 008)', () => {
     expect(screen.getByTestId('review-state')).toHaveTextContent('2 of 4');
   });
 
-  it('shows a stored evaluation bar and toggleable arrows/lines/evaluations', async () => {
+  it('shows the stored evaluation bar, best-move arrows and cached engine lines', async () => {
     await seedCompleted();
     renderReview(null);
     await screen.findByTestId('review-layout');
@@ -247,39 +245,28 @@ describe('Game Review page (Feature 008)', () => {
     expect(bar).toBeInTheDocument();
     expect(bar.getAttribute('aria-label')).toMatch(/^Evaluation:/);
 
-    // Best-move arrows default on and draw the stored top move (f2–f3).
+    // Best-move arrows draw the stored top move (f2–f3) from the start.
     const board = () => chessboardProps.at(-1)!;
     expect(board().autoShapes).toEqual([{ orig: 'f2', dest: 'f3', brush: 'best' }]);
 
-    // The analysis-controls area toggles display options.
-    expect(screen.getByTestId('review-toggle-arrows')).toHaveAttribute('aria-checked', 'true');
-    await userEvent.setup().click(screen.getByTestId('review-toggle-arrows'));
-    expect(screen.getByTestId('review-toggle-arrows')).toHaveAttribute('aria-checked', 'false');
-    expect(board().autoShapes).toEqual([]);
-
-    // Engine lines and per-move evaluations appear once a move is selected and
-    // can be hidden independently.
+    // Selecting a move fills the shared engine panel from cached data.
     const user = userEvent.setup();
     await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!);
-    expect(screen.getByTestId('engine-lines')).toBeInTheDocument();
+    expect(screen.getAllByTestId('stored-line').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('ply-eval').length).toBeGreaterThan(0);
-    await user.click(screen.getByTestId('review-toggle-lines'));
-    expect(screen.queryByTestId('engine-lines')).not.toBeInTheDocument();
-
-    await user.click(screen.getByTestId('review-toggle-evals'));
-    expect(screen.queryByTestId('evaluation-bar')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('ply-eval')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('review-eval')).not.toBeInTheDocument();
   });
 
-  it('shows the selected move’s engine depth', async () => {
-    await seedCompleted([{ depth: 21 }]);
+  it('shows the displayed position’s stored engine depth', async () => {
+    // The position shown after 1.f3 is the start of move two (record index 1).
+    await seedCompleted([undefined, { depth: 21 }]);
     renderReview(null);
     await screen.findByTestId('review-layout');
 
     const user = userEvent.setup();
     await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'f3')!);
-    expect(screen.getByTestId('review-depth')).toHaveTextContent('Depth 21');
+    await waitFor(() =>
+      expect(screen.getByTestId('engine-depth-row')).toHaveTextContent('Depth: 21'),
+    );
   });
 
   it('shows per-player clock bars above and below the board', async () => {
@@ -315,25 +302,22 @@ describe('Game Review page (Feature 008)', () => {
     expect(activeSan()).toBeUndefined();
   });
 
-  it('offers a distinct live-analysis mode that never overwrites stored records', async () => {
+  it('toggles the engine on in place without ever overwriting stored records', async () => {
     await seedCompleted();
     renderReview(null);
     await screen.findByTestId('review-layout');
 
-    const user = userEvent.setup();
-    await user.click(screen.getByTestId('review-enter-live'));
-    await screen.findByTestId('review-live-layout');
-    expect(screen.getByTestId('review-live-label')).toBeInTheDocument();
-    expect(screen.getByTestId('review-exit-live')).toBeInTheDocument();
-    // Stored panels are not rendered while live.
-    expect(screen.queryByTestId('review-summary')).not.toBeInTheDocument();
+    const toggle = screen.getByTestId('engine-toggle');
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
 
-    // Nothing was persisted: the stored analysis is untouched.
+    const user = userEvent.setup();
+    await user.click(toggle);
+    expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'true');
+    // One single surface throughout; the stored analysis is untouched.
+    expect(screen.getByTestId('review-layout')).toBeInTheDocument();
     expect(await analysesRepository.countForGame(GAME.id)).toBe(4);
 
-    // Returning to stored review restores the stored surface.
-    await user.click(screen.getByTestId('review-exit-live'));
-    await screen.findByTestId('review-layout');
-    expect(screen.getByTestId('review-summary')).toBeInTheDocument();
+    await user.click(screen.getByTestId('engine-toggle'));
+    expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'false');
   });
 });

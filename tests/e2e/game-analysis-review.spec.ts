@@ -116,9 +116,9 @@ test.describe('Game analysis & review (Feature 008)', () => {
     await expect(page.getByTestId('summary-user-blunder-value')).toHaveText('1');
 
     // PGN clock annotations are parsed structurally and never surface as
-    // comments; selecting a move shows its structured remaining-time clock.
-    await page.getByTestId('move-list-move').filter({ hasText: 'f3' }).click();
-    await expect(page.getByTestId('review-clock')).toContainText('Clock');
+    // comments; the player clock bar shows the mover's remaining time.
+    await page.getByTestId('move-list-move').filter({ hasText: 'g4' }).click();
+    await expect(page.getByTestId('review-clock-user-time')).toHaveText('4:57');
     await expect(page.getByTestId('review-layout')).not.toContainText('%clk');
 
     // Seek to the end and back via the navigation controls.
@@ -130,19 +130,19 @@ test.describe('Game analysis & review (Feature 008)', () => {
     await page.getByTestId('nav-first').click();
     await expect(page.getByTestId('move-navigation')).toBeVisible();
 
-    // Enter the distinct live-analysis mode: the engine analyses the current
-    // position but never writes into the stored analysis.
-    await page.getByTestId('review-enter-live').click();
-    await expect(page.getByTestId('review-live-layout')).toBeVisible();
-    await expect(page.getByTestId('review-live-label')).toContainText('Live analysis');
+    // Toggle the engine on: the same surface now analyses the current
+    // position live, and never writes into the stored analysis.
+    await page.getByTestId('engine-toggle').click();
+    await expect(page.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('position-eval')).not.toHaveText('\u2014', {
       timeout: RESULT_TIMEOUT,
     });
-
-    // Return to the stored review and navigate again.
-    await page.getByTestId('review-exit-live').click();
     await expect(page.getByTestId('review-layout')).toBeVisible();
     await expect(page.getByTestId('review-summary')).toBeVisible();
+
+    // Toggle back off: the cached (stored) analysis is shown again.
+    await page.getByTestId('engine-toggle').click();
+    await expect(page.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'false');
     await page.getByTestId('nav-last').click();
     await expect(page.locator('[data-testid="move-list-move"][data-san="Qh4#"]')).toHaveAttribute(
       'aria-current',
