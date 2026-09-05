@@ -160,6 +160,15 @@
   font-size: var(--font-size-sm);
 }
 
+.liveClass {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-accent-soft, rgba(31, 111, 235, 0.12));
+  color: var(--color-fg);
+}
+
 .liveMoveList {
   min-height: 0;
   overflow: hidden;

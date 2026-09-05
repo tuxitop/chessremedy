@@ -31,7 +31,8 @@ import { gameFromPgn } from '@/domain/chess/parseGame';
 import { gameClocks, type MoveClock } from '@/domain/chess/clock';
 import { parseTimeControl } from '@/domain/chess/timeControl';
 import { fenOf, uciPvToSan } from '@/domain/chess';
-import type { EvalCpMate, MoveAnalysis, MoveClassification } from '@/domain/chess';
+import type { EvalCpMate, MoveAnalysis, MoveClassification, Wdl } from '@/domain/chess';
+import { classifyMove, cpValueOf } from '@/domain/chess/classification';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { summarizeAnalysis, CLASSIFICATION_LABELS } from '@/domain/analysis/summary';
 import type { AnalysisJob, GameAnalysisStatus } from '@/domain/analysis';
@@ -387,6 +388,9 @@ function GameReview({
           onSeek={setPath}
           boardSize={boardSize}
           sidePanelStyle={sidePanelStyle}
+          {...(selected !== undefined ? { selectedRecord: selected } : {})}
+          {...(activePly !== undefined ? { selectedPlyId: activePly.id } : {})}
+          storedNagOverrides={nagOverrides}
           onExitLive={() => setLive(false)}
         />
       ) : (
@@ -614,6 +618,9 @@ function ReviewLiveSurface({
   onSeek,
   boardSize,
   sidePanelStyle,
+  selectedRecord,
+  selectedPlyId,
+  storedNagOverrides,
   onExitLive,
 }: {
   tree: MoveTree;
@@ -631,6 +638,10 @@ function ReviewLiveSurface({
   onSeek: (path: Path) => void;
   boardSize: UseBoardSize;
   sidePanelStyle: React.CSSProperties | undefined;
+  /** Stored record of the selected mainline move (for the live overlay). */
+  selectedRecord?: MoveAnalysis;
+  selectedPlyId?: number;
+  storedNagOverrides: ReadonlyMap<number, readonly number[]>;
   onExitLive: () => void;
 }): React.JSX.Element {
   const engine = useBrowserAnalysisEngine();
@@ -654,6 +665,45 @@ function ReviewLiveSurface({
     () => buildPlyEvaluations(tree, controller.evalsByFen),
     [tree, controller.evalsByFen],
   );
+
+  // Ephemeral live classification of the selected move: keep the stored
+  // "before" context (evalBefore/best move/legal moves/phase) and substitute
+  // the live evaluation of the position after the move (re-expressed from the
+  // mover's perspective) through the canonical classifier. Shown only while
+  // live and never persisted (ADR-033).
+  const liveOverlay = useMemo(() => {
+    if (!selectedRecord || selectedPlyId === undefined) {
+      return null;
+    }
+    const line = controller.lines[0];
+    if (!line) {
+      return null;
+    }
+    const afterRaw = engineEvalToCpMate(line.evaluation);
+    const wdlAfter = line.wdl;
+    const useWdl = wdlAfter !== null && selectedRecord.wdlBefore !== null;
+    const classification = classifyMove({
+      evalBefore: selectedRecord.evalBefore,
+      evalAfter: negateCpMate(afterRaw),
+      bestMove: selectedRecord.bestMove,
+      playedMove: selectedRecord.playedMove,
+      legalMovesCount: selectedRecord.legalMovesCount,
+      wdlBefore: useWdl ? selectedRecord.wdlBefore : null,
+      wdlAfter: useWdl ? swapWdl(wdlAfter) : null,
+      gamePhase: selectedRecord.gamePhase,
+      inBook: false,
+      topCpValues: selectedRecord.multipvLines.map((mv) => cpValueOf(mv.evaluation)),
+    });
+    return { classification, san: selectedRecord.playedMove.san };
+  }, [controller.lines, selectedRecord, selectedPlyId]);
+
+  const liveNagOverrides = useMemo(() => {
+    const map = new Map<number, readonly number[]>(storedNagOverrides);
+    if (liveOverlay && selectedPlyId !== undefined) {
+      map.set(selectedPlyId, [CLASSIFICATION_NAG[liveOverlay.classification]]);
+    }
+    return map;
+  }, [storedNagOverrides, liveOverlay, selectedPlyId]);
 
   return (
     <AnalysisBoard
@@ -687,6 +737,11 @@ function ReviewLiveSurface({
             <span className={styles.liveHint}>
               Engine results are temporary and never overwrite the stored analysis.
             </span>
+            {liveOverlay ? (
+              <span className={styles.liveClass} data-testid="review-live-class">
+                Live: {liveOverlay.san} is {liveOverlay.classification}
+              </span>
+            ) : null}
             <Button variant="secondary" data-testid="review-exit-live" onClick={onExitLive}>
               Return to stored review
             </Button>
@@ -699,7 +754,13 @@ function ReviewLiveSurface({
             sideToMove={sideToMove}
           />
           <MoveListPane>
-            <MoveList tree={tree} path={path} onSeek={onSeek} plyEvals={plyEvals} />
+            <MoveList
+              tree={tree}
+              path={path}
+              onSeek={onSeek}
+              plyEvals={plyEvals}
+              nagOverrides={liveNagOverrides}
+            />
           </MoveListPane>
           <div className={styles.navRow}>
             <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={onNavigate} />
@@ -1010,6 +1071,26 @@ function evalAsWhite(
 }
 
 /** `EvalCpMate` → display evaluation (cp-only or mate-only), or `null`. */
+/** Live engine line evaluation → domain cp/mate shape. */
+function engineEvalToCpMate(evaluation: EngineEvaluation): EvalCpMate {
+  return 'mate' in evaluation
+    ? { cp: null, mate: evaluation.mate }
+    : { cp: evaluation.cp, mate: null };
+}
+
+/** Negate an evaluation to the opposite side's perspective (cp/mate). */
+function negateCpMate(evaluation: EvalCpMate): EvalCpMate {
+  return {
+    cp: evaluation.cp !== null ? -evaluation.cp : null,
+    mate: evaluation.mate !== null ? -evaluation.mate : null,
+  };
+}
+
+/** Swap a WDL triplet to the opposite perspective (w ↔ l). */
+function swapWdl(wdl: Wdl): Wdl {
+  return { w: wdl.l, d: wdl.d, l: wdl.w };
+}
+
 function fromCpMate(evaluation: EvalCpMate): EngineEvaluation | null {
   if (evaluation.cp !== null) {
     return { cp: evaluation.cp };
