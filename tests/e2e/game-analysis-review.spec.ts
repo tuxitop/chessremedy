@@ -115,6 +115,36 @@ test.describe('Game analysis & review (Feature 008)', () => {
     // Summary splits user (White) from opponent (Black); 2.g4?? is a blunder.
     await expect(page.getByTestId('summary-user-blunder-value')).toHaveText('1');
 
+    // Play an alternate move on the interactive Review board: after 1...e5
+    // deviate with 2.g3 (instead of the recorded 2.g4).
+    await page.getByTestId('move-list-move').filter({ hasText: 'e5' }).click();
+    await expect(page.locator('[data-testid="move-list-move"][data-san="e5"]')).toHaveAttribute(
+      'aria-current',
+      'step',
+    );
+    await expect(page.getByTestId('review-ply')).toHaveText('2/4');
+    const host = page.getByTestId('chessground-host');
+    await host.scrollIntoViewIfNeeded();
+    const box = (await host.boundingBox())!;
+    const centre = (file: string, rank: number): { x: number; y: number } => ({
+      x: box.x + ((file.charCodeAt(0) - 97 + 0.5) / 8) * box.width,
+      y: box.y + ((7 - (rank - 1) + 0.5) / 8) * box.height,
+    });
+    const g2 = centre('g', 2);
+    const g3 = centre('g', 3);
+    await page.mouse.move(g2.x, g2.y);
+    await page.mouse.down();
+    await page.mouse.move(g3.x, g3.y, { steps: 12 });
+    await page.waitForTimeout(80);
+    await page.mouse.up();
+    await expect(page.getByTestId('move-list-move')).toHaveCount(5, { timeout: 5000 });
+    await expect(page.locator('[data-testid="move-list-move"][data-san="g3"]')).toHaveAttribute(
+      'aria-current',
+      'step',
+    );
+    // The appended variation is transient: the stored analysis is untouched.
+    await expect(page.getByTestId('move-list-move')).toHaveCount(5);
+
     // PGN clock annotations are parsed structurally and never surface as
     // comments; the player clock bar shows the mover's remaining time.
     await page.getByTestId('move-list-move').filter({ hasText: 'g4' }).click();

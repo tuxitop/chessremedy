@@ -418,11 +418,17 @@ describe('Game Review page (Feature 008)', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 
     const user = userEvent.setup();
+    // All four stored per-move evaluations are shown with the engine off.
+    expect(screen.getAllByTestId('ply-eval')).toHaveLength(4);
+
     await user.click(toggle);
     expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'true');
     // One single surface throughout; the stored analysis is untouched.
     expect(screen.getByTestId('review-layout')).toBeInTheDocument();
     expect(await analysesRepository.countForGame(GAME.id)).toBe(4);
+    // Turning live analysis on must not dismiss the saved evaluations: moves
+    // that have no fresh live result yet keep their stored per-move value.
+    expect(screen.getAllByTestId('ply-eval')).toHaveLength(4);
 
     await user.click(screen.getByTestId('engine-toggle'));
     expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'false');

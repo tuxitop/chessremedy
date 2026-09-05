@@ -52,6 +52,12 @@ export interface LiveAnalysisState {
    * when a result completes, so the move list can show per-ply evaluations.
    */
   readonly evalsByFen: Readonly<Record<string, EngineEvaluation>>;
+  /**
+   * Freshest engine lines recorded for each analysed FEN this session
+   * (progress snapshots and completed results). Enables ephemeral live
+   * classification of the moves connecting two analysed positions.
+   */
+  readonly linesByFen: Readonly<Record<string, readonly EngineLine[]>>;
   /** Abort the active analysis (does not re-run). */
   cancel(): void;
 }
@@ -64,6 +70,14 @@ function engineLabelOf(status: EngineServiceStatus): string | null {
 /** Keep only progress snapshots that carry a real evaluation + a move list. */
 function usableLine(progress: EngineProgress): boolean {
   return progress.evaluation !== undefined && (progress.principalVariation?.length ?? 0) > 0;
+}
+
+/** Replace/insert one per-rank line into a list (freshest line per rank). */
+function upsertLine(lines: readonly EngineLine[], line: EngineLine): readonly EngineLine[] {
+  const rank = line.multipv ?? 1;
+  return [...lines.filter((l) => (l.multipv ?? 1) !== rank), line].sort(
+    (a, b) => (a.multipv ?? 1) - (b.multipv ?? 1),
+  );
 }
 
 /** Normalise a progress snapshot into a displayable engine line. */
@@ -98,6 +112,7 @@ export function useLiveAnalysis({
   const [liveLines, setLiveLines] = useState<readonly EngineLine[]>([]);
   const [error, setError] = useState<EngineJobError | null>(null);
   const [evalsByFen, setEvalsByFen] = useState<Readonly<Record<string, EngineEvaluation>>>({});
+  const [linesByFen, setLinesByFen] = useState<Readonly<Record<string, readonly EngineLine[]>>>({});
 
   const jobRef = useRef<AnalysisJob | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -142,13 +157,13 @@ export function useLiveAnalysis({
           break;
         case 'progress':
           if (job.fen === fen && usableLine(event.progress)) {
-            // Replace the same-rank line so the display advances each depth.
-            setLiveLines((current) => {
-              const rank = event.progress.multipv ?? 1;
-              const rest = current.filter((l) => (l.multipv ?? 1) !== rank);
-              return [...rest, progressToLine(event.progress)].sort(
-                (a, b) => (a.multipv ?? 1) - (b.multipv ?? 1),
-              );
+            // Replace the same-rank line so the display advances each depth,
+            // and remember the freshest lines per FEN for live classification.
+            const line = progressToLine(event.progress);
+            setLiveLines((current) => upsertLine(current, line));
+            setLinesByFen((cur) => {
+              const merged = upsertLine(cur[job.fen] ?? [], line);
+              return merged.length === 0 ? cur : { ...cur, [job.fen]: merged };
             });
           }
           break;
@@ -163,6 +178,9 @@ export function useLiveAnalysis({
               if (!best) return cur;
               return { ...cur, [res.position]: best.evaluation };
             });
+            if (res.lines.length > 0) {
+              setLinesByFen((cur) => ({ ...cur, [res.position]: res.lines }));
+            }
           }
           break;
         }
@@ -201,6 +219,7 @@ export function useLiveAnalysis({
     reachedDepth,
     engineLabel: service ? engineLabelOf(service.getStatus()) : null,
     evalsByFen,
+    linesByFen,
     cancel,
   };
 }

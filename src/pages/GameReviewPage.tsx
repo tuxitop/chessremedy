@@ -31,6 +31,7 @@ import { EvaluationBar } from '@/components/analysis/EvaluationBar';
 import { AnalysisBoard } from '@/components/analysis/board/AnalysisBoard';
 import { engineArrowBrush, engineArrowShapes } from '@/components/analysis/engineArrows';
 import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
+import { liveClassificationForTree } from '@/components/analysis/liveClassification';
 import { useAnalysisController } from '@/components/analysis/useAnalysisController';
 import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
@@ -265,7 +266,6 @@ function GameReview({
     const last = path[path.length - 1];
     return last ? ([last.from, last.to] as readonly [Key, Key]) : null;
   }, [path]);
-  const nagOverridesBase = useMemo(() => buildNagOverrides(mainline, records), [mainline, records]);
   const summary = useMemo(() => summarizeAnalysis(records, userColor), [records, userColor]);
   const clocks = useMemo(() => {
     const parsed = gameFromPgn(pgn, { source: 'fixture', userColor });
@@ -488,8 +488,21 @@ function GameReview({
     [tree, controller.evalsByFen],
   );
 
-  // Ephemeral live classification of the selected move while the engine runs:
-  // keep the stored before-context and substitute the live post-move eval.
+  // The hook keeps the freshest engine lines per analysed FEN, so any ply whose
+  // before/after positions were both analysed can be classified (ADR-023) and
+  // surfaced with a glyph/highlight in the move list while the engine is live.
+  const liveLinesByFen = controller.linesByFen;
+  const liveClassificationByPly = useMemo(
+    () =>
+      tree && live
+        ? liveClassificationForTree(tree, liveLinesByFen)
+        : new Map<number, MoveClassification>(),
+    [tree, live, liveLinesByFen],
+  );
+
+  // Ephemeral live classification of the selected (stored) move while the
+  // engine runs: keep the stored before-context and substitute the live
+  // post-move eval.
   const liveOverlay = useMemo(() => {
     if (!live || !selected || activePly === undefined) {
       return null;
@@ -515,26 +528,46 @@ function GameReview({
     return { classification, plyId: activePly.id };
   }, [live, selected, activePly, liveLines]);
 
-  const effectiveNagOverrides = useMemo(() => {
-    const map = new Map<number, readonly number[]>(nagOverridesBase);
+  // Single source of the classification displayed per ply: the persisted record
+  // for each recorded mainline move, overridden by any live classification of
+  // that ply (ephemeral engine results win while the engine is on) and by the
+  // active-ply live overlay.
+  const classificationByPly = useMemo(() => {
+    const map = new Map<number, MoveClassification>();
+    mainline.forEach((node, ply) => {
+      const record = records[ply];
+      if (record) {
+        map.set(node.id, record.classification);
+      }
+    });
+    for (const [id, classification] of liveClassificationByPly) {
+      map.set(id, classification);
+    }
     if (liveOverlay) {
-      const nag = nagForClassification(liveOverlay.classification);
-      map.set(liveOverlay.plyId, nag === null ? [] : [nag]);
+      map.set(liveOverlay.plyId, liveOverlay.classification);
     }
     return map;
-  }, [nagOverridesBase, liveOverlay]);
+  }, [mainline, records, liveClassificationByPly, liveOverlay]);
 
-  // Classification of the active (selected) ply: the ephemeral live overlay
-  // when the engine is analysing it, else the stored record on the mainline.
+  // NAG overrides for the move list derive from that single map: emphasized
+  // classifications render their glyph, ordinary `good`/no-classification plies
+  // override to no glyph.
+  const effectiveNagOverrides = useMemo(() => {
+    const map = new Map<number, readonly number[]>();
+    for (const [id, classification] of classificationByPly) {
+      const nag = nagForClassification(classification);
+      map.set(id, nag === null ? [] : [nag]);
+    }
+    return map;
+  }, [classificationByPly]);
+
+  // Classification of the active (selected) ply for chips + square highlights.
   const activeClassification = useMemo<MoveClassification | undefined>(() => {
     if (activePly === undefined) {
       return undefined;
     }
-    return (
-      liveOverlay?.classification ??
-      (onMainlinePrefix && selected ? selected.classification : undefined)
-    );
-  }, [activePly, liveOverlay, onMainlinePrefix, selected]);
+    return classificationByPly.get(activePly.id);
+  }, [activePly, classificationByPly]);
 
   // Board glyph chips (same style/formatting as the Playground): the active
   // ply's classification renders as a small NAG badge on its destination
@@ -568,6 +601,20 @@ function GameReview({
     ]);
   }, [emphasizedSquares, activeClassification]);
 
+  // Per-move evaluations: while the engine is live, freshly analysed plies
+  // override their stored evaluation, but every other move keeps its stored
+  // (persisted) value — toggling live analysis must not wipe the saved evals.
+  const plyEvals = useMemo(() => {
+    if (!live) {
+      return evalByPlyId;
+    }
+    const merged = new Map<number, string>(evalByPlyId);
+    for (const [id, text] of livePlyEvals) {
+      merged.set(id, text);
+    }
+    return merged;
+  }, [live, evalByPlyId, livePlyEvals]);
+
   if (!tree || !position) {
     return (
       <StatePanel title="Cannot display game" description="The stored PGN could not be replayed." />
@@ -583,7 +630,6 @@ function GameReview({
       : null
     : barView.evaluation;
   const barSideToMove = live ? sideToMove : barView.sideToMove;
-  const plyEvals = live ? livePlyEvals : evalByPlyId;
 
   const currentPly = path.length;
   const totalPlies = pathToEnd(tree, []).length;
@@ -970,23 +1016,6 @@ function isMainlinePrefix(path: Path, mainline: readonly MovePly[]): boolean {
 
 function oppositeOf(color: 'white' | 'black'): 'white' | 'black' {
   return color === 'white' ? 'black' : 'white';
-}
-
-/** Map each persisted record (by ply) onto the mainline ply's NAG override. */
-function buildNagOverrides(
-  mainline: readonly MovePly[],
-  records: readonly MoveAnalysis[],
-): ReadonlyMap<number, readonly number[]> {
-  const overrides = new Map<number, readonly number[]>();
-  records.forEach((record, ply) => {
-    const node = mainline[ply];
-    if (node) {
-      const nag = nagForClassification(record.classification);
-      // `good` (ordinary) renders no glyph and hides any imported tree NAG.
-      overrides.set(node.id, nag === null ? [] : [nag]);
-    }
-  });
-  return overrides;
 }
 
 /**
