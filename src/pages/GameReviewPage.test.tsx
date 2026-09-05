@@ -8,12 +8,13 @@ import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { createAnalysisJob, markCompleted, markFailed } from '@/domain/analysis';
-import { makeMove, TEST_ENGINE } from '@/domain/analysis/test-support';
+import { blunderGameRecords } from '@/domain/analysis/fixtures/classificationScenarios';
+import { TEST_ENGINE } from '@/domain/analysis/test-support';
 import type { EngineMetadata, MoveAnalysis } from '@/domain/chess';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import { createFakeAnalysisService } from '@/components/games/test-support/fakeAnalysisService';
 import { renderWithProviders } from '@/test/test-utils';
-import { GameReviewPage } from '@/pages/GameReviewPage';
+import { GameReviewPage, classificationBoardBadges } from '@/pages/GameReviewPage';
 
 const { chessboardProps } = vi.hoisted(() => ({
   chessboardProps: [] as Array<Record<string, unknown>>,
@@ -63,44 +64,11 @@ async function seedCompleted(
   await gamesRepository.saveGame(GAME);
   const job = createAnalysisJob(GAME.id, engine, 4, 1);
   await analysisJobsRepository.putJob(markCompleted(job, 2));
-  const records: MoveAnalysis[] = [
-    {
-      ...makeMove(0, {
-        gameId: GAME.id,
-        analysisId: job.id,
-        side: 'white',
-        playedMove: { san: 'f3', uci: 'f2f3' },
-        classification: 'good',
-      }),
-    },
-    {
-      ...makeMove(1, {
-        gameId: GAME.id,
-        analysisId: job.id,
-        side: 'black',
-        playedMove: { san: 'e5', uci: 'e7e5' },
-        classification: 'good',
-      }),
-    },
-    {
-      ...makeMove(2, {
-        gameId: GAME.id,
-        analysisId: job.id,
-        side: 'white',
-        playedMove: { san: 'g4', uci: 'g2g4' },
-        classification: 'blunder',
-      }),
-    },
-    {
-      ...makeMove(3, {
-        gameId: GAME.id,
-        analysisId: job.id,
-        side: 'black',
-        playedMove: { san: 'Qh4#', uci: 'd8h4' },
-        classification: 'best',
-      }),
-    },
-  ].map((record, index) => ({ ...record, engine, ...overrides[index] }));
+  const records = blunderGameRecords(GAME.id, job.id).map((record, index) => ({
+    ...record,
+    engine,
+    ...overrides[index],
+  }));
   await analysesRepository.replaceAnalysis(records);
   return job.id;
 }
@@ -129,6 +97,18 @@ describe('Game Review page (Feature 008)', () => {
     const glyph = within(g4).getByTestId('nag-glyph');
     expect(glyph).toHaveAttribute('data-nag', '4');
     expect(glyph).toHaveTextContent('??');
+
+    // Black's mating Qh4# is the engine's best move: !! (NAG 3).
+    const qh4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!;
+    const bestGlyph = within(qh4).getByTestId('nag-glyph');
+    expect(bestGlyph).toHaveAttribute('data-nag', '3');
+    expect(bestGlyph).toHaveTextContent('!!');
+
+    // Ordinary (`good`) moves — 1.f3 and 1...e5 — render no classification glyph.
+    for (const san of ['f3', 'e5']) {
+      const move = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === san)!;
+      expect(within(move).queryByTestId('nag-glyph')).not.toBeInTheDocument();
+    }
 
     // Summary separates the user (White) from the opponent (Black).
     expect(screen.getByTestId('summary-user-blunder-value')).toHaveTextContent('1');
@@ -163,6 +143,42 @@ describe('Game Review page (Feature 008)', () => {
     expect(screen.getAllByTestId('stored-line').length).toBeGreaterThan(0);
     expect(screen.getByTestId('engine-version')).toHaveTextContent('stockfish');
     expect(screen.getByTestId('position-eval')).toHaveTextContent(/\d/);
+  });
+
+  it('shows board NAG chips (Playground style) for emphasized classifications', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const board = () => chessboardProps.at(-1)!;
+    const overlayItems = (): unknown =>
+      (board().overlay as { props?: { items?: unknown } } | undefined)?.props?.items;
+
+    // Start position has no played move → no chip.
+    expect(overlayItems()).toBeUndefined();
+
+    const user = userEvent.setup();
+    // An ordinary (`good`) move renders no chip.
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'f3')!);
+    expect(overlayItems()).toBeUndefined();
+
+    // 2.g4 is a blunder → a ?? chip anchored to g4.
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!);
+    await waitFor(() =>
+      expect(overlayItems()).toEqual([
+        { square: 'g4', text: '??', color: '#c4261c', kind: 'nag', testId: 'nag-badge' },
+      ]),
+    );
+
+    // Qh4# is the engine's best move → a !! chip anchored to h4.
+    await user.click(
+      screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!,
+    );
+    await waitFor(() =>
+      expect(overlayItems()).toEqual([
+        { square: 'h4', text: '!!', color: '#0a7a3c', kind: 'nag', testId: 'nag-badge' },
+      ]),
+    );
   });
 
   it('shows an obsolete-analysis banner and allows re-analysis', async () => {
@@ -245,9 +261,9 @@ describe('Game Review page (Feature 008)', () => {
     expect(bar).toBeInTheDocument();
     expect(bar.getAttribute('aria-label')).toMatch(/^Evaluation:/);
 
-    // Best-move arrows draw the stored top move (f2–f3) from the start.
+    // Best-move arrows draw the stored top move (e2–e4) from the start.
     const board = () => chessboardProps.at(-1)!;
-    expect(board().autoShapes).toEqual([{ orig: 'f2', dest: 'f3', brush: 'best' }]);
+    expect(board().autoShapes).toEqual([{ orig: 'e2', dest: 'e4', brush: 'best' }]);
 
     // Selecting a move fills the shared engine panel from cached data.
     const user = userEvent.setup();
@@ -319,5 +335,30 @@ describe('Game Review page (Feature 008)', () => {
 
     await user.click(screen.getByTestId('engine-toggle'));
     expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'false');
+  });
+});
+
+describe('classificationBoardBadges (review board chips)', () => {
+  it('maps emphasized classifications to NAG chips on the destination square', () => {
+    expect(classificationBoardBadges({ classification: 'blunder', square: 'g4' })).toEqual([
+      { square: 'g4', text: '??', color: '#c4261c', kind: 'nag', testId: 'nag-badge' },
+    ]);
+    expect(classificationBoardBadges({ classification: 'best', square: 'h4' })[0]).toMatchObject({
+      square: 'h4',
+      text: '!!',
+    });
+    expect(classificationBoardBadges({ classification: 'inaccuracy', square: 'c5' })[0]?.text).toBe(
+      '?!',
+    );
+    expect(classificationBoardBadges({ classification: 'mistake', square: 'e5' })[0]?.text).toBe(
+      '?',
+    );
+  });
+
+  it('renders no chip for ordinary good moves or missing inputs', () => {
+    expect(classificationBoardBadges({ classification: 'good', square: 'f3' })).toEqual([]);
+    expect(classificationBoardBadges({ classification: null, square: 'f3' })).toEqual([]);
+    expect(classificationBoardBadges({ classification: undefined, square: 'f3' })).toEqual([]);
+    expect(classificationBoardBadges({ classification: 'blunder', square: undefined })).toEqual([]);
   });
 });

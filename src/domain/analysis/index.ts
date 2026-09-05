@@ -1,7 +1,8 @@
 /**
- * Feature-008 analysis domain barrel. Pure, deterministic, framework-agnostic
- * game-analysis logic (persistent jobs, position planning, MoveAnalysis
- * building and library status derivation).
+ * Game-analysis domain barrel (Features 008 + 009). Pure, deterministic,
+ * framework-agnostic logic: persistent jobs, position planning, MoveAnalysis
+ * building, library status derivation, classification presentation
+ * (`classificationMeta`) and ADR-024 accuracy (`accuracy`).
  */
 
 export {
@@ -30,3 +31,13 @@ export {
 } from './status';
 export type { GameAnalysisStatus } from './status';
 export type { EngineIdentity } from './status';
+export {
+  CLASSIFICATION_LABELS,
+  CLASSIFICATION_NAG,
+  nagForClassification,
+  isEmphasized,
+  CLASSIFICATION_LABEL_TEXT,
+  CLASSIFICATION_EXPLANATION,
+} from './classificationMeta';
+export { moveAccuracy, gameAccuracy, MOVE_ACCURACY_VERSION } from './accuracy';
+export type { GameAccuracy, GameAccuracyOptions } from './accuracy';

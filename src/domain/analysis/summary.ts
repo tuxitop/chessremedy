@@ -9,13 +9,9 @@
 import type { Color } from 'chessops/types';
 import type { MoveAnalysis, MoveClassification } from '@/domain/chess';
 
-export const CLASSIFICATION_LABELS: readonly MoveClassification[] = [
-  'best',
-  'good',
-  'inaccuracy',
-  'mistake',
-  'blunder',
-];
+// Canonical ordering/labels live in `classificationMeta.ts` (Feature 009);
+// re-exported here so existing importers keep working.
+export { CLASSIFICATION_LABELS } from './classificationMeta';
 
 export interface ClassificationCounts {
   readonly best: number;

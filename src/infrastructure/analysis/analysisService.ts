@@ -401,8 +401,9 @@ export class AnalysisService {
   }
 
   /**
-   * One position: serve from the ADR-018 cache when present, else run a real
-   * engine job (off the UI thread) and store its result.
+   * One position: serve from the ADR-018 cache when present (except on an
+   * explicit forced re-analysis, which must genuinely re-run the engine),
+   * else run a real engine job (off the UI thread) and store its result.
    */
   private async resolvePosition(
     fen: string,
@@ -410,7 +411,10 @@ export class AnalysisService {
     run: AnalysisRunOptions | undefined,
   ): Promise<PositionOutcome> {
     const key = analysisCacheKey(fen, { profile: engine.profile }, engine);
-    if (this.engineCache) {
+    // A forced run bypasses the cache so "Re-analyze" always contacts the
+    // worker (ADR-018: the cache is an optimization, not a substitute for an
+    // explicit user-requested re-run). Fresh results are stored below.
+    if (this.engineCache && run?.force !== true) {
       const cached = await this.engineCache.get(key);
       if (cached) {
         return { kind: 'result', result: cached };

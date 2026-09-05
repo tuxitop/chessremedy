@@ -121,6 +121,11 @@ test.describe('Game analysis & review (Feature 008)', () => {
     await expect(page.getByTestId('review-clock-user-time')).toHaveText('4:57');
     await expect(page.getByTestId('review-layout')).not.toContainText('%clk');
 
+    // The selected blunder also renders as a ?? board chip on the g4 square
+    // (same SquareBadges formatting as the Playground).
+    await expect(page.getByTestId('nag-badge')).toHaveText('??');
+    await expect(page.getByTestId('nag-badge')).toHaveAttribute('data-square', 'g4');
+
     // Seek to the end and back via the navigation controls.
     await page.getByTestId('nav-last').click();
     await expect(page.locator('[data-testid="move-list-move"][data-san="Qh4#"]')).toHaveAttribute(

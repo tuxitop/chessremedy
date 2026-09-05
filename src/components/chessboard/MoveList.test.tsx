@@ -149,4 +149,16 @@ describe('MoveList', () => {
       { nag: '4', text: '??' },
     ]);
   });
+
+  it('renders no glyph for an empty-array override and hides the tree NAGs', () => {
+    const tree = treeOf('1. e4 $1 e5 $4 2. g4 Qh4#');
+    const e4 = tree.rootChildren[0]!;
+    const e5 = e4.children[0]!;
+    const overrides = new Map<number, readonly number[]>([
+      [e4.id, []], // ordinary (good) move: no classification glyph
+      [e5.id, []], // suppress the imported tree ?? as well
+    ]);
+    render(<MoveList tree={tree} path={[]} nagOverrides={overrides} />);
+    expect(screen.queryAllByTestId('nag-glyph')).toHaveLength(0);
+  });
 });

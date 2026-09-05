@@ -169,6 +169,25 @@ describe('AnalysisService batch orchestration', () => {
     expect(await analysesRepository.countForGame(gameId)).toBe(0);
   });
 
+  it('a forced re-analysis bypasses the position cache and contacts the engine again', async () => {
+    const gameId = await seedFixture('cc-bullet-blunder');
+
+    // First run fills the persistent position cache for the game's positions.
+    const firstRig = createFakeEngine();
+    const firstService = serviceOf(firstRig);
+    const first = await firstService.analyzeGames([gameId]);
+    expect(first[0]!.state).toBe('completed');
+    expect(firstRig.requests).toHaveLength(4);
+
+    // Re-analyze must genuinely re-run the engine, not replay the cache.
+    const reRig = createFakeEngine();
+    const reService = serviceOf(reRig);
+    const rerun = await reService.analyzeGames([gameId], 'normal', { force: true });
+    expect(rerun[0]!.state).toBe('completed');
+    expect(reRig.requests).toHaveLength(4);
+    expect(await analysesRepository.countForGame(gameId)).toBe(4);
+  });
+
   it('does not create duplicate work for repeated or already-completed games', async () => {
     const gameId = await seedFixture('cc-blitz-clean');
     const rig = createFakeEngine();

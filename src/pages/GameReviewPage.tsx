@@ -19,6 +19,8 @@ import type { Key } from '@lichess-org/chessground/types';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import { MoveList } from '@/components/chessboard/MoveList';
 import { MoveListPane } from '@/components/chessboard/MoveListPane';
+import { SquareBadges, type SquareBadgeItem } from '@/components/chessboard/SquareBadges';
+import { nagMeta } from '@/components/chessboard/pgnAnnotations';
 import { Navigation, type NavigationTarget } from '@/components/chessboard/Navigation';
 import type { EngineEvaluation } from '@/infrastructure/engine/types';
 import { formatEvaluation } from '@/components/analysis/engineFormat';
@@ -40,22 +42,19 @@ import { fenOf, uciPvToSan } from '@/domain/chess';
 import type { EvalCpMate, MoveAnalysis, MoveClassification, Wdl } from '@/domain/chess';
 import { classifyMove, cpValueOf } from '@/domain/chess/classification';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
-import { summarizeAnalysis, CLASSIFICATION_LABELS } from '@/domain/analysis/summary';
+import {
+  CLASSIFICATION_LABELS,
+  CLASSIFICATION_LABEL_TEXT,
+  CLASSIFICATION_EXPLANATION,
+  nagForClassification,
+} from '@/domain/analysis/classificationMeta';
+import { summarizeAnalysis } from '@/domain/analysis/summary';
 import type { AnalysisJob, GameAnalysisStatus } from '@/domain/analysis';
 import { useGameReview } from '@/hooks/useGameReview';
 import { useGameAnalysis, type AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import { getBrowserAnalysisService } from '@/infrastructure/analysis';
 import { Button } from '@/components/ui/Button';
 import styles from './GameReviewPage.module.css';
-
-/** Classification → NAG (ADR-023 glyphs `?? ? ?! ! !!`), read-only. */
-export const CLASSIFICATION_NAG: Readonly<Record<MoveClassification, number>> = {
-  best: 3, // !!
-  good: 1, // !
-  inaccuracy: 6, // ?!
-  mistake: 2, // ?
-  blunder: 4, // ??
-};
 
 /** Approx. height added to the board column by the two player clock bars. */
 const CLOCK_BAR_COLUMN_EXTRA_PX = 76;
@@ -443,10 +442,27 @@ function GameReview({
   const effectiveNagOverrides = useMemo(() => {
     const map = new Map<number, readonly number[]>(nagOverridesBase);
     if (liveOverlay) {
-      map.set(liveOverlay.plyId, [CLASSIFICATION_NAG[liveOverlay.classification]]);
+      const nag = nagForClassification(liveOverlay.classification);
+      map.set(liveOverlay.plyId, nag === null ? [] : [nag]);
     }
     return map;
   }, [nagOverridesBase, liveOverlay]);
+
+  // Board glyph chips (same style/formatting as the Playground): the active
+  // ply's classification renders as a small NAG badge on its destination
+  // square when it is visually emphasized (never for ordinary `good` moves).
+  const boardBadges = useMemo<readonly SquareBadgeItem[]>(() => {
+    if (activePly === undefined) {
+      return [];
+    }
+    const classification =
+      liveOverlay?.classification ??
+      (onMainlinePrefix && selected ? selected.classification : undefined);
+    return classificationBoardBadges({
+      classification,
+      square: activePly.to,
+    });
+  }, [activePly, liveOverlay, onMainlinePrefix, selected]);
 
   if (!tree || !position) {
     return (
@@ -517,6 +533,11 @@ function GameReview({
             opponentMs={opponentMs}
             userName={userName}
             userMs={userMs}
+            overlay={
+              boardBadges.length > 0 ? (
+                <SquareBadges orientation={orientation} items={boardBadges} />
+              ) : undefined
+            }
           />
         }
         bar={
@@ -578,6 +599,7 @@ function BoardPane({
   opponentMs,
   userName,
   userMs,
+  overlay,
 }: {
   boardSize: UseBoardSize;
   position: ReturnType<typeof positionAtPath>;
@@ -588,6 +610,8 @@ function BoardPane({
   opponentMs: number | null;
   userName: string;
   userMs: number | null;
+  /** Optional board overlay (classification/NAG chips). */
+  overlay?: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div className={styles.boardStack}>
@@ -604,6 +628,7 @@ function BoardPane({
         lastMove={lastMove}
         autoShapes={arrows}
         boardSize={boardSize}
+        {...(overlay !== undefined ? { overlay } : {})}
       />
       <ClockBar name={userName} timeMs={userMs} dataTestId="review-clock-user" />
     </div>
@@ -673,8 +698,10 @@ function SummarySide({
             className={styles.countRow}
             key={classification}
             data-testid={`${dataTestId}-${classification}`}
+            aria-label={CLASSIFICATION_EXPLANATION[classification]}
+            title={CLASSIFICATION_EXPLANATION[classification]}
           >
-            <span className={styles.countName}>{classification}</span>
+            <span className={styles.countName}>{CLASSIFICATION_LABEL_TEXT[classification]}</span>
             <span
               className={styles.countValue}
               data-testid={`${dataTestId}-${classification}-value`}
@@ -805,7 +832,7 @@ function oppositeOf(color: 'white' | 'black'): 'white' | 'black' {
   return color === 'white' ? 'black' : 'white';
 }
 
-/** Map each persisted record (by ply) onto the mainline ply's classification NAG. */
+/** Map each persisted record (by ply) onto the mainline ply's NAG override. */
 function buildNagOverrides(
   mainline: readonly MovePly[],
   records: readonly MoveAnalysis[],
@@ -814,10 +841,37 @@ function buildNagOverrides(
   records.forEach((record, ply) => {
     const node = mainline[ply];
     if (node) {
-      overrides.set(node.id, [CLASSIFICATION_NAG[record.classification]]);
+      const nag = nagForClassification(record.classification);
+      // `good` (ordinary) renders no glyph and hides any imported tree NAG.
+      overrides.set(node.id, nag === null ? [] : [nag]);
     }
   });
   return overrides;
+}
+
+/**
+ * Board glyph chips for one ply: a classification that is visually
+ * emphasized (every state except ordinary `good`) becomes a small NAG badge
+ * on the move's destination square — the same SquareBadges chips the
+ * Playground uses. `null`/ordinary classifications render nothing.
+ */
+export function classificationBoardBadges(input: {
+  classification: MoveClassification | null | undefined;
+  square: string | undefined;
+}): readonly SquareBadgeItem[] {
+  const { classification, square } = input;
+  if (!classification || !square) {
+    return [];
+  }
+  const nag = nagForClassification(classification);
+  if (nag === null) {
+    return [];
+  }
+  const meta = nagMeta(nag);
+  if (!meta) {
+    return [];
+  }
+  return [{ square, text: meta.glyph, color: meta.color, kind: 'nag', testId: 'nag-badge' }];
 }
 
 /** Stored evaluation of a side's perspective, re-expressed from White's view. */
