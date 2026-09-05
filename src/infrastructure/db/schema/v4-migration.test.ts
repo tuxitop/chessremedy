@@ -62,7 +62,7 @@ describe('v3 → v4 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(5);
+      expect(migrated.verno).toBe(6);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',

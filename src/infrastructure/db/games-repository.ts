@@ -17,6 +17,7 @@ import {
   type Player,
 } from '@/domain/chess/game';
 import { parseTimeControl, type TimeControl } from '@/domain/chess/timeControl';
+import { gameEndOf, type GameTermination } from '@/domain/chess/gameEnd';
 import type { GameSource } from '@/domain/chess/gameSource';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { Color } from 'chessops/types';
@@ -41,6 +42,10 @@ export interface GameRow {
   readonly userColor: Color;
   /** Verbatim PGN for exactly one game. */
   readonly pgn: string;
+  /** Full-move count (schema v6); populated at save and by migration. */
+  readonly moveCount?: number;
+  /** Board-detectable game end (schema v6); `null` when unknown. */
+  readonly termination?: GameTermination | null;
   /** Epoch millis of the first local insert. */
   readonly importedAt: number;
   /** Epoch millis of the last content change. */
@@ -60,6 +65,10 @@ export interface GameSummary {
   readonly normalizedTimeControl: TimeControlCategory;
   readonly timeControlModel?: TimeControl;
   readonly userColor: Color;
+  /** Full-move count of the mainline (schema v6). */
+  readonly moveCount: number;
+  /** Board-detectable game end, or `null` (schema v6). */
+  readonly termination: GameTermination | null;
   readonly importedAt: number;
   readonly updatedAt: number;
 }
@@ -273,6 +282,7 @@ export class DexieGamesRepository implements GamesRepository {
 type ContentFields = Omit<GameRow, 'importedAt' | 'updatedAt'>;
 
 function contentFieldsOf(game: Game): ContentFields {
+  const end = gameEndOf(game.moves, game.result);
   return {
     id: game.id,
     source: game.source,
@@ -286,6 +296,8 @@ function contentFieldsOf(game: Game): ContentFields {
     timeControlModel: parseTimeControl(game.timeControl),
     userColor: game.userColor,
     pgn: game.pgn,
+    moveCount: end.moveCount,
+    termination: end.termination,
   };
 }
 
@@ -345,7 +357,11 @@ function compareRows(a: GameRow, b: GameRow): number {
 
 function summaryOf(row: GameRow): GameSummary {
   const { pgn: _pgn, ...summary } = row;
-  return summary;
+  return {
+    ...summary,
+    moveCount: row.moveCount ?? 0,
+    termination: row.termination ?? null,
+  };
 }
 
 export const gamesRepository: GamesRepository = new DexieGamesRepository();

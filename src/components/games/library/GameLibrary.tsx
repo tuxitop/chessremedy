@@ -10,6 +10,7 @@ import {
   type LibraryGameRow,
 } from '@/domain/gameLibrary';
 import { dateIsoOf } from '@/domain/gameLibrary/timeframe';
+import { terminationLabel } from '@/domain/chess/gameEnd';
 import { useGameLibrary } from '@/hooks/useGameLibrary';
 import { useLibraryAnalysis, type LibraryAnalysisApi } from '@/hooks/useLibraryAnalysis';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
@@ -240,7 +241,10 @@ function GameRows({
           role="row"
           key={row.id}
           data-testid="game-row"
-          className={styles.row}
+          data-user-color={row.userColor}
+          className={`${styles.row} ${
+            row.userColor === 'white' ? styles.rowWhite : styles.rowBlack
+          }`}
           aria-selected={selectedIds.has(row.id)}
         >
           <span role="cell" className={styles.cellCheck}>
@@ -253,13 +257,21 @@ function GameRows({
             />
           </span>
           <span role="cell" data-testid="game-white" data-col="White">
-            {row.whiteName}
+            <PlayerName
+              name={row.whiteName}
+              rating={row.whiteRating}
+              isYou={row.userColor === 'white'}
+            />
           </span>
           <span role="cell" data-testid="game-black" data-col="Black">
-            {row.blackName}
+            <PlayerName
+              name={row.blackName}
+              rating={row.blackRating}
+              isYou={row.userColor === 'black'}
+            />
           </span>
           <span role="cell" data-testid="game-result" data-col="Result">
-            {row.result}
+            <ResultChip result={row.result} userColor={row.userColor} />
           </span>
           <span role="cell" data-testid="game-timecontrol" data-col="Time control">
             <span className={styles.timeControl}>{parseTimeControl(row.timeControl).display}</span>
@@ -292,8 +304,90 @@ function GameRows({
               />
             </span>
           ) : null}
+          <GameRowMeta row={row} />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Player cell: name + rating, with a "You" marker on the user's side. */
+function PlayerName({
+  name,
+  rating,
+  isYou,
+}: {
+  name: string;
+  rating: number | null;
+  isYou: boolean;
+}): React.JSX.Element {
+  return (
+    <span className={styles.playerCell}>
+      <span className={styles.playerName}>
+        {name}
+        {rating !== null ? <span className={styles.playerRating}> {rating}</span> : null}
+      </span>
+      {isYou ? (
+        <span className={styles.youChip} data-testid="game-you">
+          You
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+type RowOutcome = 'win' | 'loss' | 'draw' | 'unknown';
+
+function outcomeOf(userColor: string, result: string): RowOutcome {
+  if (result === '1/2-1/2') {
+    return 'draw';
+  }
+  if (result === '*') {
+    return 'unknown';
+  }
+  const userWon = result === '1-0' ? userColor === 'white' : userColor === 'black';
+  return userWon ? 'win' : 'loss';
+}
+
+/** Colored win/loss/draw chip for the user's perspective. */
+function ResultChip({
+  result,
+  userColor,
+}: {
+  result: string;
+  userColor: 'white' | 'black';
+}): React.JSX.Element {
+  const outcome = outcomeOf(userColor, result);
+  const glyph = outcome === 'win' ? 'W' : outcome === 'loss' ? 'L' : outcome === 'draw' ? '½' : '•';
+  return (
+    <span
+      className={`${styles.resultChip} ${styles[`outcome${outcome.charAt(0).toUpperCase()}${outcome.slice(1)}`]}`}
+      data-testid="game-result-chip"
+      data-outcome={outcome}
+      title={`${outcome} — ${result}`}
+    >
+      {glyph}
+      <span className={styles.resultToken}>{result}</span>
+    </span>
+  );
+}
+
+/** Second, full-width row line: how the game ended + its length. */
+function GameRowMeta({ row }: { row: LibraryGameRow }): React.JSX.Element | null {
+  const label = terminationLabel(row.termination);
+  if (label === null && row.moveCount === 0) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (label !== null) {
+    parts.push(label);
+  }
+  if (row.moveCount > 0) {
+    parts.push(`${row.moveCount} ${row.moveCount === 1 ? 'move' : 'moves'}`);
+  }
+  return (
+    <div className={styles.rowMeta} data-testid={`game-meta-${row.id}`}>
+      {parts.join(' · ')}
     </div>
   );
 }
@@ -307,7 +401,6 @@ const STATUS_LABELS: Readonly<Record<GameAnalysisStatus, string>> = {
   failed: 'Failed',
   outdated: 'Outdated',
 };
-
 function AnalysisCell({
   gameId,
   status,

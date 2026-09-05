@@ -10,6 +10,7 @@
 import type { Color } from 'chessops/types';
 import type { GameSource } from '@/domain/chess/gameSource';
 import type { GameResult } from '@/domain/chess/game';
+import type { GameTermination } from '@/domain/chess/gameEnd';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 
 /** Minimal row read-model. `GameSummary` maps onto it structurally. */
@@ -21,7 +22,13 @@ export interface LibraryGameRow {
   readonly playedAt: string | null;
   readonly whiteName: string;
   readonly blackName: string;
+  readonly whiteRating: number | null;
+  readonly blackRating: number | null;
   readonly result: GameResult;
+  /** Full-move count of the mainline (schema v6). */
+  readonly moveCount: number;
+  /** Board-detectable game end, or `null`. */
+  readonly termination: GameTermination | null;
   /** Verbatim provider time-control string. */
   readonly timeControl: string;
   readonly normalizedTimeControl: TimeControlCategory;
@@ -34,9 +41,11 @@ export interface GameSummaryLike {
   readonly source: GameSource;
   readonly externalId: string | null;
   readonly playedAt: string | null;
-  readonly whitePlayer: { readonly name: string };
-  readonly blackPlayer: { readonly name: string };
+  readonly whitePlayer: { readonly name: string; readonly rating?: number | null };
+  readonly blackPlayer: { readonly name: string; readonly rating?: number | null };
   readonly result: GameResult;
+  readonly moveCount: number;
+  readonly termination: GameTermination | null;
   readonly timeControl: string;
   readonly normalizedTimeControl: TimeControlCategory;
   readonly userColor: Color;
@@ -50,7 +59,11 @@ export function libraryRowOf(summary: GameSummaryLike): LibraryGameRow {
     playedAt: summary.playedAt,
     whiteName: summary.whitePlayer.name,
     blackName: summary.blackPlayer.name,
+    whiteRating: summary.whitePlayer.rating ?? null,
+    blackRating: summary.blackPlayer.rating ?? null,
     result: summary.result,
+    moveCount: summary.moveCount,
+    termination: summary.termination,
     timeControl: summary.timeControl,
     normalizedTimeControl: summary.normalizedTimeControl,
     userColor: summary.userColor,

@@ -54,7 +54,7 @@ describe('v4 → v5 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(5);
+      expect(migrated.verno).toBe(6);
 
       const rapid = await migrated.games.get('chesscom:rapid');
       expect(rapid?.timeControlModel?.display).toBe('10|5');

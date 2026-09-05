@@ -3,6 +3,7 @@ export { applyV2Schema } from './v2';
 export { applyV3Schema } from './v3';
 export { applyV4Schema } from './v4';
 export { applyV5Schema } from './v5';
+export { applyV6Schema } from './v6';
 
 import type Dexie from 'dexie';
 
