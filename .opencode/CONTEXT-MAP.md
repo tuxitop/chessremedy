@@ -60,8 +60,8 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Feature 008 (persisted `MoveAnalysis[]` input). The canonical classifier is domain-owned and applied inside Feature 008, so Feature 009 never gates 008. Output: classification tooling (glyph/accuracy surfacing per ADR-024) and statistics helpers consumed by Features 008 (review polish)/014/015.
 
 ### Feature 010 — Tactical Detection
-- Required: ADRs `decisions/ADR-026`, `decisions/ADR-023`, `decisions/ADR-025`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`; domain `domain/tactics.md`, `domain/analysis-model.md`, `domain/puzzle-model.md`; research `research/tactical-detection.md`, `research/move-classification.md`.
-- Dependencies: Features 008, 005; output consumed by Feature 011.
+- Required: ADRs `decisions/ADR-026`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-025`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`; domain `domain/tactics.md`, `domain/analysis-model.md`, `domain/puzzle-model.md`, `domain/classification.md`, `domain/game-library.md`; research `research/tactical-detection.md`, `research/move-classification.md`.
+- Dependencies: Features 005, 007 (Library surface + canonical filter state), 008 (persisted `MoveAnalysis` + analysis status), 009 (per-game summary/accuracy tooling); output consumed by Features 011, 014 and by the Game Library read-only row insights.
 
 ### Feature 011 — Tactical Puzzle Generation
 - Required: ADRs `decisions/ADR-006`, `decisions/ADR-025`, `decisions/ADR-026`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-031`; domain `domain/puzzle-model.md`, `domain/tactics.md`, `domain/tactical-training.md`; research `research/puzzle-generation.md`, `research/tactical-detection.md`.
@@ -112,9 +112,9 @@ features, ADRs, research, or the whole documentation tree.
 ## Lookup: domain specs by feature
 
 - `domain/game-model.md` → Features 002/003/004/007/014/015/016
-- `domain/game-library.md` → Features 007/008/011/014/016
+- `domain/game-library.md` → Features 007/008/010/011/014/016
 - `domain/analysis-model.md` → Features 005/006/008/009/010/014
-- `domain/classification.md` → Features 006/008/009/014
+- `domain/classification.md` → Features 006/008/009/010/014
 - `domain/time-control.md` → Features 003/007/008/014/015
 - `domain/clock.md` → Features 003/008
 - `domain/game-phase.md` → Features 008/014/015
