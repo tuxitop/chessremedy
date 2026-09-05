@@ -7,6 +7,18 @@ import { EngineSettingsPopover } from './EngineSettingsPopover';
 import type { AnalysisController } from './useAnalysisController';
 import styles from './AnalysisPanel.module.css';
 
+/** Cached (stored-analysis) content shown when the engine is off (Review). */
+export interface StoredPanelData {
+  /** Identity of the analysis that produced the shown data, e.g. an engine. */
+  readonly engineLabel: string | null;
+  /** Header evaluation text (bottom-player perspective), or `null`. */
+  readonly evalText: string | null;
+  /** Search depth of the top stored line, when reported. */
+  readonly depth: number | null;
+  /** Stored engine lines, ready-to-render. */
+  readonly lines: readonly { readonly evalText: string; readonly pvText: string }[];
+}
+
 export interface AnalysisPanelProps {
   readonly controller: AnalysisController;
   readonly capabilities: EngineCapabilities;
@@ -18,13 +30,24 @@ export interface AnalysisPanelProps {
   readonly sideToMove: PlayerColor;
   /** Optional node rendered after the engine-settings gear (board settings). */
   readonly rightSlot?: React.ReactNode;
+  /** When given, the panel renders this cached data while the engine is off
+   * (Game Review stored mode) instead of the idle "off" state. */
+  readonly stored?: StoredPanelData | null;
+}
+
+interface DisplayLine {
+  readonly key: string;
+  readonly evalText: string;
+  readonly pvText: string;
+  readonly testId?: string;
 }
 
 /**
- * Engine analysis panel: the two header rows (toggle · eval · engine version ·
- * engine-settings · board-settings / reached depth) plus engine lines,
- * progress and errors. Placed above the move list on both the live board and
- * the playground.
+ * Engine analysis panel: the header (toggle · eval · engine version ·
+ * engine-settings · board-settings), the reached-depth row, and the engine
+ * lines — used by Live Analysis, the playground and Game Review (stored mode
+ * feeds the same panel cached `MoveAnalysis` data while the engine is off, so
+ * the two surfaces are identical).
  */
 export function AnalysisPanel({
   controller,
@@ -33,25 +56,47 @@ export function AnalysisPanel({
   bottomColor,
   sideToMove,
   rightSlot,
+  stored = null,
 }: AnalysisPanelProps): React.JSX.Element {
   const { enabled, analyzing, lines, error, reachedDepth, engineLabel } = controller;
+  const storedActive = stored !== null && !enabled;
 
-  const bestEval: EngineEvaluation | null =
+  const liveBestEval: EngineEvaluation | null =
     enabled && lines.length > 0 ? (lines[0]!.evaluation ?? null) : null;
-  const evalText =
-    bestEval === null
+  const liveEvalText =
+    liveBestEval === null
       ? null
-      : formatEvaluation(evaluationFromBottom(bestEval, bottomColor, sideToMove));
+      : formatEvaluation(evaluationFromBottom(liveBestEval, bottomColor, sideToMove));
 
-  const visibleLines = enabled ? lines : [];
-  const showIdle = !enabled;
+  const evalText = enabled ? liveEvalText : storedActive ? stored!.evalText : null;
   const statusText = !enabled
-    ? 'Off'
+    ? storedActive
+      ? 'Off'
+      : 'Off'
     : analyzing
       ? 'Analyzing…'
       : engineLabel
         ? 'Ready'
         : 'Starting…';
+
+  const displayLines: DisplayLine[] = enabled
+    ? lines.map((line) => ({
+        key: `${fen}|${line.multipv}`,
+        evalText: formatEvaluation(line.evaluation),
+        pvText: formatPv(fen, line.principalVariation),
+      }))
+    : storedActive
+      ? stored!.lines.map((line, index) => ({
+          key: `stored|${index}`,
+          evalText: line.evalText,
+          pvText: line.pvText,
+          testId: 'stored-line',
+        }))
+      : [];
+
+  const showRegion = (enabled && displayLines.length > 0) || storedActive;
+  const showIdle = !enabled && !storedActive;
+  const versionLabel = engineLabel ?? (storedActive ? stored!.engineLabel : null);
 
   return (
     <section className={styles.panel} data-testid="analysis-panel" aria-label="Engine analysis">
@@ -74,9 +119,9 @@ export function AnalysisPanel({
           {statusText}
         </span>
         <span className={styles.spacer} />
-        {controller.engineLabel && (
+        {versionLabel && (
           <span className={styles.engineVersion} data-testid="engine-version">
-            {controller.engineLabel}
+            {versionLabel}
           </span>
         )}
         <EngineSettingsPopover
@@ -93,6 +138,8 @@ export function AnalysisPanel({
           <span className={styles.depth}>
             {reachedDepth !== null ? `Depth: ${reachedDepth}` : 'Thinking\u2026'}
           </span>
+        ) : storedActive && stored!.depth !== null ? (
+          <span className={styles.depth}>Depth: {stored!.depth}</span>
         ) : (
           <span className={styles.depth}>Engine off</span>
         )}
@@ -120,30 +167,33 @@ export function AnalysisPanel({
         </div>
       )}
 
-      {visibleLines.length > 0 && (
+      {showRegion && (
         <div className={styles.lines} data-testid="engine-result">
-          {visibleLines.map((line) => (
-            <div className={styles.line} key={`${fen}|${line.multipv}`}>
-              <span className={styles.lineEval} data-testid="engine-eval">
-                {formatEvaluation(line.evaluation)}
+          {displayLines.map((line) => (
+            <div className={styles.line} key={line.key}>
+              <span className={styles.lineEval} data-testid={line.testId ?? 'engine-eval'}>
+                {line.evalText}
               </span>
-              <span className={styles.linePv} data-testid="engine-pv">
-                {formatPv(fen, line.principalVariation)}
+              <span
+                className={styles.linePv}
+                data-testid={line.testId ? `${line.testId}-pv` : 'engine-pv'}
+              >
+                {line.pvText}
               </span>
             </div>
           ))}
           {/* Keep the configured number of lines occupied so the panel height
               is stable while the engine is still reporting them. */}
-          {Array.from({ length: Math.max(0, controller.settings.lines - visibleLines.length) }).map(
-            (_, index) => (
-              <div
-                className={styles.placeholderLine}
-                aria-hidden="true"
-                key={`placeholder-${index}`}
-                data-testid="engine-line-placeholder"
-              />
-            ),
-          )}
+          {Array.from({
+            length: Math.max(0, controller.settings.lines - displayLines.length),
+          }).map((_, index) => (
+            <div
+              className={styles.placeholderLine}
+              aria-hidden="true"
+              key={`placeholder-${index}`}
+              data-testid="engine-line-placeholder"
+            />
+          ))}
         </div>
       )}
     </section>
