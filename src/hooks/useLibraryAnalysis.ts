@@ -18,6 +18,8 @@ export interface LibraryAnalysisApi {
   readonly enabled: boolean;
   analyze(ids: readonly string[]): void;
   retry(gameId: string): void;
+  /** Force a re-analysis of one game under the current engine settings. */
+  reanalyze(gameId: string): void;
   cancel(): void;
   /** Cancel one game's queued/in-progress job (others keep analysing). */
   cancelGame(gameId: string): void;
@@ -82,6 +84,22 @@ export function useLibraryAnalysis(
   const activeIdsRef = useRef<readonly string[] | null>(null);
 
   const key = gameIds.join('\u0000');
+
+  async function runBatch(ids: readonly string[], force: boolean): Promise<void> {
+    if (!service) {
+      return;
+    }
+    activeIdsRef.current = ids;
+    setRunning(true);
+    setProgressLine('Queued…');
+    try {
+      const profile = await defaultBulkProfile();
+      await analyze([...ids], profile, force);
+    } finally {
+      setRunning(false);
+      activeIdsRef.current = null;
+    }
+  }
 
   async function refreshRowsAndProgress(ids: readonly string[]): Promise<void> {
     if (!service) {
@@ -157,20 +175,13 @@ export function useLibraryAnalysis(
       error,
       enabled: service !== null,
       analyze(ids: readonly string[]) {
-        activeIdsRef.current = ids;
-        setRunning(true);
-        setProgressLine('Queued…');
-        const selected = [...ids];
-        void (async () => {
-          const profile = await defaultBulkProfile();
-          await analyze(selected, profile);
-        })().finally(() => {
-          setRunning(false);
-          activeIdsRef.current = null;
-        });
+        void runBatch([...ids], false);
       },
       retry(gameId: string) {
-        api.analyze([gameId]);
+        void runBatch([gameId], false);
+      },
+      reanalyze(gameId: string) {
+        void runBatch([gameId], true);
       },
       cancel() {
         cancel();

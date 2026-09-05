@@ -20,6 +20,8 @@ export interface AnalysisRepository {
   listForGameAndAnalysis(gameId: GameId, analysisId: string): Promise<readonly MoveAnalysis[]>;
   /** Number of persisted records for a game. */
   countForGame(gameId: GameId): Promise<number>;
+  /** Remove every record of one analysis run (force re-analysis). */
+  deleteForAnalysis(analysisId: string): Promise<void>;
   /** Remove all game-scoped records (game deletion cascade). */
   deleteForGames(gameIds: readonly GameId[]): Promise<void>;
 }
@@ -59,6 +61,10 @@ export class DexieAnalysisRepository implements AnalysisRepository {
 
   async countForGame(gameId: GameId): Promise<number> {
     return this.database.analyses.where('gameId').equals(gameId).count();
+  }
+
+  async deleteForAnalysis(analysisId: string): Promise<void> {
+    await this.database.analyses.where('analysisId').equals(analysisId).delete();
   }
 
   async deleteForGames(gameIds: readonly GameId[]): Promise<void> {

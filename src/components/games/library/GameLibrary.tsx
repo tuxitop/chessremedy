@@ -10,7 +10,7 @@ import {
   type LibraryGameRow,
 } from '@/domain/gameLibrary';
 import { dateIsoOf } from '@/domain/gameLibrary/timeframe';
-import { terminationLabel } from '@/domain/chess/gameEnd';
+import { terminationLabel, fallbackTermination } from '@/domain/chess/gameEnd';
 import { useGameLibrary } from '@/hooks/useGameLibrary';
 import { useLibraryAnalysis, type LibraryAnalysisApi } from '@/hooks/useLibraryAnalysis';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
@@ -297,6 +297,7 @@ function GameRows({
                 gameId={row.id}
                 status={statuses[row.id] ?? 'unanalyzed'}
                 onRun={analysis.retry}
+                onReanalyze={analysis.reanalyze}
                 onCancelGame={analysis.cancelGame}
                 {...(analysis.perGameProgress[row.id]
                   ? { progress: analysis.perGameProgress[row.id] }
@@ -374,14 +375,11 @@ function ResultChip({
 
 /** Second, full-width row line: how the game ended + its length. */
 function GameRowMeta({ row }: { row: LibraryGameRow }): React.JSX.Element | null {
-  const label = terminationLabel(row.termination);
-  if (label === null && row.moveCount === 0) {
+  if (row.moveCount === 0 && row.result === '*') {
     return null;
   }
-  const parts: string[] = [];
-  if (label !== null) {
-    parts.push(label);
-  }
+  const effective = row.termination ?? fallbackTermination(row.result);
+  const parts: string[] = [terminationLabel(effective)];
   if (row.moveCount > 0) {
     parts.push(`${row.moveCount} ${row.moveCount === 1 ? 'move' : 'moves'}`);
   }
@@ -406,6 +404,7 @@ function AnalysisCell({
   status,
   progress,
   onRun,
+  onReanalyze,
   onCancelGame,
 }: {
   gameId: string;
@@ -414,18 +413,30 @@ function AnalysisCell({
   progress?: GameAnalysisProgress;
   /** Run an analysis for this game (Analyze / Retry / Re-analyze). */
   onRun: (gameId: string) => void;
+  /** Force a re-analysis of a completed game (engine/settings change). */
+  onReanalyze: (gameId: string) => void;
   /** Cancel this game's queued/in-progress job (per-row cancel). */
   onCancelGame: (gameId: string) => void;
 }): React.JSX.Element {
   if (status === 'completed') {
     return (
-      <Link
-        className={styles.reviewLink}
-        data-testid={`game-review-${gameId}`}
-        to={`/games/${gameId}/review`}
-      >
-        Review
-      </Link>
+      <span className={styles.statusWrap}>
+        <Link
+          className={styles.reviewLink}
+          data-testid={`game-review-${gameId}`}
+          to={`/games/${gameId}/review`}
+        >
+          Review
+        </Link>
+        <Button
+          variant="ghost"
+          className={styles.retryButton!}
+          data-testid={`game-reanalyze-${gameId}`}
+          onClick={() => onReanalyze(gameId)}
+        >
+          Re-analyze
+        </Button>
+      </span>
     );
   }
   if (status === 'outdated') {
@@ -443,7 +454,7 @@ function AnalysisCell({
           variant="ghost"
           className={styles.retryButton!}
           data-testid={`game-reanalyze-${gameId}`}
-          onClick={() => onRun(gameId)}
+          onClick={() => onReanalyze(gameId)}
         >
           Re-analyze
         </Button>

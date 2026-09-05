@@ -44,6 +44,8 @@ import type { AnalysisJobsRepository } from '@/infrastructure/db/analysis-jobs-r
 
 export interface AnalysisRunOptions {
   readonly signal?: AbortSignal;
+  /** Force a re-analysis of already-completed games (engine/settings change). */
+  readonly force?: boolean;
   /** Notified whenever a job is persisted (progress / transitions). */
   readonly onJobProgress?: (job: AnalysisJob) => void;
 }
@@ -233,7 +235,13 @@ export class AnalysisService {
 
     const prepared: AnalysisJob[] = [];
     for (const gameId of ids) {
-      const stored = await this.jobs.getJob(analysisJobId(gameId, engine));
+      let stored = await this.jobs.getJob(analysisJobId(gameId, engine));
+      if (stored?.state === 'completed' && run?.force === true) {
+        // A forced re-analysis clears the completed run's records and restarts
+        // the same analysis identity under the current engine configuration.
+        await this.analyses.deleteForAnalysis(stored.id);
+        stored = undefined;
+      }
       // Total positions are patched when each job starts; queued here is the
       // persistent "needs work" marker that survives an application restart.
       const job = jobForRun(stored, gameId, engine, 0, this.now());

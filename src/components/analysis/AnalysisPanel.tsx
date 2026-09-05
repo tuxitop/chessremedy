@@ -132,6 +132,18 @@ export function AnalysisPanel({
               </span>
             </div>
           ))}
+          {/* Keep the configured number of lines occupied so the panel height
+              is stable while the engine is still reporting them. */}
+          {Array.from({ length: Math.max(0, controller.settings.lines - visibleLines.length) }).map(
+            (_, index) => (
+              <div
+                className={styles.placeholderLine}
+                aria-hidden="true"
+                key={`placeholder-${index}`}
+                data-testid="engine-line-placeholder"
+              />
+            ),
+          )}
         </div>
       )}
     </section>

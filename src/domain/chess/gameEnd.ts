@@ -23,6 +23,9 @@ export const GAME_TERMINATIONS = [
   'fifty-move',
   'threefold',
   'agreement',
+  'flag-or-resignation',
+  'unterminated',
+  'unknown',
 ] as const;
 
 export type GameTermination = (typeof GAME_TERMINATIONS)[number];
@@ -30,8 +33,23 @@ export type GameTermination = (typeof GAME_TERMINATIONS)[number];
 export interface GameEndInfo {
   /** Full-move count of the game's mainline (e.g. 32 for a 64-ply game). */
   readonly moveCount: number;
-  /** How the game ended when the board or result makes it knowable. */
-  readonly termination: GameTermination | null;
+  /** How the game ended. Never null for a parsed game. */
+  readonly termination: GameTermination;
+}
+
+/**
+ * A decisive game that did not end on the board (no checkmate/stalemate/…) is
+ * either a flag or a resignation — indistinguishable from the move tree alone.
+ * An unterminated PGN (`Result "*"`) is "unterminated".
+ */
+export function fallbackTermination(result: GameResult): GameTermination {
+  if (result === '*') {
+    return 'unterminated';
+  }
+  if (result === '1/2-1/2') {
+    return 'agreement';
+  }
+  return 'flag-or-resignation';
 }
 
 /** Position identity key for repetition: material, side to move, castling, en
@@ -47,7 +65,7 @@ function repetitionKey(fen: string): string {
 export function gameEndOf(list: MoveList, result: GameResult): GameEndInfo {
   const start = parsePositionFen(list.startFen);
   if (!start.ok) {
-    return { moveCount: 0, termination: null };
+    return { moveCount: 0, termination: fallbackTermination(result) };
   }
 
   const nodes = mainlineNodes(list);
@@ -60,10 +78,16 @@ export function gameEndOf(list: MoveList, result: GameResult): GameEndInfo {
     try {
       move = parseSan(position, node.data.san);
     } catch {
-      return { moveCount: Math.ceil(nodes.indexOf(node) / 2), termination: null };
+      return {
+        moveCount: Math.ceil(nodes.indexOf(node) / 2),
+        termination: fallbackTermination(result),
+      };
     }
     if (!move || !position.isLegal(move)) {
-      return { moveCount: Math.ceil(nodes.indexOf(node) / 2), termination: null };
+      return {
+        moveCount: Math.ceil(nodes.indexOf(node) / 2),
+        termination: fallbackTermination(result),
+      };
     }
     const next = position.clone();
     next.play(move);
@@ -93,10 +117,7 @@ export function gameEndOf(list: MoveList, result: GameResult): GameEndInfo {
   if (threefold) {
     return { moveCount, termination: 'threefold' };
   }
-  if (result === '1/2-1/2') {
-    return { moveCount, termination: 'agreement' };
-  }
-  return { moveCount, termination: null };
+  return { moveCount, termination: fallbackTermination(result) };
 }
 
 const TERMINATION_LABELS: Readonly<Record<GameTermination, string>> = {
@@ -106,8 +127,11 @@ const TERMINATION_LABELS: Readonly<Record<GameTermination, string>> = {
   'fifty-move': '50-move rule',
   threefold: 'Repetition',
   agreement: 'Draw agreed',
+  'flag-or-resignation': 'Flag or resignation',
+  unterminated: 'Unterminated',
+  unknown: 'Unknown',
 };
 
-export function terminationLabel(termination: GameTermination | null): string | null {
-  return termination === null ? null : TERMINATION_LABELS[termination];
+export function terminationLabel(termination: GameTermination): string {
+  return TERMINATION_LABELS[termination];
 }

@@ -26,7 +26,11 @@ export interface UseGameAnalysis {
   /** User-facing error from a failed run (or `null`). */
   readonly error: string | null;
   /** Analyze/resume/retry the given games under the default profile. */
-  analyze(gameIds: readonly string[], profile?: AnalysisProfile): Promise<readonly AnalysisJob[]>;
+  analyze(
+    gameIds: readonly string[],
+    profile?: AnalysisProfile,
+    force?: boolean,
+  ): Promise<readonly AnalysisJob[]>;
   /** Abort the active batch (queued + in-progress jobs become cancelled). */
   cancel(): void;
 }
@@ -52,6 +56,7 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
     async (
       gameIds: readonly string[],
       profile: AnalysisProfile = 'normal',
+      force = false,
     ): Promise<readonly AnalysisJob[]> => {
       controllerRef.current?.abort();
       if (!service) {
@@ -68,6 +73,7 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
       try {
         const jobs = await service.analyzeGames(gameIds, profile, {
           signal: controller.signal,
+          ...(force ? { force: true } : {}),
         });
         return jobs;
       } catch (err) {

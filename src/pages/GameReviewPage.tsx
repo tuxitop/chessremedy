@@ -308,26 +308,38 @@ function GameReview({
     return { evaluation: null, sideToMove: 'white' as const };
   }, [showEvals, path, onMainlinePrefix, activeMainIndex, records]);
 
-  // Best-move arrows describe the currently displayed position: the move the
-  // engine recommends for the side to move there (stored in the record whose
-  // `positionFen` is the displayed one).
+  // Best-move arrows (stored). While a move is selected, show BOTH the move we
+  // could have played instead (the selected move's stored best move — coloured)
+  // and the best move for the side now to move (greyed); otherwise just the
+  // latter.
   const arrows = useMemo<readonly DrawShape[]>(() => {
     if (!showArrows || !onMainlinePrefix) {
       return [];
     }
-    const record = records[path.length];
-    const uci = record?.bestMove?.uci ?? record?.bestPv[0];
-    if (!record || !uci) {
-      return [];
-    }
-    return [
-      {
-        orig: uci.slice(0, 2) as Key,
-        dest: uci.slice(2, 4) as Key,
+    const shapes: DrawShape[] = [];
+    const selectedRecord = activeMainIndex >= 0 ? records[activeMainIndex] : undefined;
+    const selectedUci =
+      selectedRecord && selectedRecord.playedMove.uci !== selectedRecord?.bestMove?.uci
+        ? selectedRecord.bestMove?.uci
+        : undefined;
+    if (selectedRecord && selectedUci) {
+      shapes.push({
+        orig: selectedUci.slice(0, 2) as Key,
+        dest: selectedUci.slice(2, 4) as Key,
         brush: engineArrowBrush(0),
-      },
-    ];
-  }, [showArrows, onMainlinePrefix, path, records]);
+      });
+    }
+    const nextRecord = records[path.length];
+    const nextUci = nextRecord?.bestMove?.uci ?? nextRecord?.bestPv[0];
+    if (nextRecord && nextUci) {
+      shapes.push({
+        orig: nextUci.slice(0, 2) as Key,
+        dest: nextUci.slice(2, 4) as Key,
+        brush: selectedUci ? 'gray1' : engineArrowBrush(0),
+      });
+    }
+    return shapes;
+  }, [showArrows, onMainlinePrefix, activeMainIndex, path, records]);
 
   if (!tree || !position) {
     return (

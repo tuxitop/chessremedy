@@ -139,3 +139,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+.placeholderLine {
+  height: 1.35em;
+}

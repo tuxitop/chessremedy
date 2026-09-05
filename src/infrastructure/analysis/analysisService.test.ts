@@ -131,6 +131,44 @@ describe('AnalysisService batch orchestration', () => {
     expect((await analysisJobsRepository.getJob(queuedA.id))?.state).toBe('cancelled');
   });
 
+  it('force re-analyzes an already-completed game (fresh engine run)', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    const gameId = await seedFixture('cc-bullet-blunder');
+    const plan = planGameAnalysis(game);
+    if (!plan.ok) throw new Error(plan.message);
+    const failingFen = plan.plan.analyzeFens[0]!;
+
+    const rig = createFakeEngine();
+    const service = serviceOf(rig);
+    const first = await service.analyzeGames([gameId]);
+    expect(first[0]!.state).toBe('completed');
+    expect(await analysesRepository.countForGame(gameId)).toBe(4);
+
+    // A plain re-run of a completed game is a no-op...
+    await service.analyzeGames([gameId]);
+    expect(await analysesRepository.countForGame(gameId)).toBe(4);
+
+    // ...but a forced run actually re-runs the engine (no cache): make it fail
+    // on the first position to prove the work was redone.
+    const failingRig = createFakeEngine({ failures: new Map([[failingFen, 'Engine crashed']]) });
+    const forcedService = new AnalysisService({
+      games: gamesRepository,
+      analyses: analysesRepository,
+      jobs: analysisJobsRepository,
+      engine: failingRig.service,
+      engineMetadata: (profile: AnalysisProfile): EngineMetadata => ({
+        ...FAKE_ENGINE_META,
+        profile,
+      }),
+      now,
+    });
+    const forced = await forcedService.analyzeGames([gameId], 'normal', { force: true });
+    expect(forced[0]!.state).toBe('failed');
+    expect(forced[0]!.lastError).toBe('Engine crashed');
+    // The old records were cleared before the forced run.
+    expect(await analysesRepository.countForGame(gameId)).toBe(0);
+  });
+
   it('does not create duplicate work for repeated or already-completed games', async () => {
     const gameId = await seedFixture('cc-blitz-clean');
     const rig = createFakeEngine();
