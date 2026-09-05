@@ -329,6 +329,11 @@
   padding: 0 var(--space-2);
 }
 
+.rowProgress {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
 @media (max-width: 768px) {
   .row .statusWrap,
   .row .reviewLink {

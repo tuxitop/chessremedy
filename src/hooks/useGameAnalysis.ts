@@ -17,6 +17,8 @@ export interface AnalysisServiceLike {
   jobProgress?(
     gameIds: readonly string[],
   ): Promise<Readonly<Record<string, GameAnalysisProgress | undefined>>>;
+  /** Cancel one game's queued/in-progress job; the rest of a batch continues. */
+  cancelGame(gameId: string): Promise<void>;
 }
 
 export interface UseGameAnalysis {

@@ -82,6 +82,14 @@ export class AnalysisService {
   private readonly engineMetadata: (profile: AnalysisProfile) => EngineMetadata;
   private readonly now: () => number;
   private readonly currentEngine: EngineIdentity | null;
+  /**
+   * Per-game cancellation requests (per-row Cancel). Populated by
+   * `cancelGame` for jobs that are queued/in-progress; consumed by the
+   * in-flight batch runner at position boundaries so one game stops while the
+   * rest of the batch continues. In-memory: the batch run and the UI cancel
+   * share this service instance (persisted `cancelled` state is also written).
+   */
+  private readonly pendingCancels = new Set<GameId>();
 
   constructor(options: AnalysisServiceOptions) {
     this.games = options.games;
@@ -145,6 +153,27 @@ export class AnalysisService {
   }
 
   /**
+   * Cancel one game's queued/in-progress analysis (per-row cancel). Persisted
+   * completed work for the game is untouched, and any running batch keeps
+   * processing the other games: `runGameJob`/`analyzeGames` detect the
+   * cancelled state at the next position/game boundary.
+   */
+  async cancelGame(gameId: GameId): Promise<void> {
+    const jobs = await this.jobs.listByGame(gameId);
+    const now = this.now();
+    let cancelledAny = false;
+    for (const job of jobs) {
+      if (job.state === 'queued' || job.state === 'inProgress') {
+        await this.persist(markCancelled(job, now));
+        cancelledAny = true;
+      }
+    }
+    if (cancelledAny) {
+      this.pendingCancels.add(gameId);
+    }
+  }
+
+  /**
    * Live progress for the selected games: the most recent active
    * (`queued`/`inProgress`) job per game, or `undefined` when the game is not
    * actively being analyzed. Used by the Library to surface per-game and
@@ -196,6 +225,11 @@ export class AnalysisService {
   ): Promise<readonly AnalysisJob[]> {
     const ids = [...new Set(gameIds)];
     const engine = this.engineMetadata(profile);
+    // A new explicit run supersedes any earlier per-row cancels for these
+    // games (e.g. a cancel-then-retry on the same game).
+    for (const id of ids) {
+      this.pendingCancels.delete(id);
+    }
 
     const prepared: AnalysisJob[] = [];
     for (const gameId of ids) {
@@ -252,6 +286,10 @@ export class AnalysisService {
   }
 
   private async runGameJob(job: AnalysisJob, run?: AnalysisRunOptions): Promise<AnalysisJob> {
+    const perRowCancel = await this.maybeCancel(job, run);
+    if (perRowCancel) {
+      return perRowCancel;
+    }
     const game = await this.games.getGame(job.gameId);
     if (!game) {
       const failed = markFailed(job, 'The game no longer exists in the library.', this.now());
@@ -281,6 +319,12 @@ export class AnalysisService {
         await this.persist(cancelled, run);
         return cancelled;
       }
+      // A per-row cancel stops this game at the next position boundary while
+      // the rest of the batch continues.
+      const stopped = await this.maybeCancel(current, run);
+      if (stopped) {
+        return stopped;
+      }
       const fen = plan.analyzeFens[index]!;
       const outcome = await this.resolvePosition(fen, job.engine, run);
       if (run?.signal?.aborted) {
@@ -296,6 +340,13 @@ export class AnalysisService {
       results.set(fen, toInputPositionResult(outcome.result));
       current = markProgress(current, index + 1, this.now());
       await this.persist(current, run);
+    }
+
+    // Final boundary check: a per-row cancel that lands during the last
+    // position must still stop the game before records are persisted.
+    const stoppedAtEnd = await this.maybeCancel(current, run);
+    if (stoppedAtEnd) {
+      return stoppedAtEnd;
     }
 
     let records;
@@ -321,6 +372,24 @@ export class AnalysisService {
     current = markCompleted(current, this.now());
     await this.persist(current, run);
     return current;
+  }
+
+  /**
+   * Honour a per-row cancel request for this game: persist `cancelled` once and
+   * return the cancelled job, or `null` when no cancel is pending. The request
+   * is consumed here so a later retry is not affected.
+   */
+  private async maybeCancel(
+    job: AnalysisJob,
+    run?: AnalysisRunOptions,
+  ): Promise<AnalysisJob | null> {
+    if (!this.pendingCancels.has(job.gameId)) {
+      return null;
+    }
+    this.pendingCancels.delete(job.gameId);
+    const cancelled = markCancelled(job, this.now());
+    await this.persist(cancelled, run);
+    return cancelled;
   }
 
   /**

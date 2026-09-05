@@ -5,7 +5,7 @@ import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { DexieEngineAnalysisCache } from '@/infrastructure/db/engine-cache-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
-import { planGameAnalysis } from '@/domain/analysis';
+import { createAnalysisJob, planGameAnalysis } from '@/domain/analysis';
 import { AnalysisService } from './analysisService';
 import {
   createFakeEngine,
@@ -109,6 +109,26 @@ describe('AnalysisService batch orchestration', () => {
     expect(jobs.map((j) => j.state)).toEqual(['cancelled', 'cancelled']);
     expect(rig.requests).toHaveLength(0);
     expect(await service.statusOf(a)).toBe('cancelled');
+  });
+
+  it('cancels a queued job via cancelGame and leaves completed work untouched', async () => {
+    const a = await seedFixture('cc-bullet-blunder');
+    const service = serviceOf(createFakeEngine());
+    const queuedA = createAnalysisJob(a, FAKE_ENGINE_META, 4, now());
+    await analysisJobsRepository.putJob(queuedA);
+    // A completed job from an earlier identity must survive a per-row cancel.
+    const other = createAnalysisJob(a, { ...FAKE_ENGINE_META, profile: 'deep' }, 4, now());
+    await analysisJobsRepository.putJob({ ...other, state: 'completed' });
+
+    await service.cancelGame(a);
+    const jobs = await analysisJobsRepository.listByGame(a);
+    const byId = new Map(jobs.map((job) => [job.id, job]));
+    expect(byId.get(queuedA.id)?.state).toBe('cancelled');
+    expect(byId.get(other.id)?.state).toBe('completed');
+
+    // Cancelling again is idempotent.
+    await service.cancelGame(a);
+    expect((await analysisJobsRepository.getJob(queuedA.id))?.state).toBe('cancelled');
   });
 
   it('does not create duplicate work for repeated or already-completed games', async () => {

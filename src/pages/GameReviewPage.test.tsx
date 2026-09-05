@@ -9,7 +9,7 @@ import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-reposi
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { createAnalysisJob, markCompleted, markFailed } from '@/domain/analysis';
 import { makeMove, TEST_ENGINE } from '@/domain/analysis/test-support';
-import type { MoveAnalysis } from '@/domain/chess';
+import type { EngineMetadata, MoveAnalysis } from '@/domain/chess';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import { createFakeAnalysisService } from '@/components/games/test-support/fakeAnalysisService';
 import { renderWithProviders } from '@/test/test-utils';
@@ -58,9 +58,10 @@ function renderReviewAt(analysisService: AnalysisServiceLike | null, url: string
 
 async function seedCompleted(
   overrides: ReadonlyArray<Partial<MoveAnalysis>> = [],
+  engine: EngineMetadata = TEST_ENGINE,
 ): Promise<string> {
   await gamesRepository.saveGame(GAME);
-  const job = createAnalysisJob(GAME.id, TEST_ENGINE, 4, 1);
+  const job = createAnalysisJob(GAME.id, engine, 4, 1);
   await analysisJobsRepository.putJob(markCompleted(job, 2));
   const records: MoveAnalysis[] = [
     {
@@ -99,7 +100,7 @@ async function seedCompleted(
         classification: 'best',
       }),
     },
-  ].map((record, index) => ({ ...record, ...overrides[index] }));
+  ].map((record, index) => ({ ...record, engine, ...overrides[index] }));
   await analysesRepository.replaceAnalysis(records);
   return job.id;
 }
@@ -177,6 +178,16 @@ describe('Game Review page (Feature 008)', () => {
 
     expect(await screen.findByTestId('review-obsolete')).toBeInTheDocument();
     expect(screen.getByTestId('review-reanalyze')).toBeInTheDocument();
+  });
+
+  it('flags an analysis produced by an older engine as outdated (ADR-020)', async () => {
+    await seedCompleted([], { ...TEST_ENGINE, engineVersion: '18.0.0' });
+    const fake = createFakeAnalysisService();
+    renderReview(fake.service);
+
+    expect(await screen.findByTestId('review-obsolete')).toBeInTheDocument();
+    expect(screen.getByTestId('review-reanalyze')).toBeInTheDocument();
+    expect(screen.getByTestId('review-engine-chip')).toHaveTextContent('stockfish 18.0.0');
   });
 
   it('shows the no-analysis state and analyzes the game on demand', async () => {

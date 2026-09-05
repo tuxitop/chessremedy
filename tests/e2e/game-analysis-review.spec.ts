@@ -23,7 +23,12 @@ function pgn(white: string, black: string, result: string, moves: string): strin
   ].join('\n');
 }
 
-const BULLET_PGN = pgn(USERNAME, 'bulletpete', '0-1', '1. f3 e5 2. g4 Qh4#');
+const BULLET_PGN = pgn(
+  USERNAME,
+  'bulletpete',
+  '0-1',
+  '1. f3 {[%clk 0:05:00]} e5 {[%clk 0:04:59]} 2. g4 {[%clk 0:04:57]} Qh4# {[%clk 0:04:55]}',
+);
 
 async function enableChessMock(page: Page): Promise<void> {
   await page.route('**/api.chess.com/**', async (route) => {
@@ -109,6 +114,12 @@ test.describe('Game analysis & review (Feature 008)', () => {
 
     // Summary splits user (White) from opponent (Black); 2.g4?? is a blunder.
     await expect(page.getByTestId('summary-user-blunder-value')).toHaveText('1');
+
+    // PGN clock annotations are parsed structurally and never surface as
+    // comments; selecting a move shows its structured remaining-time clock.
+    await page.getByTestId('move-list-move').filter({ hasText: 'f3' }).click();
+    await expect(page.getByTestId('review-clock')).toContainText('Clock');
+    await expect(page.getByTestId('review-layout')).not.toContainText('%clk');
 
     // Seek to the end and back via the navigation controls.
     await page.getByTestId('nav-last').click();

@@ -58,6 +58,8 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
   const data = useGameReview(id);
   const actions = useGameAnalysis(analysisService !== undefined ? analysisService : builtService);
   const [running, setRunning] = useState(false);
+  const [serviceOutdated, setServiceOutdated] = useState(false);
+  const effectiveService = analysisService !== undefined ? analysisService : builtService;
 
   useEffect(() => {
     if (analysisService !== undefined) {
@@ -75,6 +77,27 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
       active = false;
     };
   }, [analysisService]);
+
+  // The engine-aware "outdated" flag (ADR-020 / §22) mirrors the Game
+  // Library: a completed analysis produced before the current engine is
+  // offered an opt-in re-analysis. Re-fetched whenever the shown job changes.
+  useEffect(() => {
+    if (!effectiveService || !id) {
+      return;
+    }
+    let active = true;
+    effectiveService
+      .statusesOf([id])
+      .then((statuses) => {
+        if (active) {
+          setServiceOutdated(statuses[id] === 'outdated');
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [effectiveService, id, data.job?.id]);
 
   const runAnalysis = (): void => {
     if (running || !id) {
@@ -116,7 +139,7 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         userColor={data.game.userColor}
         playerLabel={playerLabel(data.game)}
         records={data.records}
-        obsolete={data.obsolete}
+        obsolete={data.obsolete || serviceOutdated}
         onReanalyze={runAnalysis}
         reanalyzing={running}
       />

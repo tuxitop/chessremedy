@@ -20,6 +20,7 @@ import { useGameLibrary } from '@/hooks/useGameLibrary';
 import { useLibraryAnalysis, type LibraryAnalysisApi } from '@/hooks/useLibraryAnalysis';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
+import type { GameAnalysisProgress } from '@/infrastructure/analysis';
 import { Button } from '@/components/ui/Button';
 import styles from './GameLibrary.module.css';
 
@@ -468,6 +469,10 @@ function GameRows({
                 gameId={row.id}
                 status={statuses[row.id] ?? 'unanalyzed'}
                 onRun={analysis.retry}
+                onCancelGame={analysis.cancelGame}
+                {...(analysis.perGameProgress[row.id]
+                  ? { progress: analysis.perGameProgress[row.id] }
+                  : {})}
               />
             </span>
           ) : null}
@@ -490,12 +495,18 @@ const STATUS_LABELS: Readonly<Record<GameAnalysisStatus, string>> = {
 function AnalysisCell({
   gameId,
   status,
+  progress,
   onRun,
+  onCancelGame,
 }: {
   gameId: string;
   status: GameAnalysisStatus;
+  /** Live per-game progress for a queued/in-progress job, when available. */
+  progress?: GameAnalysisProgress;
   /** Run an analysis for this game (Analyze / Retry / Re-analyze). */
   onRun: (gameId: string) => void;
+  /** Cancel this game's queued/in-progress job (per-row cancel). */
+  onCancelGame: (gameId: string) => void;
 }): React.JSX.Element {
   if (status === 'completed') {
     return (
@@ -560,13 +571,33 @@ function AnalysisCell({
     );
   }
   return (
-    <span
-      className={status === 'inProgress' ? styles.analyzing : styles.statusLabel}
-      data-testid={`game-analysis-label-${gameId}`}
-    >
-      {STATUS_LABELS[status]}
+    <span className={styles.statusWrap}>
+      <span className={status === 'inProgress' ? styles.analyzing : styles.statusLabel}>
+        {STATUS_LABELS[status]}
+      </span>
+      {progress && progress.totalPositions > 0 ? (
+        <span className={styles.rowProgress} data-testid={`game-progress-${gameId}`}>
+          {progress.completedPositions}/{progress.totalPositions} positions ·{' '}
+          {positionPercent(progress)}% · {progress.profile}
+        </span>
+      ) : null}
+      <Button
+        variant="ghost"
+        className={styles.retryButton!}
+        data-testid={`game-cancel-${gameId}`}
+        onClick={() => onCancelGame(gameId)}
+      >
+        Cancel
+      </Button>
     </span>
   );
+}
+
+function positionPercent(progress: GameAnalysisProgress): number {
+  if (progress.totalPositions <= 0) {
+    return 0;
+  }
+  return Math.round((progress.completedPositions / progress.totalPositions) * 100);
 }
 
 function Pagination({

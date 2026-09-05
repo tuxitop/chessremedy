@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GameAnalysisStatus } from '@/domain/analysis';
+import type { GameAnalysisProgress } from '@/infrastructure/analysis';
 import { SETTINGS_KEYS } from '@/config/app-config';
 import { settingsRepository } from '@/infrastructure/db/settings-repository';
 import { useGameAnalysis, type AnalysisServiceLike } from './useGameAnalysis';
@@ -7,6 +8,8 @@ import { useGameAnalysis, type AnalysisServiceLike } from './useGameAnalysis';
 export interface LibraryAnalysisApi {
   /** Per-game analysis status for the currently displayed rows. */
   readonly statuses: Readonly<Record<string, GameAnalysisStatus>>;
+  /** Per-game live progress for rows with an active queued/in-progress job. */
+  readonly perGameProgress: Readonly<Record<string, GameAnalysisProgress>>;
   /** True while a batch run is active (progress is live). */
   readonly running: boolean;
   /** Human-readable batch/per-game progress while running, or `null`. */
@@ -16,6 +19,8 @@ export interface LibraryAnalysisApi {
   analyze(ids: readonly string[]): void;
   retry(gameId: string): void;
   cancel(): void;
+  /** Cancel one game's queued/in-progress job (others keep analysing). */
+  cancelGame(gameId: string): void;
 }
 
 type BulkProfile = 'fast' | 'normal' | 'deep';
@@ -43,12 +48,25 @@ function countBy(
   return Object.values(statuses).filter((value) => value === status).length;
 }
 
+function collectProgress(
+  progress: Readonly<Record<string, GameAnalysisProgress | undefined>>,
+): Readonly<Record<string, GameAnalysisProgress>> {
+  const out: Record<string, GameAnalysisProgress> = {};
+  for (const [id, value] of Object.entries(progress)) {
+    if (value) {
+      out[id] = value;
+    }
+  }
+  return out;
+}
+
 /**
  * Ties the Game Library's selected games to the analysis service: exposes
- * persisted per-game statuses (refreshed on row changes, after runs and
- * polled while a batch is running) plus the batch analyze / cancel actions
- * and a human-readable progress line built from persistent job state (no
- * fabricated ETA).
+ * persisted per-game statuses and per-game progress (refreshed on row changes,
+ * after runs and polled while a batch is running or an active job persists)
+ * plus the batch analyze / per-row and batch cancel actions and a
+ * human-readable progress line built from persistent job state (no fabricated
+ * ETA).
  */
 export function useLibraryAnalysis(
   service: AnalysisServiceLike | null,
@@ -56,19 +74,22 @@ export function useLibraryAnalysis(
 ): LibraryAnalysisApi {
   const { busy, error, analyze, cancel } = useGameAnalysis(service);
   const [statuses, setStatuses] = useState<Readonly<Record<string, GameAnalysisStatus>>>({});
+  const [perGameProgress, setPerGameProgress] = useState<
+    Readonly<Record<string, GameAnalysisProgress>>
+  >({});
   const [running, setRunning] = useState(false);
   const [progressLine, setProgressLine] = useState<string | null>(null);
   const activeIdsRef = useRef<readonly string[] | null>(null);
 
   const key = gameIds.join('\u0000');
 
-  async function refreshRowsAndProgress(): Promise<void> {
+  async function refreshRowsAndProgress(ids: readonly string[]): Promise<void> {
     if (!service) {
       return;
     }
-    const activeIds = activeIdsRef.current ?? gameIds;
+    const activeIds = activeIdsRef.current ?? ids;
     const [rows, progress] = await Promise.all([
-      service.statusesOf(gameIds).catch(() => null),
+      service.statusesOf(ids).catch(() => null),
       service.jobProgress
         ? service.jobProgress(activeIds).catch(() => null)
         : Promise.resolve(null),
@@ -77,11 +98,14 @@ export function useLibraryAnalysis(
       setStatuses(rows);
     }
     if (progress !== null) {
+      const collected = collectProgress(progress);
+      setPerGameProgress(collected);
       const sts = await service.statusesOf(activeIds).catch(() => null);
       if (sts !== null) {
-        setProgressLine(buildProgressLine(activeIds, sts, progress));
+        setProgressLine(buildProgressLine(activeIds, sts, collected));
       }
     } else {
+      setPerGameProgress({});
       setProgressLine(null);
     }
   }
@@ -97,10 +121,7 @@ export function useLibraryAnalysis(
         return;
       }
       try {
-        const next = await service.statusesOf(gameIds);
-        if (!cancelled) {
-          setStatuses(next);
-        }
+        await refreshRowsAndProgress(gameIds);
       } catch {
         // Ignore transient read errors; the Library surface reports its own.
       }
@@ -109,20 +130,28 @@ export function useLibraryAnalysis(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, service, busy, running]);
 
+  const hasActiveRows = useMemo(
+    () => Object.values(statuses).some((status) => status === 'inProgress' || status === 'queued'),
+    [statuses],
+  );
+
+  // Poll live progress while a batch runs or while any displayed row still has
+  // a persisted queued/in-progress job (progress survives navigation).
   useEffect(() => {
-    if (!running) {
+    if (!running && !hasActiveRows) {
       return;
     }
     const timer = setInterval(() => {
-      void refreshRowsAndProgress();
+      void refreshRowsAndProgress(gameIds);
     }, 900);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, key, service]);
+  }, [running, hasActiveRows, key, service]);
 
   return useMemo<LibraryAnalysisApi>(() => {
     const api: LibraryAnalysisApi = {
       statuses,
+      perGameProgress,
       running,
       progressLine,
       error,
@@ -138,7 +167,6 @@ export function useLibraryAnalysis(
         })().finally(() => {
           setRunning(false);
           activeIdsRef.current = null;
-          setProgressLine(null);
         });
       },
       retry(gameId: string) {
@@ -147,26 +175,29 @@ export function useLibraryAnalysis(
       cancel() {
         cancel();
       },
+      cancelGame(gameId: string) {
+        if (!service) {
+          return;
+        }
+        void (async () => {
+          try {
+            await service.cancelGame(gameId);
+          } catch {
+            // Ignore transient cancel errors; the next poll reconciles state.
+          }
+          await refreshRowsAndProgress(gameIds);
+        })();
+      },
     };
     return api;
-  }, [statuses, running, progressLine, error, service, analyze, cancel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statuses, perGameProgress, running, progressLine, error, service, analyze, cancel]);
 }
 
 function buildProgressLine(
   ids: readonly string[],
   statuses: Readonly<Record<string, GameAnalysisStatus>>,
-  progress: Readonly<
-    Record<
-      string,
-      | {
-          state: 'queued' | 'inProgress';
-          completedPositions: number;
-          totalPositions: number;
-          profile: string;
-        }
-      | undefined
-    >
-  >,
+  progress: Readonly<Record<string, GameAnalysisProgress>>,
 ): string {
   const completed = countBy(statuses, 'completed');
   const inProgress = countBy(statuses, 'inProgress');
@@ -184,7 +215,7 @@ function buildProgressLine(
   if (failed > 0) {
     parts.push(`${failed} failed`);
   }
-  const active = Object.entries(progress).find(([, value]) => value?.state === 'inProgress');
+  const active = Object.entries(progress).find(([, value]) => value.state === 'inProgress');
   if (active?.[1]) {
     const detail = active[1]!;
     if (detail.totalPositions > 0) {

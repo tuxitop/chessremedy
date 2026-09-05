@@ -9,6 +9,7 @@ import { fixtureGame } from '@/domain/chess/fixtures';
 import { gameFromPgn } from '@/domain/chess/parseGame';
 import { planGameAnalysis, createAnalysisJob, markCompleted } from '@/domain/analysis';
 import { createFakeImportService } from '@/components/games/test-support/fakeImportService';
+import { FAKE_ENGINE_META } from '@/infrastructure/analysis/test-support/fakeAnalysisEngine';
 import {
   createFakeAnalysisService,
   type FakeAnalysisService,
@@ -257,5 +258,46 @@ describe('GamesPage analysis workflow (Feature 008)', () => {
       ),
     );
     expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument();
+  });
+
+  it('shows per-game progress and cancels a single queued/in-progress game', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(game);
+
+    // A persisted in-progress job (2 of 4 positions) under the current engine.
+    const job = createAnalysisJob(game.id, FAKE_ENGINE_META, 4, 1);
+    await analysisJobsRepository.putJob({
+      ...job,
+      state: 'inProgress',
+      completedPositions: 2,
+      startedAt: 1,
+    });
+
+    const fake = createFakeAnalysisService();
+    renderWithAnalysis(fake);
+
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'inProgress',
+      ),
+    );
+
+    // Per-row progress: current/total positions, percentage and profile.
+    const progress = screen.getByTestId(`game-progress-${game.id}`);
+    expect(progress).toHaveTextContent('2/4 positions');
+    expect(progress).toHaveTextContent('50%');
+    expect(progress).toHaveTextContent('normal');
+
+    // Per-row cancel marks the game cancelled (other games would continue).
+    await user.click(screen.getByTestId(`game-cancel-${game.id}`));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'cancelled',
+      ),
+    );
+    expect((await analysisJobsRepository.listByGame(game.id))[0]!.state).toBe('cancelled');
   });
 });
