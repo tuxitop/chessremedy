@@ -34,6 +34,13 @@ or equivalent) with the following columns:
    contacting the worker.
 4. Otherwise the job is enqueued, run, and stored on completion.
 
+An **explicit forced re-analysis** (`Re-analyze`; a run with
+`force: true`) bypasses the lookup: the worker is always contacted so
+the re-run reflects the current engine settings rather than replaying
+cached engine results. The fresh result is written back to the cache on
+completion. A plain re-run/resume without `force` keeps using the cache
+(Restart behavior, Feature 008 §5).
+
 ## Invalidation
 
 Cached entries are **invalidated** when any of the following changes:
@@ -75,6 +82,9 @@ Full evaluation: `specs/research/browser-stockfish.md`.
   implementation detail of the engine service.
 - Sync (Feature 016) must not sync the cache. It is derived state and
   is regenerated cheaply on each device.
+- An explicit user-requested re-analysis (`force: true`) is never served
+  from the cache — the worker runs again so the stored analysis is
+  genuinely refreshed.
 
 ## Sources
 

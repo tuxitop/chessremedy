@@ -420,9 +420,16 @@ move list.
 
 # 17. Move Classification & Mistake Review
 
-- Each analyzed move displays its classification glyph (ADR-023:
-  `?? ? ?! ! !!`) read-only; classifications come from the persisted
-  `MoveAnalysis` and are never recomputed in the view.
+- Each analyzed move that carries a visually emphasized classification
+  displays its canonical glyph (`best`→`!!`, `inaccuracy`→`?!`,
+  `mistake`→`?`, `blunder`→`??`); ordinary `good` moves are rendered
+  without a classification glyph. Glyphs are read-only and come from the
+  persisted `MoveAnalysis` via the Feature-009 presentation mapping;
+  classifications are never recomputed in the view.
+- The classification glyph of the selected move also renders as a small
+  board chip anchored to the move's destination square, using the same
+  SquareBadges style/formatting as the Playground's NAG badges. Ordinary
+  (`good`) moves render no chip.
 - For the user's inaccuracy/mistake/blunder (and later missed tactics),
   Review helps the user understand the mistake: what was played, the
   evaluation before/after, what should have been played, and the
@@ -489,6 +496,11 @@ move list.
   re-analyzed). Status is derived from persisted analysis/job state
   (analysis-status domain) and the persistent queue is the source of
   truth.
+- `Re-analyze` is an explicit user-requested forced re-analysis: it
+  clears/restarts the affected run, bypasses the ADR-018 position cache
+  (so the engine genuinely re-runs), and persists the refreshed results
+  (ADR-018/020). A completed analysis under the current configuration is
+  only re-run through this explicit action — never automatically.
 
 # 23. Progress
 
