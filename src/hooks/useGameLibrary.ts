@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
+import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
+import { summariesRepository } from '@/infrastructure/db/summaries-repository';
+import {
+  analysisInsightsForGame,
+  groupJobsByGame,
+  groupSummariesByGame,
+  resolveAnalysisResultFilter,
+} from '@/infrastructure/db/analysis-result-query';
 import { gameLibraryQueryFor } from '@/infrastructure/db/game-library-query';
+import type { AnalysisJob } from '@/domain/analysis';
+import type { AnalysisSummaryRow } from '@/infrastructure/db/summaries-repository';
 import {
   DEFAULT_LIBRARY_FILTERS,
   filtersFromParams,
@@ -12,9 +22,11 @@ import {
   resolveTimeFrame,
   sortLibraryRows,
   validateTimeFrame,
+  withRowInsights,
   type GameLibraryFilters,
   type LibraryGameRow,
 } from '@/domain/gameLibrary';
+import type { TimeWindow } from '@/domain/gameLibrary/timeframe';
 import { createSelection, type GameSelection } from '@/domain/gameLibrary/selection';
 
 export interface UseGameLibrary {
@@ -36,6 +48,86 @@ export interface UseGameLibrary {
 
 function serialize(filters: GameLibraryFilters): string {
   return paramsFromFilters(filters).toString();
+}
+
+function analysisDimensionsActive(filters: GameLibraryFilters): boolean {
+  return (
+    filters.analysis !== 'all' ||
+    filters.hasBlunders !== 'all' ||
+    filters.hasMissedTactics !== 'all'
+  );
+}
+
+interface LibraryLoad {
+  readonly rows: readonly LibraryGameRow[];
+  readonly totalStored: number;
+}
+
+/**
+ * Load the filtered Library rows. Metadata/time dimensions push down into the
+ * games query; when an analysis-result dimension is active it is resolved
+ * from persisted jobs + per-analysis summaries (never a `MoveAnalysis` scan)
+ * into an id restriction pushed into the same query. Listed rows are then
+ * enriched with their per-game analysis insights before the in-memory
+ * filter/search pass.
+ */
+async function loadLibraryRows(
+  filters: GameLibraryFilters,
+  window: TimeWindow,
+): Promise<LibraryLoad> {
+  let jobs: readonly AnalysisJob[] = [];
+  let summaries: readonly AnalysisSummaryRow[] = [];
+
+  const query =
+    analysisDimensionsActive(filters) === false
+      ? gameLibraryQueryFor(filters, window)
+      : await restrictedQuery(filters, window, (loadedJobs, loadedSummaries) => {
+          jobs = loadedJobs;
+          summaries = loadedSummaries;
+        });
+
+  const [gameRows, storedCount] = await Promise.all([
+    gamesRepository.listGameSummaries(query),
+    gamesRepository.countGames(),
+  ]);
+
+  if (jobs.length === 0) {
+    // No restriction ran: fetch the jobs/summaries of the listed rows only.
+    const ids = gameRows.map((summary) => summary.id);
+    [jobs, summaries] = await Promise.all([
+      analysisJobsRepository.listByGames(ids),
+      summariesRepository.listForGames(ids),
+    ]);
+  }
+
+  const jobsByGame = groupJobsByGame(jobs);
+  const summariesByGame = groupSummariesByGame(summaries);
+  const enriched = gameRows.map((summary) => {
+    const row = libraryRowOf(summary);
+    const insights = analysisInsightsForGame(
+      jobsByGame.get(row.id) ?? [],
+      summariesByGame.get(row.id) ?? [],
+    );
+    return withRowInsights(row, insights);
+  });
+  const matched = enriched.filter((row) => matchesLibraryFilters(row, filters, window));
+  return { rows: sortLibraryRows(matched), totalStored: storedCount };
+}
+
+async function restrictedQuery(
+  filters: GameLibraryFilters,
+  window: TimeWindow,
+  onData: (jobs: readonly AnalysisJob[], summaries: readonly AnalysisSummaryRow[]) => void,
+) {
+  const metadataQuery = gameLibraryQueryFor(filters, window, null);
+  const universe = await gamesRepository.listGameIds(metadataQuery);
+  const [jobs, summaries] = await Promise.all([
+    analysisJobsRepository.listByGames(universe),
+    summariesRepository.listForGames(universe),
+  ]);
+  onData(jobs, summaries);
+  const restriction = resolveAnalysisResultFilter(filters, universe, jobs, summaries);
+  return gameLibraryQueryFor(filters, window, restriction);
 }
 
 export function useGameLibrary(refreshKey: number): UseGameLibrary {
@@ -72,31 +164,26 @@ export function useGameLibrary(refreshKey: number): UseGameLibrary {
         return;
       }
       const window = resolveTimeFrame(filters.timeFrame, Date.now());
-      const query = gameLibraryQueryFor(filters, window);
-      const [summaries, storedCount] = await Promise.all([
-        gamesRepository.listGameSummaries(query),
-        gamesRepository.countGames(),
-      ]);
-      if (cancelled || requestId.current !== id) {
-        return;
-      }
-      const matched = summaries
-        .filter((summary) => matchesLibraryFilters(libraryRowOf(summary), filters, window))
-        .map((summary) => libraryRowOf(summary));
-      setRows(sortLibraryRows(matched));
-      setTotalStored(storedCount);
-      if (selectionFilterKey.current !== serialized) {
-        selectionFilterKey.current = serialized;
-        setSelected(createSelection());
-      }
-      setError(null);
-      setLoading(false);
-    })().catch(() => {
-      if (!cancelled && requestId.current === id) {
-        setError('Could not load your games from local storage.');
+      try {
+        const { rows: matched, totalStored: storedCount } = await loadLibraryRows(filters, window);
+        if (cancelled || requestId.current !== id) {
+          return;
+        }
+        setRows(matched);
+        setTotalStored(storedCount);
+        if (selectionFilterKey.current !== serialized) {
+          selectionFilterKey.current = serialized;
+          setSelected(createSelection());
+        }
+        setError(null);
         setLoading(false);
+      } catch {
+        if (!cancelled && requestId.current === id) {
+          setError('Could not load your games from local storage.');
+          setLoading(false);
+        }
       }
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -140,15 +227,8 @@ export function useGameLibrary(refreshKey: number): UseGameLibrary {
       await gamesRepository.deleteGames(ids);
       setSelected(createSelection());
       const window = resolveTimeFrame(filters.timeFrame, Date.now());
-      const query = gameLibraryQueryFor(filters, window);
-      const [summaries, storedCount] = await Promise.all([
-        gamesRepository.listGameSummaries(query),
-        gamesRepository.countGames(),
-      ]);
-      const matched = summaries
-        .filter((summary) => matchesLibraryFilters(libraryRowOf(summary), filters, window))
-        .map((summary) => libraryRowOf(summary));
-      setRows(sortLibraryRows(matched));
+      const { rows: matched, totalStored: storedCount } = await loadLibraryRows(filters, window);
+      setRows(matched);
       setTotalStored(storedCount);
       setLoading(false);
     } catch {
@@ -170,7 +250,8 @@ export function useGameLibrary(refreshKey: number): UseGameLibrary {
     filters.timeFrame.preset !== 'all' ||
     filters.timeControl !== 'all' ||
     filters.side !== 'all' ||
-    filters.platform !== 'all';
+    filters.platform !== 'all' ||
+    analysisDimensionsActive(filters);
 
   return {
     filters,

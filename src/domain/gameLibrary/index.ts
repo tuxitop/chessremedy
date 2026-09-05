@@ -12,9 +12,16 @@ import type { GameSource } from '@/domain/chess/gameSource';
 import type { GameResult } from '@/domain/chess/game';
 import type { GameTermination } from '@/domain/chess/gameEnd';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
+import type { GameRowInsights } from './rowView';
 
-/** Minimal row read-model. `GameSummary` maps onto it structurally. */
-export interface LibraryGameRow {
+/**
+ * Minimal row read-model. `GameSummary` maps onto it structurally. The
+ * optional insight fields extend the row read-only: they are never computed
+ * here but overlaid by `withRowInsights` from persisted analysis jobs and
+ * per-analysis summaries (specs/domain/game-library.md §7), which the strip
+ * renders and the analysis-result filters consume.
+ */
+export interface LibraryGameRow extends GameRowInsights {
   readonly id: string;
   readonly source: GameSource;
   readonly externalId: string | null;
@@ -68,6 +75,16 @@ export function libraryRowOf(summary: GameSummaryLike): LibraryGameRow {
     normalizedTimeControl: summary.normalizedTimeControl,
     userColor: summary.userColor,
   };
+}
+
+/**
+ * Overlay a read-only insights group (analysis status, accuracy, counts,
+ * missed tactics) onto a base row. Insights come from the persisted
+ * analysis jobs/per-analysis summary of the row's game — never computed by
+ * the Library (specs/domain/game-library.md §7).
+ */
+export function withRowInsights(row: LibraryGameRow, insights: GameRowInsights): LibraryGameRow {
+  return { ...row, ...insights };
 }
 
 export * from './timeframe';

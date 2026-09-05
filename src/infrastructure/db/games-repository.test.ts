@@ -271,6 +271,36 @@ describe('gamesRepository listing & filtering', () => {
     await gamesRepository.saveGame(game);
     expect(await gamesRepository.listGameSummaries({ source: 'lichess' })).toEqual([]);
   });
+
+  it('restricts by ids (primary-key pushdown) combined with other filters', async () => {
+    const ccBullet = fixtureGame('cc-bullet-blunder'); // chesscom
+    const ccBlitz = fixtureGame('cc-blitz-clean'); // chesscom
+    const liRapid = fixtureGame('li-rapid-clean'); // lichess
+    for (const game of [ccBullet, ccBlitz, liRapid]) {
+      await gamesRepository.saveGame(game);
+    }
+
+    const byIds = await gamesRepository.listGameSummaries({ ids: [ccBullet.id, liRapid.id] });
+    expect(byIds.map((s) => s.id).sort()).toEqual([ccBullet.id, liRapid.id].sort());
+
+    const idsAndSource = await gamesRepository.listGameIds({
+      ids: [ccBullet.id, ccBlitz.id],
+      source: 'chesscom',
+    });
+    expect([...idsAndSource].sort()).toEqual([ccBullet.id, ccBlitz.id].sort());
+
+    const idsAndDate = await gamesRepository.listGameIds({
+      ids: [ccBullet.id, liRapid.id],
+      playedBefore: '2026-06-01T00:00:00Z',
+    });
+    expect(idsAndDate).toEqual([ccBullet.id]);
+  });
+
+  it('returns no rows for an empty id restriction', async () => {
+    await gamesRepository.saveGame(fixtureGame('cc-blitz-clean'));
+    expect(await gamesRepository.listGameSummaries({ ids: [] })).toEqual([]);
+    expect(await gamesRepository.listGameIds({ ids: [], source: 'chesscom' })).toEqual([]);
+  });
 });
 
 describe('gamesRepository batch delete & id listing', () => {

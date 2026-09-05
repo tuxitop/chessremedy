@@ -81,6 +81,8 @@ export interface GameSaveResult {
 }
 
 export interface GameQuery {
+  /** Primary-key restriction (analysis-result pushdown; ANDs with the rest). */
+  readonly ids?: readonly GameId[];
   readonly source?: GameSource;
   readonly normalizedTimeControl?: TimeControlCategory;
   readonly result?: GameResult;
@@ -258,6 +260,17 @@ export class DexieGamesRepository implements GamesRepository {
   }
 
   private async fetchRows(query: GameQuery | undefined): Promise<GameRow[]> {
+    const ids = query?.ids;
+    if (ids && ids.length > 0) {
+      return this.database.games
+        .where(':id')
+        .anyOf([...ids])
+        .toArray();
+    }
+    if (ids && ids.length === 0) {
+      // An empty restriction matches nothing (no row survives matchesQuery).
+      return [];
+    }
     const after = query?.playedAfter;
     const before = query?.playedBefore;
     if (after !== undefined || before !== undefined) {
@@ -314,6 +327,9 @@ function contentEqualsRow(row: GameRow, game: Game): boolean {
 function matchesQuery(row: GameRow, query: GameQuery | undefined): boolean {
   if (!query) {
     return true;
+  }
+  if (query.ids && !query.ids.includes(row.id)) {
+    return false;
   }
   if (query.source && row.source !== query.source) {
     return false;
