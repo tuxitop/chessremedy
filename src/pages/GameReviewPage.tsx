@@ -18,6 +18,7 @@ import { Navigation, type NavigationTarget } from '@/components/chessboard/Navig
 import type { EngineEvaluation } from '@/infrastructure/engine/types';
 import { formatEvaluation } from '@/components/analysis/engineFormat';
 import { EvaluationBar } from '@/components/analysis/EvaluationBar';
+import { AnalysisBoard } from '@/components/analysis/board/AnalysisBoard';
 import { engineArrowBrush, engineArrowShapes } from '@/components/analysis/engineArrows';
 import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
 import { useAnalysisController } from '@/components/analysis/useAnalysisController';
@@ -308,58 +309,60 @@ function GameReview({
           onExitLive={() => setLive(false)}
         />
       ) : (
-        <div className={styles.layout} data-testid="review-layout">
-          <BoardPane
-            boardSize={boardSize}
-            position={position}
-            userColor={userColor}
-            lastMove={lastMove}
-            arrows={arrows}
-            currentPly={path.length}
-            totalPlies={mainline.length}
-            onNavigate={navigate}
-            footer={<p className={styles.gameId}>{gameId}</p>}
-          />
-          {showEvals ? (
-            <div
-              className={styles.evalBarColumn}
-              style={!boardSize.isMobile ? { height: boardSize.size } : undefined}
-              data-testid="review-eval-bar-column"
-            >
+        <AnalysisBoard
+          boardSize={boardSize}
+          dataTestId="review-layout"
+          boardColumn={
+            <BoardPane
+              boardSize={boardSize}
+              position={position}
+              userColor={userColor}
+              lastMove={lastMove}
+              arrows={arrows}
+              currentPly={path.length}
+              totalPlies={mainline.length}
+              onNavigate={navigate}
+              footer={<p className={styles.gameId}>{gameId}</p>}
+            />
+          }
+          bar={
+            showEvals ? (
               <EvaluationBar
                 evaluation={barView.evaluation}
                 bottomColor={userColor}
                 sideToMove={barView.sideToMove}
               />
-            </div>
-          ) : null}
-          <aside className={styles.sidePanel}>
-            <ReviewControls
-              arrows={showArrows}
-              lines={showLines}
-              evals={showEvals}
-              onArrows={setShowArrows}
-              onLines={setShowLines}
-              onEvals={setShowEvals}
-              onEnterLive={() => setLive(true)}
-            />
-            <ReviewSummary summary={summary} userColor={userColor} />
-            <MoveDetails
-              record={selected}
-              userColor={userColor}
-              showEvals={showEvals}
-              showLines={showLines}
-              {...(clockMs !== undefined ? { clockMs } : {})}
-            />
-            <MoveList
-              tree={tree}
-              path={path}
-              onSeek={setPath}
-              nagOverrides={nagOverrides}
-              {...(showEvals ? { plyEvals: evalByPlyId } : {})}
-            />
-          </aside>
-        </div>
+            ) : null
+          }
+          sidePanel={
+            <>
+              <ReviewControls
+                arrows={showArrows}
+                lines={showLines}
+                evals={showEvals}
+                onArrows={setShowArrows}
+                onLines={setShowLines}
+                onEvals={setShowEvals}
+                onEnterLive={() => setLive(true)}
+              />
+              <ReviewSummary summary={summary} userColor={userColor} />
+              <MoveDetails
+                record={selected}
+                userColor={userColor}
+                showEvals={showEvals}
+                showLines={showLines}
+                {...(clockMs !== undefined ? { clockMs } : {})}
+              />
+              <MoveList
+                tree={tree}
+                path={path}
+                onSeek={setPath}
+                nagOverrides={nagOverrides}
+                {...(showEvals ? { plyEvals: evalByPlyId } : {})}
+              />
+            </>
+          }
+        />
       )}
     </div>
   );
@@ -388,7 +391,7 @@ function BoardPane({
   footer?: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div className={styles.boardColumn}>
+    <>
       <Chessboard
         position={position}
         interactive={false}
@@ -399,7 +402,7 @@ function BoardPane({
       />
       <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={onNavigate} />
       {footer}
-    </div>
+    </>
   );
 }
 
@@ -532,50 +535,52 @@ function ReviewLiveSurface({
   );
 
   return (
-    <div className={styles.layout} data-testid="review-live-layout">
-      <BoardPane
-        boardSize={boardSize}
-        position={position}
-        userColor={userColor}
-        lastMove={lastMove}
-        arrows={arrows}
-        currentPly={path.length}
-        totalPlies={mainlineLength}
-        onNavigate={onNavigate}
-      />
-      <div
-        className={styles.evalBarColumn}
-        style={!boardSize.isMobile ? { height: boardSize.size } : undefined}
-        data-testid="review-live-eval-bar-column"
-      >
+    <AnalysisBoard
+      boardSize={boardSize}
+      dataTestId="review-live-layout"
+      boardColumn={
+        <BoardPane
+          boardSize={boardSize}
+          position={position}
+          userColor={userColor}
+          lastMove={lastMove}
+          arrows={arrows}
+          currentPly={path.length}
+          totalPlies={mainlineLength}
+          onNavigate={onNavigate}
+        />
+      }
+      bar={
         <EvaluationBar
           evaluation={controller.lines.length > 0 ? controller.lines[0]!.evaluation : null}
           bottomColor={userColor}
           sideToMove={sideToMove}
         />
-      </div>
-      <aside className={styles.sidePanel} data-testid="review-live-panel">
-        <div className={styles.liveBanner} data-testid="review-live-label">
-          <strong>Live analysis</strong>
-          <span className={styles.liveHint}>
-            Engine results are temporary and never overwrite the stored analysis.
-          </span>
-          <Button variant="secondary" data-testid="review-exit-live" onClick={onExitLive}>
-            Return to stored review
-          </Button>
-        </div>
-        <AnalysisPanel
-          controller={controller}
-          capabilities={engine.capabilities}
-          fen={currentFen}
-          bottomColor={userColor}
-          sideToMove={sideToMove}
-        />
-        <div className={styles.liveMoveList} aria-label="Moves">
-          <MoveList tree={tree} path={path} onSeek={onSeek} plyEvals={plyEvals} />
-        </div>
-      </aside>
-    </div>
+      }
+      sidePanel={
+        <>
+          <div className={styles.liveBanner} data-testid="review-live-label">
+            <strong>Live analysis</strong>
+            <span className={styles.liveHint}>
+              Engine results are temporary and never overwrite the stored analysis.
+            </span>
+            <Button variant="secondary" data-testid="review-exit-live" onClick={onExitLive}>
+              Return to stored review
+            </Button>
+          </div>
+          <AnalysisPanel
+            controller={controller}
+            capabilities={engine.capabilities}
+            fen={currentFen}
+            bottomColor={userColor}
+            sideToMove={sideToMove}
+          />
+          <div className={styles.liveMoveList} aria-label="Moves">
+            <MoveList tree={tree} path={path} onSeek={onSeek} plyEvals={plyEvals} />
+          </div>
+        </>
+      }
+    />
   );
 }
 

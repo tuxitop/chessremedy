@@ -31,6 +31,7 @@ import { hasLegalMoves } from '@/components/chessboard/chessopsAdapter';
 import { useAnalysisController } from '@/components/analysis/useAnalysisController';
 import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
+import { AnalysisBoard } from '@/components/analysis/board/AnalysisBoard';
 import { EvaluationBar } from '@/components/analysis/EvaluationBar';
 import { engineArrowShapes } from '@/components/analysis/engineArrows';
 import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
@@ -292,95 +293,91 @@ export function LiveAnalysisPage(): React.JSX.Element {
         </div>
       )}
 
-      <div className={styles.layout}>
-        <section
-          className={styles.boardColumn}
-          aria-label="Chessboard"
-          style={!boardSizeApi.isMobile ? { width: boardSizePx } : undefined}
-        >
-          <Chessboard
-            ref={chessboardRef}
-            position={position}
-            orientation={settings.orientation as Color}
-            coordinates={settings.coordinates}
-            showLegalMoves={settings.showLegalMoves}
-            animation={settings.animation}
-            drawable={settings.drawable}
-            interactive={settings.interactive}
-            moving={pendingPromotion === null && !finished}
-            boardTheme={settings.boardTheme}
-            pieceSet={settings.pieceSet}
-            lastMove={lastMove as readonly [Key, Key] | null}
-            autoShapes={engineArrows}
-            boardSize={boardSizeApi}
-            onMove={handleMove}
-            onPromotionRequired={(p) => setPendingPromotion(p)}
-          />
-          <div className={styles.resetRow}>
-            <button
-              type="button"
-              className={styles.actionButton}
-              onClick={handleReset}
-              data-testid="live-reset"
-            >
-              Reset position
-            </button>
-          </div>
-        </section>
-
-        <div
-          className={styles.evalBarColumn}
-          style={!boardSizeApi.isMobile ? { height: boardSizePx } : undefined}
-        >
+      <AnalysisBoard
+        boardSize={boardSizeApi}
+        boardColumn={
+          <section aria-label="Chessboard">
+            <Chessboard
+              ref={chessboardRef}
+              position={position}
+              orientation={settings.orientation as Color}
+              coordinates={settings.coordinates}
+              showLegalMoves={settings.showLegalMoves}
+              animation={settings.animation}
+              drawable={settings.drawable}
+              interactive={settings.interactive}
+              moving={pendingPromotion === null && !finished}
+              boardTheme={settings.boardTheme}
+              pieceSet={settings.pieceSet}
+              lastMove={lastMove as readonly [Key, Key] | null}
+              autoShapes={engineArrows}
+              boardSize={boardSizeApi}
+              onMove={handleMove}
+              onPromotionRequired={(p) => setPendingPromotion(p)}
+            />
+            <div className={styles.resetRow}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={handleReset}
+                data-testid="live-reset"
+              >
+                Reset position
+              </button>
+            </div>
+          </section>
+        }
+        bar={
           <EvaluationBar
             evaluation={controller.lines.length > 0 ? controller.lines[0]!.evaluation : null}
             bottomColor={settings.orientation}
             sideToMove={sideToMove}
           />
-        </div>
-
-        <aside
-          className={styles.sidePanel}
-          aria-label="Analysis panel"
-          style={!boardSizeApi.isMobile ? { height: boardSizePx, width: boardSizePx } : undefined}
-        >
-          <AnalysisPanel
-            controller={controller}
-            capabilities={engine.capabilities}
-            fen={currentFen}
-            bottomColor={settings.orientation}
-            sideToMove={sideToMove}
-            rightSlot={
-              <SettingsPopover
-                state={settingsForPopover}
-                onChange={handleBoardChange}
-                onResetBoardSize={handleResetBoardSize}
-                onClearArrows={() => chessboardRef.current?.clearArrows()}
-                boardSize={boardSizePx}
-              />
-            }
-          />
-          <div className={styles.moveListArea} aria-label="Moves">
-            <MoveList tree={tree} path={path} onSeek={handleSeek} plyEvals={plyEvals} />
-          </div>
-          <div className={styles.controls}>
-            <Navigation
-              currentPly={path.length}
-              totalPlies={pathToEnd(tree, []).length}
-              onNavigate={handleNavigate}
+        }
+        sidePanel={
+          <>
+            <AnalysisPanel
+              controller={controller}
+              capabilities={engine.capabilities}
+              fen={currentFen}
+              bottomColor={settings.orientation}
+              sideToMove={sideToMove}
+              rightSlot={
+                <SettingsPopover
+                  state={settingsForPopover}
+                  onChange={handleBoardChange}
+                  onResetBoardSize={handleResetBoardSize}
+                  onClearArrows={() => chessboardRef.current?.clearArrows()}
+                  boardSize={boardSizePx}
+                />
+              }
             />
-            <span className={styles.meta}>
-              {finished ? (
-                <strong data-testid="game-outcome">{isCheckmate ? 'Checkmate' : 'Draw'}</strong>
-              ) : (
-                <span>
-                  <strong data-testid="side-to-move">{sideToMove}</strong> to move
-                </span>
-              )}
-            </span>
-          </div>
-        </aside>
-      </div>
+            <div className={styles.moveListArea} aria-label="Moves">
+              <MoveList tree={tree} path={path} onSeek={handleSeek} plyEvals={plyEvals} />
+            </div>
+            <div className={styles.controls}>
+              <Navigation
+                currentPly={path.length}
+                totalPlies={pathToEnd(tree, []).length}
+                onNavigate={handleNavigate}
+              />
+              <span className={styles.meta}>
+                {finished ? (
+                  <strong data-testid="game-outcome">{isCheckmate ? 'Checkmate' : 'Draw'}</strong>
+                ) : (
+                  <span>
+                    <strong data-testid="side-to-move">{sideToMove}</strong> to move
+                  </span>
+                )}
+              </span>
+            </div>
+          </>
+        }
+        {...(boardSizeApi.isMobile
+          ? {}
+          : { sidePanelStyle: { height: boardSizePx, width: boardSizePx } })}
+        surface
+      />
 
       <section className={styles.sourceBar} aria-label="Position sources">
         <div className={styles.sourceGroup}>
