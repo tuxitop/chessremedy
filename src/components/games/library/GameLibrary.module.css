@@ -258,6 +258,20 @@
   border-top: 1px dashed var(--color-border);
 }
 
+/* Full-width insights strip under the meta line (Feature 010): the analysed
+   game's Accuracy / Blunders / Mistakes / Inaccuracies / Missed tactics. */
+.rowInsights {
+  grid-column: 1 / -1;
+  color: var(--color-fg);
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  border-top: 1px dashed var(--color-border);
+}
+
+.rowInsights .separator {
+  color: var(--color-fg-muted);
+}
+
 .cellCheck {
   display: flex;
 }

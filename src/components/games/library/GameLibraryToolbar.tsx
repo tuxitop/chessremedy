@@ -152,6 +152,56 @@ export function GameLibraryToolbar({
               ))}
             </select>
           </label>
+
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Analysis</span>
+            <select
+              data-testid="filter-analysis"
+              aria-label="Analysis"
+              value={filters.analysis}
+              onChange={(e) =>
+                onFilters({ analysis: e.target.value as GameLibraryFilters['analysis'] })
+              }
+            >
+              <option value="all">All</option>
+              <option value="analyzed">Analyzed</option>
+              <option value="notAnalyzed">Not analyzed</option>
+            </select>
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Has blunders</span>
+            <select
+              data-testid="filter-has-blunders"
+              aria-label="Has blunders"
+              value={filters.hasBlunders}
+              onChange={(e) =>
+                onFilters({ hasBlunders: e.target.value as GameLibraryFilters['hasBlunders'] })
+              }
+            >
+              <option value="all">All</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Has missed tactics</span>
+            <select
+              data-testid="filter-has-missed-tactics"
+              aria-label="Has missed tactics"
+              value={filters.hasMissedTactics}
+              onChange={(e) =>
+                onFilters({
+                  hasMissedTactics: e.target.value as GameLibraryFilters['hasMissedTactics'],
+                })
+              }
+            >
+              <option value="all">All</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
         </div>
 
         {custom ? (

@@ -1,5 +1,5 @@
 import type * as React from 'react';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { parseTimeControl } from '@/domain/chess/timeControl';
@@ -306,6 +306,7 @@ function GameRows({
             </span>
           ) : null}
           <GameRowMeta row={row} />
+          <GameRowInsights row={row} />
         </div>
       ))}
     </div>
@@ -386,6 +387,114 @@ function GameRowMeta({ row }: { row: LibraryGameRow }): React.JSX.Element | null
   return (
     <div className={styles.rowMeta} data-testid={`game-meta-${row.id}`}>
       {parts.join(' · ')}
+    </div>
+  );
+}
+
+/**
+ * One presentable statistics value of the row insights strip. `text` is the
+ * visible form; `spoken` spells it out for the labelled region's
+ * screen-reader sentence.
+ */
+interface RowInsightItem {
+  readonly key: string;
+  readonly testId: string;
+  readonly text: string;
+  readonly spoken: string;
+}
+
+const ERROR_COUNT_ITEMS: ReadonlyArray<{
+  readonly countKey: 'blunder' | 'mistake' | 'inaccuracy';
+  readonly plural: string;
+  readonly singular: string;
+  readonly testId: string;
+}> = [
+  { countKey: 'blunder', plural: 'Blunders', singular: 'blunder', testId: 'row-insights-blunders' },
+  { countKey: 'mistake', plural: 'Mistakes', singular: 'mistake', testId: 'row-insights-mistakes' },
+  {
+    countKey: 'inaccuracy',
+    plural: 'Inaccuracies',
+    singular: 'inaccuracy',
+    testId: 'row-insights-inaccuracies',
+  },
+];
+
+function spokenCount(count: number, singular: string, plural: string): string {
+  return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+}
+
+/**
+ * The user-side insight values of a row's latest completed analysis. Renders
+ * only for a completed/outdated run and only when the owning data exists —
+ * absent data is never rendered as a zero (specs/domain/game-library.md §7).
+ */
+function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
+  if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
+    return [];
+  }
+  const items: RowInsightItem[] = [];
+  if (typeof row.accuracy === 'number') {
+    items.push({
+      key: 'accuracy',
+      testId: 'row-insights-accuracy',
+      text: `Accuracy ${row.accuracy}%`,
+      spoken: `Accuracy ${row.accuracy} per cent`,
+    });
+  }
+  const counts = row.classificationCounts;
+  if (counts) {
+    for (const meta of ERROR_COUNT_ITEMS) {
+      const count = counts[meta.countKey];
+      items.push({
+        key: meta.countKey,
+        testId: meta.testId,
+        text: `${meta.plural} ${count}`,
+        spoken: spokenCount(count, meta.singular, meta.plural.toLowerCase()),
+      });
+    }
+  }
+  if (row.hasCompletedDetection === true && typeof row.missedTactics === 'number') {
+    const count = row.missedTactics;
+    items.push({
+      key: 'missedTactics',
+      testId: 'row-insights-missed-tactics',
+      text: `Missed tactics ${count}`,
+      spoken: spokenCount(count, 'missed tactic', 'missed tactics'),
+    });
+  }
+  return items;
+}
+
+/**
+ * Full-width insights line under a row's meta: Accuracy · Blunders ·
+ * Mistakes · Inaccuracies · Missed tactics for the user's latest completed
+ * analysis. One labelled region per row whose screen-reader text spells out
+ * every value.
+ */
+function GameRowInsights({ row }: { row: LibraryGameRow }): React.JSX.Element | null {
+  const items = rowInsightItemsFor(row);
+  if (items.length === 0) {
+    return null;
+  }
+  const sentence = items.map((item) => item.spoken).join(', ');
+  return (
+    <div
+      className={styles.rowInsights}
+      role="region"
+      aria-label={sentence}
+      data-testid={`row-insights-${row.id}`}
+    >
+      {items.map((item, index) => (
+        <Fragment key={item.key}>
+          {index > 0 ? (
+            <span className={styles.separator} aria-hidden="true">
+              {' '}
+              ·{' '}
+            </span>
+          ) : null}
+          <span data-testid={item.testId}>{item.text}</span>
+        </Fragment>
+      ))}
     </div>
   );
 }
