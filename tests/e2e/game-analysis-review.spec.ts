@@ -183,5 +183,42 @@ test.describe('Game analysis & review (Feature 008)', () => {
       'aria-current',
       'step',
     );
+
+    // Feature 010 missed-tactic surface. Whether a ply carries the marker is
+    // real-engine derived data (Stage-2 verification), so the marker may or
+    // may not have been persisted before this review loaded. Tolerate either
+    // outcome — but never a regression: the page structure and the normal
+    // classification glyphs stay intact either way.
+    await expect(page.getByTestId('review-layout')).toBeVisible();
+    await expect(page.getByTestId('review-summary')).toBeVisible();
+
+    // Bounded wait for the missed-tactic summary chip, then branch. The chip
+    // only renders once the review's own records carry a verified miss.
+    const missedChip = page.getByTestId('summary-missed-tactics');
+    let hasVerifiedMiss = false;
+    try {
+      await missedChip.waitFor({ state: 'visible', timeout: 5_000 });
+      hasVerifiedMiss = true;
+    } catch {
+      hasVerifiedMiss = false;
+    }
+
+    if (hasVerifiedMiss) {
+      // A verified miss renders as an *additional* NAG 9 glyph on its move,
+      // next to — never instead of — the move's classification NAG.
+      const markedMove = page
+        .locator('[data-testid="move-list-move"]')
+        .filter({ has: page.locator('[data-testid="nag-glyph"][data-nag="9"]') });
+      const firstMarked = markedMove.first();
+      await expect(firstMarked).toBeVisible();
+      await expect(firstMarked.locator('[data-testid="nag-glyph"]')).toHaveCount(2);
+      await expect(firstMarked.locator('[data-testid="nag-glyph"][data-nag="9"]')).toHaveCount(1);
+    } else {
+      // No verified miss in this run: classification glyphs are intact and no
+      // phantom marker was added to the move list.
+      const g4 = page.locator('[data-testid="move-list-move"][data-san="g4"]');
+      await expect(g4.locator('[data-testid="nag-glyph"][data-nag="4"]')).toHaveCount(1);
+      await expect(page.getByTestId('summary-missed-tactics')).toHaveCount(0);
+    }
   });
 });
