@@ -1,0 +1,458 @@
+/**
+ * Tactical detection orchestration service (Feature 010, Milestone A).
+ *
+ * Runs the two-stage detection pass (ADR-026) for one completed analysis run
+ * over its persisted `MoveAnalysis` records, coordinating the pure domain
+ * pipeline (`src/domain/tactics`) with the engine infrastructure and the
+ * Feature-010 persistence (per-analysis summaries, puzzle candidates):
+ *
+ * 1. Stage 1 (`generateCandidates`) runs inline over the run's records —
+ *    pure, fast, no engine work.
+ * 2. Each raw candidate (sorted by `sourcePly`) is verified with a
+ *    `tactical`-profile engine run behind the ADR-018 position-keyed cache
+ *    (cache key via `analysisCacheKey` with the candidate's starting FEN, the
+ *    tactical profile and the engine identity).
+ * 3. Verified candidates are persisted game-scoped (`verified` rows), the
+ *    owning `MoveAnalysis` plies are annotated in place
+ *    (`missedTactic` / `detectionVersion` via the pure
+ *    `annotateVerifiedMisses` merge) and the per-analysis summary is kept in
+ *    sync through the detection-pass state machine
+ *    (`absent → queued → inProgress → completed | failed`,
+ *    `domain/tactics.md` §"Detection-pass state model").
+ *
+ * ## Failure/interruption handling (documented reading)
+ *
+ * A candidate whose verification run yields a definitive verdict — verified,
+ * or rejected by a Stage-2 guard (`verifyCandidate` returned a rejection
+ * reason, i.e. the candidate is *discarded* — ADR-026 "Unverified raw
+ * candidates are discarded after the run") — is settled. A rejected
+ * candidate's row is still marked `failed` so the discard is visible and the
+ * pass is never silently "done". A candidate whose *engine run itself* fails
+ * (job failure, cancellation, exception) is NOT settled: its row is marked
+ * `failed` and the pass ends `failed` so the next verification run retries it
+ * (ADR-026 failure modes).
+ *
+ * An aborted pass (caller `AbortSignal`) stops at the next candidate boundary,
+ * leaving already-verified rows persisted and the summary back at `queued` —
+ * a completed analysis whose pass is scheduled but not yet settled. The next
+ * invocation resumes: Stage-1 candidates that already have a `verified` row
+ * are reused without an engine run (their annotations are re-applied to the
+ * records passed in), every other candidate is re-verified (the ADR-018 cache
+ * absorbs positions verified by earlier attempts).
+ *
+ * The pass is idempotent per analysis identity: an invocation whose summary is
+ * already `completed` returns without touching anything.
+ *
+ * `ensureSummariesForRows` is the Milestone-B lazy-backfill entrypoint: for
+ * games that have a completed/latest analysis but no summary row it derives
+ * and stores the per-analysis summary with `detectionState: 'absent'`
+ * (counts/accuracy filled, missed-tactic holder `null`). It never runs a
+ * detection pass and never scans `MoveAnalysis` beyond the completed
+ * analysis's own rows.
+ */
+
+import type { Color } from 'chessops/types';
+import type { AnalysisJob } from '@/domain/analysis';
+import { latestCompletedJob } from '@/domain/analysis';
+import type { MoveAnalysis } from '@/domain/chess';
+import type { EngineMetadata } from '@/domain/chess';
+import type { GameId } from '@/domain/chess/game';
+import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
+import type {
+  BuildAnalysisSummaryOptions,
+  SummaryDetectionState,
+} from '@/domain/analysis/summaryDerivation';
+import {
+  annotateVerifiedMisses,
+  DETECTION_VERSION,
+  generateCandidates,
+  verifyCandidate,
+} from '@/domain/tactics';
+import type {
+  RawCandidate,
+  TacticalCandidateLine,
+  VerificationRejectionReason,
+  VerifiedTacticalCandidate,
+} from '@/domain/tactics';
+import type { AnalysisRepository } from '@/infrastructure/db/analysis-repository';
+import type { AnalysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
+import type {
+  PuzzleCandidatesRepository,
+  UnverifiedPuzzleCandidateRow,
+} from '@/infrastructure/db/candidates-repository';
+import type { GamesRepository } from '@/infrastructure/db/games-repository';
+import type {
+  AnalysisSummariesRepository,
+  AnalysisSummaryRow,
+} from '@/infrastructure/db/summaries-repository';
+import { analysisCacheKey } from '@/infrastructure/engine/cache';
+import type { EngineAnalysisCache } from '@/infrastructure/engine/cache';
+import { profileConfig } from '@/infrastructure/engine/engineProfiles';
+import type { EngineLine } from '@/infrastructure/engine/types';
+import type { EngineAnalysisResult, EngineService } from '@/infrastructure/engine/types';
+
+export interface TacticalDetectionServiceOptions {
+  readonly engine: EngineService;
+  /** ADR-018 position-keyed cache; when absent positions are always searched. */
+  readonly engineCache?: EngineAnalysisCache | null;
+  readonly analyses: AnalysisRepository;
+  readonly candidates: PuzzleCandidatesRepository;
+  readonly summaries: AnalysisSummariesRepository;
+  /** Required by `ensureSummariesForRows` (Milestone-B lazy backfill). */
+  readonly jobs?: AnalysisJobsRepository;
+  /** Required by `ensureSummariesForRows` (Milestone-B lazy backfill). */
+  readonly games?: GamesRepository;
+  readonly now?: () => number;
+}
+
+type EngineIdentity = Pick<EngineMetadata, 'engineName' | 'engineVersion' | 'engineBuild'>;
+
+type VerificationOutcome =
+  | { readonly kind: 'verified'; readonly candidate: VerifiedTacticalCandidate }
+  | { readonly kind: 'rejected'; readonly reason: VerificationRejectionReason }
+  | { readonly kind: 'engine-failed'; readonly message: string }
+  | { readonly kind: 'aborted' };
+
+export interface BackfillOptions {
+  readonly signal?: AbortSignal;
+}
+
+export class TacticalDetectionService {
+  private readonly engine: EngineService;
+  private readonly engineCache: EngineAnalysisCache | null;
+  private readonly analyses: AnalysisRepository;
+  private readonly candidates: PuzzleCandidatesRepository;
+  private readonly summaries: AnalysisSummariesRepository;
+  private readonly jobs: AnalysisJobsRepository | null;
+  private readonly games: GamesRepository | null;
+  private readonly now: () => number;
+  private readonly tacticalDepth: number;
+
+  constructor(options: TacticalDetectionServiceOptions) {
+    this.engine = options.engine;
+    this.engineCache = options.engineCache ?? null;
+    this.analyses = options.analyses;
+    this.candidates = options.candidates;
+    this.summaries = options.summaries;
+    this.jobs = options.jobs ?? null;
+    this.games = options.games ?? null;
+    this.now = options.now ?? (() => Date.now());
+    this.tacticalDepth = profileConfig('tactical').depth;
+  }
+
+  /**
+   * Run the whole two-stage detection pass for one completed analysis run.
+   * `job` is the completed analysis job (its id is the `analysisId` scope key),
+   * `game` supplies the game id and the importing user's color, `records` are
+   * the run's persisted `MoveAnalysis`. Abort-aware, cache-aware and resumable
+   * (see the module header).
+   */
+  async runPassForCompletedJob(
+    job: AnalysisJob,
+    game: { readonly id: string; readonly userColor: Color },
+    records: readonly MoveAnalysis[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted) {
+      return;
+    }
+    const existing = await this.summaries.getForAnalysis(job.id);
+    if (existing?.detectionState === 'completed') {
+      return;
+    }
+
+    const candidates = [...generateCandidates(records, game.userColor, this.now())].sort(
+      (a, b) => a.sourcePly - b.sourcePly,
+    );
+
+    // An empty pass still completes: a real zero is written with the detection
+    // version so the Library never renders this analysis as absent-detection.
+    if (candidates.length === 0) {
+      await this.writeSummary(job, game, records, 'completed', 0, DETECTION_VERSION);
+      return;
+    }
+    if (signal?.aborted) {
+      return;
+    }
+
+    // Resumability: candidates that already carry a `verified` row (an earlier,
+    // interrupted or failed pass) are reused without an engine run; every other
+    // candidate is (re)persisted as `raw` BEFORE Stage 2 so an interruption
+    // never loses the candidate set.
+    const stored = await this.candidates.listForGameAndAnalysis(game.id, job.id);
+    const verifiedByPly = new Map<number, VerifiedTacticalCandidate>();
+    for (const row of stored) {
+      if (row.verificationStatus === 'verified') {
+        verifiedByPly.set(row.sourcePly, row);
+      }
+    }
+    const pending = candidates
+      .filter((candidate) => !verifiedByPly.has(candidate.sourcePly))
+      .map((candidate): UnverifiedPuzzleCandidateRow => ({
+        ...candidate,
+        verificationStatus: 'raw',
+      }));
+    await this.candidates.bulkPutForAnalysis(pending);
+
+    await this.writeSummary(job, game, records, 'inProgress');
+
+    const engineIdentity = this.resolveEngineIdentity(job);
+    const verified: VerifiedTacticalCandidate[] = [];
+    let retryableFailures = 0;
+
+    for (const candidate of candidates) {
+      if (signal?.aborted) {
+        await this.writeSummary(job, game, records, 'queued');
+        return;
+      }
+      const reused = verifiedByPly.get(candidate.sourcePly);
+      if (reused) {
+        verified.push(reused);
+        await this.persistAnnotatedRecords(records, verified);
+        continue;
+      }
+
+      const outcome = await this.verifyCandidateWithEngine(candidate, engineIdentity, signal);
+      if (outcome.kind === 'aborted') {
+        await this.writeSummary(job, game, records, 'queued');
+        return;
+      }
+      if (outcome.kind === 'engine-failed') {
+        retryableFailures += 1;
+        await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
+        continue;
+      }
+      if (outcome.kind === 'rejected') {
+        await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
+        continue;
+      }
+      await this.candidates.bulkPutForAnalysis([outcome.candidate]);
+      verified.push(outcome.candidate);
+      await this.persistAnnotatedRecords(records, verified);
+    }
+
+    if (signal?.aborted) {
+      await this.writeSummary(job, game, records, 'queued');
+      return;
+    }
+    if (retryableFailures > 0) {
+      await this.writeSummary(job, game, records, 'failed');
+      return;
+    }
+    await this.writeSummary(job, game, records, 'completed', verified.length, DETECTION_VERSION);
+  }
+
+  /**
+   * Milestone-B lazy backfill: derive and store an `absent`-detection summary
+   * for every listed game that has a completed/latest analysis and no summary
+   * row yet. Returns how many summaries it created. Never runs a detection
+   * pass. Requires the `jobs` and `games` repositories (constructor options).
+   */
+  async ensureSummariesForRows(
+    gameIds: readonly GameId[],
+    options: BackfillOptions = {},
+  ): Promise<number> {
+    if (!this.jobs || !this.games) {
+      throw new Error(
+        'ensureSummariesForRows needs jobs and games repositories; they were not provided.',
+      );
+    }
+    const ids = [...new Set(gameIds)];
+    let created = 0;
+    for (const gameId of ids) {
+      if (options.signal?.aborted) {
+        break;
+      }
+      const jobs = await this.jobs.listByGame(gameId);
+      const latest = latestCompletedJob(jobs);
+      if (!latest) {
+        continue;
+      }
+      const existing = await this.summaries.getForAnalysis(latest.id);
+      if (existing) {
+        continue;
+      }
+      const game = await this.games.getGame(gameId);
+      if (!game) {
+        continue;
+      }
+      const records = await this.analyses.listForGameAndAnalysis(gameId, latest.id);
+      if (records.length === 0) {
+        continue;
+      }
+      const built = buildAnalysisSummary(records, game.userColor, { detectionState: 'absent' });
+      await this.summaries.putForAnalysis({
+        analysisId: latest.id,
+        gameId,
+        userColor: game.userColor,
+        updatedAt: this.now(),
+        ...built,
+      });
+      created += 1;
+    }
+    return created;
+  }
+
+  // --- internals --------------------------------------------------------------
+
+  /** Persist the run's records with the verified-miss annotations applied. */
+  private async persistAnnotatedRecords(
+    records: readonly MoveAnalysis[],
+    verified: readonly VerifiedTacticalCandidate[],
+  ): Promise<void> {
+    if (verified.length === 0) {
+      return;
+    }
+    const annotated = annotateVerifiedMisses(records, verified, DETECTION_VERSION);
+    await this.analyses.replaceAnalysis(annotated);
+  }
+
+  /** Persist one per-analysis summary row for the pass state. */
+  private async writeSummary(
+    job: AnalysisJob,
+    game: { readonly id: string; readonly userColor: Color },
+    records: readonly MoveAnalysis[],
+    state: SummaryDetectionState,
+    missedTacticCount?: number | null,
+    detectionVersion?: number | null,
+  ): Promise<void> {
+    const options: BuildAnalysisSummaryOptions =
+      state === 'completed'
+        ? {
+            detectionState: state,
+            ...(missedTacticCount !== undefined ? { missedTacticCount } : {}),
+            ...(detectionVersion !== undefined ? { detectionVersion } : {}),
+          }
+        : { detectionState: state };
+    const built = buildAnalysisSummary(records, game.userColor, options);
+    const row: AnalysisSummaryRow = {
+      analysisId: job.id,
+      gameId: game.id,
+      userColor: game.userColor,
+      updatedAt: this.now(),
+      ...built,
+    };
+    await this.summaries.putForAnalysis(row);
+  }
+
+  private resolveEngineIdentity(job: AnalysisJob): EngineIdentity {
+    const status = this.engine.getStatus();
+    if (status.engine) {
+      return status.engine;
+    }
+    return {
+      engineName: job.engine.engineName,
+      engineVersion: job.engine.engineVersion,
+      engineBuild: job.engine.engineBuild,
+    };
+  }
+
+  /**
+   * One candidate's Stage-2 verification: ADR-018 cache lookup first, else a
+   * `tactical`-profile engine run (off the UI thread), then the pure
+   * `verifyCandidate` verdict. An aborted signal during the engine search
+   * cancels the job and reports `aborted`; a failed/cancelled/throw engine job
+   * reports `engine-failed` (retryable) without failing the pass.
+   */
+  private async verifyCandidateWithEngine(
+    candidate: RawCandidate,
+    engineIdentity: EngineIdentity,
+    signal?: AbortSignal,
+  ): Promise<VerificationOutcome> {
+    const key = analysisCacheKey(candidate.startingFen, { profile: 'tactical' }, engineIdentity);
+    if (this.engineCache) {
+      const cached = await this.engineCache.get(key);
+      if (cached) {
+        return this.toVerdict(cached, candidate, engineIdentity);
+      }
+    }
+    if (signal?.aborted) {
+      return { kind: 'aborted' };
+    }
+
+    let result: EngineAnalysisResult;
+    try {
+      const handle = this.engine.analyze(candidate.startingFen, { profile: 'tactical' });
+      const settled = await Promise.race([handle.outcome, abortSignal(signal)]);
+      if (settled === 'aborted') {
+        handle.cancel();
+        return { kind: 'aborted' };
+      }
+      if (settled.kind === 'cancelled') {
+        return { kind: 'engine-failed', message: 'Engine job was cancelled.' };
+      }
+      if (settled.kind === 'failed') {
+        return { kind: 'engine-failed', message: settled.error.message };
+      }
+      result = settled.result;
+    } catch (err) {
+      return {
+        kind: 'engine-failed',
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    if (this.engineCache) {
+      const putKey = analysisCacheKey(
+        candidate.startingFen,
+        { profile: result.profile },
+        result.engine,
+      );
+      try {
+        await this.engineCache.put(putKey, result);
+      } catch {
+        // A cache write failure never fails the pass; the result is still used.
+      }
+    }
+    return this.toVerdict(result, candidate, engineIdentity);
+  }
+
+  private toVerdict(
+    result: EngineAnalysisResult,
+    candidate: RawCandidate,
+    engineIdentity: EngineIdentity,
+  ): VerificationOutcome {
+    const lines: readonly TacticalCandidateLine[] = result.lines.map((line) =>
+      toTacticalCandidateLine(line),
+    );
+    const verdict = verifyCandidate({
+      candidate,
+      now: this.now(),
+      verificationDepth: this.tacticalDepth,
+      engine: engineIdentity,
+      lines,
+    });
+    if (verdict.ok) {
+      return { kind: 'verified', candidate: verdict.candidate };
+    }
+    return { kind: 'rejected', reason: verdict.reason };
+  }
+}
+
+/** Map an engine line onto the engine-free Stage-2 verification input. */
+function toTacticalCandidateLine(line: EngineLine): TacticalCandidateLine {
+  const evaluation = line.evaluation;
+  return {
+    multipv: line.multipv,
+    evalCp: 'cp' in evaluation ? evaluation.cp : null,
+    evalMate: 'mate' in evaluation ? evaluation.mate : null,
+    wdl: line.wdl,
+    uci: line.principalVariation.map((move) => move.uci),
+  };
+}
+
+function abortSignal(signal: AbortSignal | undefined): Promise<'aborted' | never> {
+  if (!signal) {
+    return new Promise<never>(() => undefined);
+  }
+  if (signal.aborted) {
+    return Promise.resolve('aborted' as const);
+  }
+  return new Promise((resolve) => {
+    const listener = (): void => {
+      signal.removeEventListener('abort', listener);
+      resolve('aborted' as const);
+    };
+    signal.addEventListener('abort', listener);
+  });
+}

@@ -13,6 +13,14 @@
  * `completed` ones; positions already in the position-keyed cache are not
  * re-searched). Engine searches always run off the UI thread through the
  * Feature-005 Web Worker service.
+ *
+ * Feature-010 completion hooks (optional dependencies): when a completed run
+ * is persisted the per-analysis summary is written in the `queued` detection
+ * state and — when a `TacticalDetectionService` is wired in — the two-stage
+ * detection pass runs for the completed run (abort-aware). A forced
+ * re-analysis also clears the superseded run's summary and puzzle-candidate
+ * rows so the new run starts from an absent detection state. Detection is
+ * derived data: it never fails or blocks an analysis batch.
  */
 
 import type { EngineService, EngineAnalysisResult } from '@/infrastructure/engine/types';
@@ -20,8 +28,12 @@ import type { EngineEvaluation } from '@/infrastructure/engine/types';
 import type { EngineAnalysisCache } from '@/infrastructure/engine/cache';
 import { analysisCacheKey } from '@/infrastructure/engine/cache';
 import { gameClocks } from '@/domain/chess';
-import type { EngineMetadata, AnalysisProfile, EvalCpMate } from '@/domain/chess';
-import type { GameId } from '@/domain/chess/game';
+import type { EngineMetadata, AnalysisProfile, EvalCpMate, MoveAnalysis } from '@/domain/chess';
+import type { Game, GameId } from '@/domain/chess/game';
+import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
+import type { AnalysisSummariesRepository } from '@/infrastructure/db/summaries-repository';
+import type { PuzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
+import type { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
 import {
   analysisJobId,
   analysisLibraryStatus,
@@ -59,6 +71,12 @@ export interface AnalysisServiceOptions {
   readonly engineCache?: EngineAnalysisCache | null;
   /** Resolve the engine identity for a profile (browser assembly). */
   readonly engineMetadata?: (profile: AnalysisProfile) => EngineMetadata;
+  /** Feature-010 per-analysis summary repository (optional completion hook). */
+  readonly summaries?: AnalysisSummariesRepository | null;
+  /** Feature-010 puzzle-candidate repository (optional completion hook). */
+  readonly candidates?: PuzzleCandidatesRepository | null;
+  /** Feature-010 two-stage detection service (optional completion hook). */
+  readonly detection?: TacticalDetectionService | null;
   readonly now?: () => number;
 }
 
@@ -82,6 +100,9 @@ export class AnalysisService {
   private readonly engine: EngineService;
   private readonly engineCache: EngineAnalysisCache | null;
   private readonly engineMetadata: (profile: AnalysisProfile) => EngineMetadata;
+  private readonly summaries: AnalysisSummariesRepository | null;
+  private readonly candidates: PuzzleCandidatesRepository | null;
+  private readonly detection: TacticalDetectionService | null;
   private readonly now: () => number;
   private readonly currentEngine: EngineIdentity | null;
   /**
@@ -100,6 +121,9 @@ export class AnalysisService {
     this.engine = options.engine;
     this.engineCache = options.engineCache ?? null;
     this.engineMetadata = options.engineMetadata ?? this.defaultEngineMetadata.bind(this);
+    this.summaries = options.summaries ?? null;
+    this.candidates = options.candidates ?? null;
+    this.detection = options.detection ?? null;
     this.now = options.now ?? (() => Date.now());
     this.currentEngine = this.resolveCurrentEngine();
   }
@@ -240,6 +264,7 @@ export class AnalysisService {
         // A forced re-analysis clears the completed run's records and restarts
         // the same analysis identity under the current engine configuration.
         await this.analyses.deleteForAnalysis(stored.id);
+        await this.clearDetectionState(stored.id);
         stored = undefined;
       }
       // Total positions are patched when each job starts; queued here is the
@@ -378,8 +403,79 @@ export class AnalysisService {
     await this.analyses.replaceAnalysis(records);
 
     current = markCompleted(current, this.now());
+    await this.writeQueuedSummary(current, game, records);
     await this.persist(current, run);
+    await this.runDetection(current, game, records, run);
     return current;
+  }
+
+  /**
+   * Persist the completed run's per-analysis summary with the detection pass
+   * still `queued` (counts + accuracy filled, missed-tactic holder absent).
+   * Feature-010 derived data: a write failure never fails the completed job.
+   */
+  private async writeQueuedSummary(
+    job: AnalysisJob,
+    game: Game,
+    records: readonly MoveAnalysis[],
+  ): Promise<void> {
+    if (!this.summaries) {
+      return;
+    }
+    try {
+      const built = buildAnalysisSummary(records, game.userColor, { detectionState: 'queued' });
+      await this.summaries.putForAnalysis({
+        analysisId: job.id,
+        gameId: game.id,
+        userColor: game.userColor,
+        updatedAt: this.now(),
+        ...built,
+      });
+    } catch {}
+  }
+
+  /**
+   * Trigger the Feature-010 two-stage detection pass for a completed run
+   * (Stage 1 + Stage 2, abort-aware, cache-aware and idempotent per analysis
+   * identity). Detection runs after the run's job is persisted; a failure here
+   * never aborts the analysis batch.
+   */
+  private async runDetection(
+    job: AnalysisJob,
+    game: Game,
+    records: readonly MoveAnalysis[],
+    run?: AnalysisRunOptions,
+  ): Promise<void> {
+    if (!this.detection || run?.signal?.aborted) {
+      return;
+    }
+    try {
+      await this.detection.runPassForCompletedJob(
+        job,
+        { id: game.id, userColor: game.userColor },
+        records,
+        run?.signal,
+      );
+    } catch {}
+  }
+
+  /**
+   * Remove one superseded analysis identity's Feature-010 derived rows
+   * (summary + puzzle candidates) ahead of a forced re-analysis, so the new
+   * run starts from an absent detection state. Best-effort: a cleanup failure
+   * never blocks the re-analysis (the new completed run overwrites the rows).
+   */
+  private async clearDetectionState(analysisId: string): Promise<void> {
+    if (this.summaries) {
+      try {
+        await this.summaries.deleteForAnalysis(analysisId);
+      } catch {}
+    }
+    if (this.candidates) {
+      try {
+        await this.candidates.deleteForAnalysis(analysisId);
+      } catch {}
+    }
   }
 
   /**
