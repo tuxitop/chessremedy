@@ -435,6 +435,116 @@ describe('Game Review page (Feature 008)', () => {
   });
 });
 
+describe('Game Review missed-tactic markers (Feature 010)', () => {
+  beforeEach(async () => {
+    chessboardProps.length = 0;
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.positionAnalysisCache.clear();
+  });
+
+  it('renders the classification glyph plus the missed-tactic marker for a verified miss', async () => {
+    // 2.g4 is White's blunder and a verified missed tactic (detectionVersion 1).
+    await seedCompleted([
+      undefined,
+      undefined,
+      { missedTactic: true, detectionVersion: 1 },
+      undefined,
+    ]);
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const g4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!;
+    const glyphs = within(g4).getAllByTestId('nag-glyph');
+    expect(glyphs).toHaveLength(2);
+    // Classification glyph first, preserved; marker NAG 9 (X) added after it.
+    expect(glyphs[0]).toHaveAttribute('data-nag', '4');
+    expect(glyphs[0]).toHaveTextContent('??');
+    expect(glyphs[1]).toHaveAttribute('data-nag', '9');
+    expect(glyphs[1]).toHaveTextContent('X');
+
+    // The classification is untouched: g4 is still counted as a user blunder.
+    expect(screen.getByTestId('summary-user-blunder-value')).toHaveTextContent('1');
+
+    // Ordinary (good) plies render no classification glyph and no marker.
+    for (const san of ['f3', 'e5']) {
+      const move = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === san)!;
+      expect(within(move).queryByTestId('nag-glyph')).not.toBeInTheDocument();
+    }
+
+    // Black's mating best move is not a miss: only its !! classification glyph.
+    const qh4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!;
+    const bestGlyphs = within(qh4).getAllByTestId('nag-glyph');
+    expect(bestGlyphs).toHaveLength(1);
+    expect(bestGlyphs[0]).toHaveAttribute('data-nag', '3');
+    expect(bestGlyphs[0]).toHaveTextContent('!!');
+  });
+
+  it('shows the missed-tactic label when the verified-miss move is active', async () => {
+    await seedCompleted([
+      undefined,
+      undefined,
+      { missedTactic: true, detectionVersion: 1 },
+      undefined,
+    ]);
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    expect(screen.queryByTestId('review-missed-tactic-label')).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!);
+
+    const label = screen.getByTestId('review-missed-tactic-label');
+    // Real words, never color-only.
+    expect(label).toHaveTextContent('Missed tactic');
+    // Explanation text is carried for assistive tech / hover, not just colour.
+    expect(label).toHaveAttribute('title', expect.stringContaining('tactic'));
+    expect(label).toHaveAttribute('aria-label', expect.stringContaining('tactic'));
+
+    // An ordinary move hides the label again.
+    await user.click(screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'f3')!);
+    expect(screen.queryByTestId('review-missed-tactic-label')).not.toBeInTheDocument();
+  });
+
+  it('shows the review-summary missed-tactic chip for the verified miss', async () => {
+    await seedCompleted([
+      undefined,
+      undefined,
+      { missedTactic: true, detectionVersion: 1 },
+      undefined,
+    ]);
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const chip = screen.getByTestId('summary-missed-tactics');
+    expect(chip).toHaveTextContent('1 missed tactic');
+  });
+
+  it('renders no marker for unverified records (null detectionVersion / missedTactic false)', async () => {
+    // A record annotated missedTactic but never verified by a detection pass.
+    await seedCompleted([
+      undefined,
+      undefined,
+      { missedTactic: true, detectionVersion: null },
+      undefined,
+    ]);
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const g4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!;
+    const glyphs = within(g4).getAllByTestId('nag-glyph');
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0]).toHaveAttribute('data-nag', '4');
+    expect(glyphs.some((glyph) => glyph.dataset.nag === '9')).toBe(false);
+
+    const user = userEvent.setup();
+    await user.click(g4);
+    expect(screen.queryByTestId('review-missed-tactic-label')).not.toBeInTheDocument();
+  });
+});
+
 describe('classificationBoardBadges (review board chips)', () => {
   it('maps emphasized classifications to NAG chips on the destination square', () => {
     expect(classificationBoardBadges({ classification: 'blunder', square: 'g4' })).toEqual([

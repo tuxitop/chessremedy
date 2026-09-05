@@ -5,8 +5,12 @@ import {
   CLASSIFICATION_NAG,
   CLASSIFICATION_LABEL_TEXT,
   CLASSIFICATION_EXPLANATION,
+  MISSED_TACTIC_NAG,
+  MISSED_TACTIC_LABEL,
+  MISSED_TACTIC_EXPLANATION,
   nagForClassification,
   isEmphasized,
+  missedTacticMeta,
 } from './classificationMeta';
 
 describe('classificationMeta (Feature 009 canonical presentation mapping)', () => {
@@ -65,5 +69,20 @@ describe('classificationMeta (Feature 009 canonical presentation mapping)', () =
     expect(keys(CLASSIFICATION_NAG)).toEqual(expected);
     expect(keys(CLASSIFICATION_LABEL_TEXT)).toEqual(expected);
     expect(keys(CLASSIFICATION_EXPLANATION)).toEqual(expected);
+  });
+
+  it('owns the canonical missed-tactic marker (NAG 9, Feature 010)', () => {
+    expect(MISSED_TACTIC_NAG).toBe(9);
+    expect(MISSED_TACTIC_LABEL).toBe('Missed tactic');
+    expect(MISSED_TACTIC_EXPLANATION.length).toBeGreaterThan(0);
+    const meta = missedTacticMeta();
+    expect(meta).toEqual({
+      nag: MISSED_TACTIC_NAG,
+      label: MISSED_TACTIC_LABEL,
+      explanation: MISSED_TACTIC_EXPLANATION,
+    });
+    // The marker must not collide with any classification NAG: it renders as
+    // an extra glyph alongside (never instead of) the classification.
+    expect(Object.values(CLASSIFICATION_NAG)).not.toContain(MISSED_TACTIC_NAG);
   });
 });

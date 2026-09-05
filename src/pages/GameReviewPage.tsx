@@ -50,7 +50,9 @@ import {
   CLASSIFICATION_LABELS,
   CLASSIFICATION_LABEL_TEXT,
   CLASSIFICATION_EXPLANATION,
+  MISSED_TACTIC_NAG,
   isEmphasized,
+  missedTacticMeta,
   nagForClassification,
 } from '@/domain/analysis/classificationMeta';
 import { summarizeAnalysis } from '@/domain/analysis/summary';
@@ -549,17 +551,37 @@ function GameReview({
     return map;
   }, [mainline, records, liveClassificationByPly, liveOverlay]);
 
+  // Verified-missed plies of the persisted analysis (Feature 010), keyed the
+  // same way as `classificationByPly` (mainline node id) so the extra marker
+  // NAG lands on the same move as the classification glyph.
+  const missedTacticByPly = useMemo(() => {
+    const ids = new Set<number>();
+    mainline.forEach((node, ply) => {
+      const record = records[ply];
+      if (record && record.missedTactic && record.detectionVersion !== null) {
+        ids.add(node.id);
+      }
+    });
+    return ids;
+  }, [mainline, records]);
+
   // NAG overrides for the move list derive from that single map: emphasized
   // classifications render their glyph, ordinary `good`/no-classification plies
-  // override to no glyph.
+  // override to no glyph. A verified missed tactic emits the canonical marker
+  // NAG (9) after the classification NAG, so both glyphs render — the
+  // classification is preserved, never replaced.
   const effectiveNagOverrides = useMemo(() => {
     const map = new Map<number, readonly number[]>();
     for (const [id, classification] of classificationByPly) {
       const nag = nagForClassification(classification);
-      map.set(id, nag === null ? [] : [nag]);
+      const nags = nag === null ? [] : [nag];
+      if (missedTacticByPly.has(id)) {
+        nags.push(MISSED_TACTIC_NAG);
+      }
+      map.set(id, nags);
     }
     return map;
-  }, [classificationByPly]);
+  }, [classificationByPly, missedTacticByPly]);
 
   // Classification of the active (selected) ply for chips + square highlights.
   const activeClassification = useMemo<MoveClassification | undefined>(() => {
@@ -614,6 +636,8 @@ function GameReview({
     }
     return merged;
   }, [live, evalByPlyId, livePlyEvals]);
+
+  const missedTacticMarker = missedTacticMeta();
 
   if (!tree || !position) {
     return (
@@ -723,6 +747,17 @@ function GameReview({
                 />
               }
             />
+            {selected && selected.missedTactic && selected.detectionVersion !== null ? (
+              <div
+                className={styles.missed}
+                data-testid="review-missed-tactic-label"
+                role="note"
+                title={missedTacticMarker.explanation}
+                aria-label={missedTacticMarker.explanation}
+              >
+                {missedTacticMarker.label}
+              </div>
+            ) : null}
             <MoveListPane>
               <MoveList
                 tree={tree}

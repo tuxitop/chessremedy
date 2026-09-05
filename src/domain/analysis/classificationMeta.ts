@@ -69,3 +69,33 @@ export const CLASSIFICATION_EXPLANATION: Readonly<Record<MoveClassification, str
   mistake: 'A significant error that worsens the position.',
   blunder: 'A decisive error that badly damages the position.',
 };
+
+/**
+ * Missed-tactic marker (Feature 010). A verified missed tactic is an
+ * additional annotation on a move: it never replaces the classification, so
+ * the move renders both glyphs (classification first, then the `X` marker).
+ * The NAG `9` glyph/tone/colour come from `NAG_META[9]` in the UI layer —
+ * this module only owns the canonical number/label/explanation, so Feature 010
+ * introduces no competing glyph mapping.
+ */
+export const MISSED_TACTIC_NAG = 9;
+
+/** Canonical short label text for the missed-tactic marker (aria/badge). */
+export const MISSED_TACTIC_LABEL = 'Missed tactic';
+
+/** Canonical short explanation for the missed-tactic marker (title/aria). */
+export const MISSED_TACTIC_EXPLANATION =
+  'A forcing tactical opportunity was available here that was not played.';
+
+/** Canonical presentation metadata for the missed-tactic marker. */
+export function missedTacticMeta(): {
+  readonly nag: number;
+  readonly label: string;
+  readonly explanation: string;
+} {
+  return {
+    nag: MISSED_TACTIC_NAG,
+    label: MISSED_TACTIC_LABEL,
+    explanation: MISSED_TACTIC_EXPLANATION,
+  };
+}
