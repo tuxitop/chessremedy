@@ -10,6 +10,7 @@ import {
   type PieceSet,
 } from '@/components/chessboard/Chessboard';
 import { MoveList } from '@/components/chessboard/MoveList';
+import { MoveListPane } from '@/components/chessboard/MoveListPane';
 import { Navigation, type NavigationTarget } from '@/components/chessboard/Navigation';
 import { PromotionDialog, type PromotionRole } from '@/components/chessboard/PromotionDialog';
 import { SettingsPopover, type SettingsState } from '@/components/chessboard/SettingsPopover';
@@ -36,6 +37,7 @@ import { EvaluationBar } from '@/components/analysis/EvaluationBar';
 import { engineArrowShapes } from '@/components/analysis/engineArrows';
 import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
+import { useAnalysisNavigation } from '@/hooks/useAnalysisNavigation';
 import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import styles from './LiveAnalysisPage.module.css';
 
@@ -256,6 +258,17 @@ export function LiveAnalysisPage(): React.JSX.Element {
     setPath(target);
   }, []);
 
+  const navHandlers = useMemo(
+    () => ({
+      onFirst: () => handleNavigate('first'),
+      onPrev: () => handleNavigate('prev'),
+      onNext: () => handleNavigate('next'),
+      onLast: () => handleNavigate('last'),
+    }),
+    [handleNavigate],
+  );
+  useAnalysisNavigation(navHandlers);
+
   const handleResetBoardSize = useCallback(() => {
     boardSizeApi.setSize(BOARD_SIZE_DEFAULT);
   }, [boardSizeApi]);
@@ -352,9 +365,9 @@ export function LiveAnalysisPage(): React.JSX.Element {
                 />
               }
             />
-            <div className={styles.moveListArea} aria-label="Moves">
+            <MoveListPane>
               <MoveList tree={tree} path={path} onSeek={handleSeek} plyEvals={plyEvals} />
-            </div>
+            </MoveListPane>
             <div className={styles.controls}>
               <Navigation
                 currentPly={path.length}

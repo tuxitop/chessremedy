@@ -14,6 +14,7 @@ import { useBoardSize, type UseBoardSize } from '@/components/chessboard/useBoar
 import type { Key } from '@lichess-org/chessground/types';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import { MoveList } from '@/components/chessboard/MoveList';
+import { MoveListPane } from '@/components/chessboard/MoveListPane';
 import { Navigation, type NavigationTarget } from '@/components/chessboard/Navigation';
 import type { EngineEvaluation } from '@/infrastructure/engine/types';
 import { formatEvaluation } from '@/components/analysis/engineFormat';
@@ -25,8 +26,10 @@ import { useAnalysisController } from '@/components/analysis/useAnalysisControll
 import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
+import { useAnalysisNavigation } from '@/hooks/useAnalysisNavigation';
 import { gameFromPgn } from '@/domain/chess/parseGame';
 import { gameClocks, type MoveClock } from '@/domain/chess/clock';
+import { parseTimeControl } from '@/domain/chess/timeControl';
 import { fenOf, uciPvToSan } from '@/domain/chess';
 import type { EvalCpMate, MoveAnalysis, MoveClassification } from '@/domain/chess';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
@@ -134,7 +137,6 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
   if (data.status === 'completed' && data.job && data.records.length > 0) {
     return (
       <GameReview
-        gameId={data.game.id}
         pgn={data.game.pgn}
         userColor={data.game.userColor}
         playerLabel={playerLabel(data.game)}
@@ -165,7 +167,6 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
 }
 
 function GameReview({
-  gameId,
   pgn,
   userColor,
   playerLabel,
@@ -174,7 +175,6 @@ function GameReview({
   onReanalyze,
   reanalyzing,
 }: {
-  gameId: string;
   pgn: string;
   userColor: 'white' | 'black';
   playerLabel: string;
@@ -224,6 +224,53 @@ function GameReview({
       },
     [tree, path],
   );
+
+  // Player names + initial clock (fallback before any %clk) for the bars
+  // around the board.
+  const gameMeta = useMemo(() => {
+    const parsed = gameFromPgn(pgn, { source: 'fixture', userColor });
+    if (!parsed.ok) {
+      return null;
+    }
+    return {
+      whiteName: parsed.game.whitePlayer.name,
+      blackName: parsed.game.blackPlayer.name,
+      timeControl: parsed.game.timeControl,
+    };
+  }, [pgn, userColor]);
+  const initialClockMs = useMemo(() => {
+    if (!gameMeta) {
+      return null;
+    }
+    const control = parseTimeControl(gameMeta.timeControl);
+    return control.baseSeconds !== null ? control.baseSeconds * 1000 : null;
+  }, [gameMeta]);
+  const opponentName =
+    gameMeta === null
+      ? 'Opponent'
+      : userColor === 'white'
+        ? gameMeta.blackName
+        : gameMeta.whiteName;
+  const userName =
+    gameMeta === null ? 'You' : userColor === 'white' ? gameMeta.whiteName : gameMeta.blackName;
+  const opponentMs = remainingClockForColor(
+    path.length,
+    oppositeOf(userColor),
+    clocks,
+    initialClockMs,
+  );
+  const userMs = remainingClockForColor(path.length, userColor, clocks, initialClockMs);
+
+  const navHandlers = useMemo(
+    () => ({
+      onFirst: () => navigate('first'),
+      onPrev: () => navigate('prev'),
+      onNext: () => navigate('next'),
+      onLast: () => navigate('last'),
+    }),
+    [navigate],
+  );
+  useAnalysisNavigation(navHandlers);
 
   const activePly = path[path.length - 1];
   const activeMainIndex = activePly ? mainline.findIndex((node) => node.id === activePly.id) : -1;
@@ -289,6 +336,9 @@ function GameReview({
 
   const selected = activeMainIndex >= 0 ? records[activeMainIndex] : undefined;
   const clockMs = activePly ? clockByPlyId.get(activePly.id) : undefined;
+  const currentPly = path.length;
+  const totalPlies = tree ? pathToEnd(tree, []).length : 0;
+  const sidePanelStyle = !boardSize.isMobile ? { height: boardSize.size } : undefined;
 
   return (
     <div className={styles.page} data-testid="game-review-page">
@@ -318,6 +368,8 @@ function GameReview({
         ) : null}
       </header>
 
+      {!live ? <ReviewSummary summary={summary} userColor={userColor} /> : null}
+
       {live ? (
         <ReviewLiveSurface
           tree={tree}
@@ -325,16 +377,23 @@ function GameReview({
           position={position}
           userColor={userColor}
           lastMove={lastMove}
-          mainlineLength={mainline.length}
+          opponentName={opponentName}
+          opponentMs={opponentMs}
+          userName={userName}
+          userMs={userMs}
+          currentPly={currentPly}
+          totalPlies={totalPlies}
           onNavigate={navigate}
           onSeek={setPath}
           boardSize={boardSize}
+          sidePanelStyle={sidePanelStyle}
           onExitLive={() => setLive(false)}
         />
       ) : (
         <AnalysisBoard
           boardSize={boardSize}
           dataTestId="review-layout"
+          {...(sidePanelStyle !== undefined ? { sidePanelStyle } : {})}
           boardColumn={
             <BoardPane
               boardSize={boardSize}
@@ -342,10 +401,10 @@ function GameReview({
               userColor={userColor}
               lastMove={lastMove}
               arrows={arrows}
-              currentPly={path.length}
-              totalPlies={mainline.length}
-              onNavigate={navigate}
-              footer={<p className={styles.gameId}>{gameId}</p>}
+              opponentName={opponentName}
+              opponentMs={opponentMs}
+              userName={userName}
+              userMs={userMs}
             />
           }
           bar={
@@ -368,7 +427,6 @@ function GameReview({
                 onEvals={setShowEvals}
                 onEnterLive={() => setLive(true)}
               />
-              <ReviewSummary summary={summary} userColor={userColor} />
               <MoveDetails
                 record={selected}
                 userColor={userColor}
@@ -376,13 +434,21 @@ function GameReview({
                 showLines={showLines}
                 {...(clockMs !== undefined ? { clockMs } : {})}
               />
-              <MoveList
-                tree={tree}
-                path={path}
-                onSeek={setPath}
-                nagOverrides={nagOverrides}
-                {...(showEvals ? { plyEvals: evalByPlyId } : {})}
-              />
+              <MoveListPane>
+                <MoveList
+                  tree={tree}
+                  path={path}
+                  onSeek={setPath}
+                  nagOverrides={nagOverrides}
+                  {...(showEvals ? { plyEvals: evalByPlyId } : {})}
+                />
+              </MoveListPane>
+              <div className={styles.navRow}>
+                <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={navigate} />
+                <span className={styles.plyCounter} data-testid="review-ply">
+                  {currentPly}/{totalPlies}
+                </span>
+              </div>
             </>
           }
         />
@@ -391,30 +457,31 @@ function GameReview({
   );
 }
 
-/** Shared board + navigation column of both Review modes. */
+/** Shared board column of both Review modes: clock bars around the board. */
 function BoardPane({
   boardSize,
   position,
   userColor,
   lastMove,
   arrows,
-  currentPly,
-  totalPlies,
-  onNavigate,
-  footer,
+  opponentName,
+  opponentMs,
+  userName,
+  userMs,
 }: {
   boardSize: UseBoardSize;
   position: ReturnType<typeof positionAtPath>;
   userColor: 'white' | 'black';
   lastMove: readonly [Key, Key] | null;
   arrows: readonly DrawShape[];
-  currentPly: number;
-  totalPlies: number;
-  onNavigate: (target: NavigationTarget) => void;
-  footer?: React.ReactNode;
+  opponentName: string;
+  opponentMs: number | null;
+  userName: string;
+  userMs: number | null;
 }): React.JSX.Element {
   return (
-    <>
+    <div className={styles.boardStack}>
+      <ClockBar name={opponentName} timeMs={opponentMs} dataTestId="review-clock-opponent" />
       <Chessboard
         position={position}
         interactive={false}
@@ -423,9 +490,28 @@ function BoardPane({
         autoShapes={arrows}
         boardSize={boardSize}
       />
-      <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={onNavigate} />
-      {footer}
-    </>
+      <ClockBar name={userName} timeMs={userMs} dataTestId="review-clock-user" />
+    </div>
+  );
+}
+
+/** Player name + remaining time (Lichess-style, clock on the right). */
+function ClockBar({
+  name,
+  timeMs,
+  dataTestId,
+}: {
+  name: string;
+  timeMs: number | null;
+  dataTestId: string;
+}): React.JSX.Element {
+  return (
+    <div className={styles.clockBar} data-testid={dataTestId}>
+      <span className={styles.clockName}>{name}</span>
+      <span className={styles.clockTime} data-testid={`${dataTestId}-time`}>
+        {timeMs === null ? '—' : formatClock(timeMs)}
+      </span>
+    </div>
   );
 }
 
@@ -518,10 +604,16 @@ function ReviewLiveSurface({
   position,
   userColor,
   lastMove,
-  mainlineLength,
+  opponentName,
+  opponentMs,
+  userName,
+  userMs,
+  currentPly,
+  totalPlies,
   onNavigate,
   onSeek,
   boardSize,
+  sidePanelStyle,
   onExitLive,
 }: {
   tree: MoveTree;
@@ -529,10 +621,16 @@ function ReviewLiveSurface({
   position: ReturnType<typeof positionAtPath>;
   userColor: 'white' | 'black';
   lastMove: readonly [Key, Key] | null;
-  mainlineLength: number;
+  opponentName: string;
+  opponentMs: number | null;
+  userName: string;
+  userMs: number | null;
+  currentPly: number;
+  totalPlies: number;
   onNavigate: (target: NavigationTarget) => void;
   onSeek: (path: Path) => void;
   boardSize: UseBoardSize;
+  sidePanelStyle: React.CSSProperties | undefined;
   onExitLive: () => void;
 }): React.JSX.Element {
   const engine = useBrowserAnalysisEngine();
@@ -561,6 +659,7 @@ function ReviewLiveSurface({
     <AnalysisBoard
       boardSize={boardSize}
       dataTestId="review-live-layout"
+      {...(sidePanelStyle !== undefined ? { sidePanelStyle } : {})}
       boardColumn={
         <BoardPane
           boardSize={boardSize}
@@ -568,9 +667,10 @@ function ReviewLiveSurface({
           userColor={userColor}
           lastMove={lastMove}
           arrows={arrows}
-          currentPly={path.length}
-          totalPlies={mainlineLength}
-          onNavigate={onNavigate}
+          opponentName={opponentName}
+          opponentMs={opponentMs}
+          userName={userName}
+          userMs={userMs}
         />
       }
       bar={
@@ -598,8 +698,14 @@ function ReviewLiveSurface({
             bottomColor={userColor}
             sideToMove={sideToMove}
           />
-          <div className={styles.liveMoveList} aria-label="Moves">
+          <MoveListPane>
             <MoveList tree={tree} path={path} onSeek={onSeek} plyEvals={plyEvals} />
+          </MoveListPane>
+          <div className={styles.navRow}>
+            <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={onNavigate} />
+            <span className={styles.plyCounter} data-testid="review-live-ply">
+              {currentPly}/{totalPlies}
+            </span>
           </div>
         </>
       }
@@ -979,4 +1085,26 @@ function clockMapForMainline(
     }
   }
   return map;
+}
+
+/**
+ * Remaining clock for one colour at the position reached after `plies` plies:
+ * the most recent `%clk` recorded for that colour among the plies played, or
+ * the initial time-control base before either player has moved.
+ */
+function remainingClockForColor(
+  plies: number,
+  color: 'white' | 'black',
+  clocks: readonly MoveClock[],
+  fallbackMs: number | null,
+): number | null {
+  let bestPly = -1;
+  let bestMs: number | null = null;
+  for (const clock of clocks) {
+    if (clock.color === color && clock.ply < plies && clock.ply > bestPly) {
+      bestPly = clock.ply;
+      bestMs = clock.clockMs;
+    }
+  }
+  return bestPly >= 0 ? bestMs : fallbackMs;
 }

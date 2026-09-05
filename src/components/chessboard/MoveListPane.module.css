@@ -1,0 +1,15 @@
+.pane {
+  flex: 1 1 auto;
+  min-height: 80px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  background: var(--color-surface, white);
+}
+
+.pane > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}

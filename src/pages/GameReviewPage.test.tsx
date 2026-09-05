@@ -282,6 +282,39 @@ describe('Game Review page (Feature 008)', () => {
     expect(screen.getByTestId('review-depth')).toHaveTextContent('Depth 21');
   });
 
+  it('shows per-player clock bars above and below the board', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    // Fallback to the time-control base before any %clk move is played.
+    const opponent = screen.getByTestId('review-clock-opponent-time');
+    const user = screen.getByTestId('review-clock-user-time');
+    expect(opponent).toHaveTextContent(/^\d+:\d\d$/);
+    expect(user).toHaveTextContent(/^\d+:\d\d$/);
+    expect(screen.getByTestId('review-clock-opponent').textContent).toContain('bulletpete');
+  });
+
+  it('supports keyboard navigation through the moves (arrow keys)', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const user = userEvent.setup();
+    const activeSan = () =>
+      screen.getAllByTestId('move-list-move').find((b) => b.getAttribute('aria-current') === 'step')
+        ?.dataset.san;
+
+    await user.keyboard('{ArrowRight}');
+    expect(activeSan()).toBe('f3');
+    await user.keyboard('{ArrowRight}');
+    expect(activeSan()).toBe('e5');
+    await user.keyboard('{ArrowLeft}');
+    expect(activeSan()).toBe('f3');
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}');
+    expect(activeSan()).toBeUndefined();
+  });
+
   it('offers a distinct live-analysis mode that never overwrites stored records', async () => {
     await seedCompleted();
     renderReview(null);
