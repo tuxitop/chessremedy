@@ -5,11 +5,13 @@ import { gameLibraryQueryFor } from '@/infrastructure/db/game-library-query';
 import {
   DEFAULT_LIBRARY_FILTERS,
   filtersFromParams,
+  isCustomTimeFrame,
   libraryRowOf,
   matchesLibraryFilters,
   paramsFromFilters,
   resolveTimeFrame,
   sortLibraryRows,
+  validateTimeFrame,
   type GameLibraryFilters,
   type LibraryGameRow,
 } from '@/domain/gameLibrary';
@@ -58,6 +60,17 @@ export function useGameLibrary(refreshKey: number): UseGameLibrary {
     const id = ++requestId.current;
     let cancelled = false;
     void (async () => {
+      // An incomplete or invalid custom range has no queryable bounds yet
+      // (its dates are still being typed). Skip the query and keep the
+      // current rows; the toolbar shows the inline validation hint instead of
+      // a load error.
+      if (isCustomTimeFrame(filters.timeFrame) && validateTimeFrame(filters.timeFrame) !== null) {
+        if (!cancelled && requestId.current === id) {
+          setError(null);
+          setLoading(false);
+        }
+        return;
+      }
       const window = resolveTimeFrame(filters.timeFrame, Date.now());
       const query = gameLibraryQueryFor(filters, window);
       const [summaries, storedCount] = await Promise.all([

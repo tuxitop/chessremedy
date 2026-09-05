@@ -23,7 +23,6 @@ export function GamesPage({
   analysisService,
 }: GamesPageProps = {}): React.JSX.Element {
   const [refreshKey, setRefreshKey] = useState(0);
-  const [importOpen, setImportOpen] = useState(false);
   const [defaultAnalysisService, setDefaultAnalysisService] = useState<AnalysisServiceLike | null>(
     null,
   );
@@ -54,19 +53,16 @@ export function GamesPage({
     <div className={styles.page} data-testid="games-page">
       <h1 className={styles.heading}>Game Library</h1>
 
-      <details
-        className={styles.importSection}
-        open={importOpen}
-        onToggle={(event) => setImportOpen((event.target as HTMLDetailsElement).open)}
-      >
-        <summary data-testid="import-toggle">Import games…</summary>
-        <div className={styles.imports} data-testid="games-imports">
-          <ImportPanel provider="lichess" service={service} onImported={refresh} />
-          <ImportPanel provider="chesscom" service={service} onImported={refresh} />
-        </div>
-      </details>
-
-      <GameLibrary refreshKey={refreshKey} analysisService={resolvedAnalysis} />
+      <GameLibrary
+        refreshKey={refreshKey}
+        analysisService={resolvedAnalysis}
+        importPanels={
+          <>
+            <ImportPanel provider="lichess" service={service} onImported={refresh} />
+            <ImportPanel provider="chesscom" service={service} onImported={refresh} />
+          </>
+        }
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
@@ -158,6 +158,35 @@ describe('GamesPage (Game Library)', () => {
     await waitFor(() =>
       expect(screen.queryByTestId('library-selection-bar')).not.toBeInTheDocument(),
     );
+  });
+
+  it('does not error while a custom range is incomplete and filters once valid', async () => {
+    await seedGames(['cc-bullet-blunder', 'cc-blitz-clean']);
+    renderGames();
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
+
+    // Selecting Custom with empty dates must not raise a load error.
+    await user.selectOptions(screen.getByTestId('filter-time'), 'custom');
+    await waitFor(() => expect(screen.queryByTestId('library-error')).not.toBeInTheDocument());
+    expect(screen.getAllByTestId('game-row')).toHaveLength(2);
+    expect(screen.getByTestId('filter-custom-range')).toHaveTextContent(
+      'Choose both a start and an end date.',
+    );
+
+    // Completing a valid range runs the query without an error.
+    fireEvent.change(screen.getByTestId('filter-date-from'), {
+      target: { value: '2026-01-01' },
+    });
+    fireEvent.change(screen.getByTestId('filter-date-to'), {
+      target: { value: '2027-12-31' },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('filter-custom-range')).not.toHaveTextContent(
+        'Choose both a start and an end date.',
+      ),
+    );
+    expect(screen.queryByTestId('library-error')).not.toBeInTheDocument();
   });
 });
 

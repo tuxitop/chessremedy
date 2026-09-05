@@ -89,6 +89,9 @@ export function validateTimeFrame(frame: TimeFrame): string | null {
   if (!isCustomTimeFrame(frame)) {
     return null;
   }
+  if (frame.from === '' || frame.to === '') {
+    return 'Choose both a start and an end date.';
+  }
   if (!isValidIsoDate(frame.from) || !isValidIsoDate(frame.to)) {
     return 'Invalid date — use yyyy-mm-dd.';
   }
@@ -135,10 +138,10 @@ export function toExclusiveQueryInstants(window: TimeWindow): {
   playedBefore?: string;
 } {
   const query: { playedAfter?: string; playedBefore?: string } = {};
-  if (window.fromMs !== null) {
+  if (window.fromMs !== null && Number.isFinite(window.fromMs)) {
     query.playedAfter = new Date(window.fromMs - 1).toISOString();
   }
-  if (window.toMs !== null) {
+  if (window.toMs !== null && Number.isFinite(window.toMs)) {
     query.playedBefore = new Date(window.toMs + 1).toISOString();
   }
   return query;
