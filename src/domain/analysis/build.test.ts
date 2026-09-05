@@ -62,7 +62,7 @@ describe('buildMoveAnalyses', () => {
       expect(record.gameId).toBe(game.id);
       expect(record.ply).toBe(index);
       expect(record.engine).toBe(ENGINE);
-      expect(record.classificationVersion).toBe(1);
+      expect(record.classificationVersion).toBe(2);
       expect(record.gamePhaseVersion).toBe(1);
       expect(record.missedTactic).toBe(false);
       expect(record.detectionVersion).toBeNull();

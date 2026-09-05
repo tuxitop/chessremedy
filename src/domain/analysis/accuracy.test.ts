@@ -11,8 +11,8 @@ const GAME = 'lichess:acc';
 const ANALYSIS = 'a-acc';
 
 describe('MOVE_ACCURACY_VERSION (ADR-024)', () => {
-  it('starts at version 1 and is prepared for future aggregate storage', () => {
-    expect(MOVE_ACCURACY_VERSION).toBe(1);
+  it('is version 2 after the Lichess AccuracyPercent port (V1 arithmetic mean)', () => {
+    expect(MOVE_ACCURACY_VERSION).toBe(2);
   });
 });
 
@@ -22,23 +22,23 @@ describe('moveAccuracy (ADR-024)', () => {
     expect(moveAccuracy({ cp: 10, mate: null }, { cp: 10, mate: null })).toBeCloseTo(100, 2);
   });
 
-  it('matches the ADR-024 Lichess formula on known eval pairs', () => {
-    // ADR-024: accuracy = clamp(0,100, 103.1668·exp(−0.04354·wpLoss) − 3.1669)
-    // with wpLoss = clamp(0,100, winPercent(before) − winPercent(after)) and
-    // winPercent(cp) = 50 + 50·(2/(1+e^(−0.00368208·cp)) − 1).
+  it('matches the Lichess fromWinPercents formula on known eval pairs', () => {
+    // accuracy = A·e^(−K·wpLoss) + B + 1 (the "uncertainty bonus"), clamped,
+    // with cp clamped to ±1000 before the logistic (Lichess CEILING).
     //
-    // (10 → 0): wpLoss ≈ 0.92 ⇒ accuracy ≈ 95.947 (ordinary `good`).
-    expect(moveAccuracy({ cp: 10, mate: null }, { cp: 0, mate: null })).toBeCloseTo(95.947, 3);
-    // (20 → −10): wpLoss ≈ 2.76 ⇒ accuracy ≈ 88.316 (an inaccuracy).
-    expect(moveAccuracy({ cp: 20, mate: null }, { cp: -10, mate: null })).toBeCloseTo(88.316, 3);
-    // (0 → −1000): wpLoss ≈ 47.5 ⇒ accuracy ≈ 9.850 (a blunder).
-    expect(moveAccuracy({ cp: 0, mate: null }, { cp: -1000, mate: null })).toBeCloseTo(9.85, 3);
+    // (10 → 0): wpLoss ≈ 0.92 ⇒ accuracy ≈ 96.947 (ordinary `good`).
+    expect(moveAccuracy({ cp: 10, mate: null }, { cp: 0, mate: null })).toBeCloseTo(96.947, 3);
+    // (20 → −10): wpLoss ≈ 2.76 ⇒ accuracy ≈ 89.315.
+    expect(moveAccuracy({ cp: 20, mate: null }, { cp: -10, mate: null })).toBeCloseTo(89.315, 3);
+    // (0 → −1000): wpLoss ≈ 47.5 ⇒ accuracy ≈ 10.847 (a blunder).
+    expect(moveAccuracy({ cp: 0, mate: null }, { cp: -1000, mate: null })).toBeCloseTo(10.847, 3);
   });
 
-  it('treats a forced mate as ±10000 cp for the conversion', () => {
-    // 0 vs mate-against-mover (−10000 → ~0% win) ⇒ accuracy ≈ 8.530. If mate
-    // were ignored this would be ~100, so the assertion proves the handling.
-    expect(moveAccuracy({ cp: 0, mate: null }, { cp: null, mate: -1 })).toBeCloseTo(8.53, 3);
+  it('clamps a forced mate to the ±1000 ceiling for the conversion', () => {
+    // 0 vs mate-against-mover behaves like 0 vs −1000 cp (Lichess CEILING):
+    // wpLoss ≈ 47.5 ⇒ accuracy ≈ 10.847. If mate were ignored this would be
+    // ~100, so the assertion proves the handling.
+    expect(moveAccuracy({ cp: 0, mate: null }, { cp: null, mate: -1 })).toBeCloseTo(10.847, 3);
     // A mating move for the mover (mate-in-1 before and after) stays ~100.
     expect(moveAccuracy({ cp: null, mate: 1 }, { cp: null, mate: 1 })).toBeCloseTo(100, 2);
   });
@@ -55,21 +55,21 @@ describe('moveAccuracy (ADR-024)', () => {
   });
 });
 
-describe('gameAccuracy (ADR-024)', () => {
-  it('averages only the user moves with a usable eval pair (fixture)', () => {
+describe('gameAccuracy (ADR-024 / Lichess gameAccuracy)', () => {
+  it('combines the user moves with a usable eval pair (fixture)', () => {
     const records = ordinaryGameRecords(GAME, ANALYSIS);
     const result = gameAccuracy(records, 'white');
-    // Six White plies, five ordinary ~95.95 and one inaccuracy ~88.32.
+    // Six White plies; the volatility-weighted + harmonic blend (not the
+    // arithmetic mean) drives the figure.
     expect(result.moves).toBe(6);
-    expect(result.accuracy).toBeCloseTo(94.675, 2);
+    expect(result.accuracy).toBeCloseTo(93.417, 2);
   });
 
   it('ignores the opponent moves entirely', () => {
     const records = ordinaryGameRecords(GAME, ANALYSIS);
     const black = gameAccuracy(records, 'black');
-    // Six Black plies: five ordinary ~95.95 and one mistake ~53.83.
     expect(black.moves).toBe(6);
-    expect(black.accuracy).toBeCloseTo(88.927, 2);
+    expect(black.accuracy).toBeCloseTo(84.527, 2);
   });
 
   it('is deterministic over the same fixture', () => {
@@ -115,17 +115,17 @@ describe('gameAccuracy (ADR-024)', () => {
     const white = gameAccuracy(records, 'white');
     const whiteMoves = records.filter((r) => r.side === 'white');
     expect(white.moves).toBe(whiteMoves.length);
-    // (0 → −30) ≈ 88.323 and (0 → −120) ≈ 61.102 ⇒ mean ≈ 74.712.
-    expect(white.accuracy).toBeCloseTo(74.712, 3);
+    expect(white.accuracy).toBeCloseTo(67.681, 3);
   });
 
   it('reports accuracy on the blunder review fixture (opponent has the best move)', () => {
     const records = blunderGameRecords(GAME, ANALYSIS);
-    // White played 1.f3 (good, ≈95.947) and 2.g4 (blunder: allows mate,
-    // ≈8.530) ⇒ mean ≈ 52.239.
+    // White played 1.f3 (good, ≈96.947) and 2.g4 (blunder: allows mate,
+    // ≈10.847). The volatility-weighted + harmonic blend weights the
+    // mate-blunder heavily → far below the ~54 arithmetic mean.
     const white = gameAccuracy(records, 'white');
     expect(white.moves).toBe(2);
-    expect(white.accuracy).toBeCloseTo(52.239, 3);
+    expect(white.accuracy).toBeCloseTo(30.337, 3);
     expect(white.accuracy).toBeLessThan(60);
   });
 });

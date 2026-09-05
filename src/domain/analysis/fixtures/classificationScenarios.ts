@@ -23,7 +23,7 @@ const D5: PlayedMove = { san: 'd5', uci: 'd7d5' };
 const E6: PlayedMove = { san: 'e6', uci: 'e7e6' };
 const NF6: PlayedMove = { san: 'Nf6', uci: 'g8f6' };
 
-/** Eval pair implying `wpLoss < 2` (ordinary, ADR-023 `good`). */
+/** Eval pair implying `wpLoss < 5` (ordinary, ADR-023 V2 `good`). */
 const ORDINARY_EVAL = {
   evalBefore: { cp: 10, mate: null } as const,
   evalAfter: { cp: 0, mate: null } as const,
@@ -110,19 +110,19 @@ export function ordinaryGameRecords(gameId: string, analysisId: string): readonl
     goodMove(3, 'black', NF6, D5),
     goodMove(4, 'white', NC3, D4),
     goodMove(5, 'black', E6, D5),
-    // User inaccuracy: +20 → −10 is a 2.76% win loss (2 ≤ loss < 10).
+    // User inaccuracy: 0 → −80 is a ~7.3% win loss (5 ≤ loss < 10).
     makeMove(6, {
       ...common,
       side: 'white',
       playedMove: NF3,
       bestMove: NC3,
-      evalBefore: { cp: 20, mate: null },
-      evalAfter: { cp: -10, mate: null },
+      evalBefore: { cp: 0, mate: null },
+      evalAfter: { cp: -80, mate: null },
       classification: 'inaccuracy',
     }),
     goodMove(7, 'black', NF6, D5),
     goodMove(8, 'white', NF3, C4),
-    // Opponent mistake: +30 → −120 is a 13.6% win loss (10 ≤ loss < 20).
+    // Opponent mistake: +30 → −120 is a 13.6% win loss (10 ≤ loss < 15).
     makeMove(9, {
       ...common,
       side: 'black',

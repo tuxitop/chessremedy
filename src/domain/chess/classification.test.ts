@@ -5,7 +5,7 @@ import {
   CLASSIFICATION_VERSION,
   cpValueOf,
   winPercentFromCp,
-  WPLOSS_GOOD,
+  WPLOSS_BLUNDER,
   WPLOSS_INACCURACY,
   WPLOSS_MISTAKE,
 } from './classification';
@@ -34,15 +34,20 @@ function cp(mate: number | null, cp: number | null): EvalCpMate {
 }
 
 describe('classification thresholds & constants', () => {
-  it('pins the canonical versions and WDL thresholds', () => {
-    expect(CLASSIFICATION_VERSION).toBe(1);
-    expect([WPLOSS_GOOD, WPLOSS_INACCURACY, WPLOSS_MISTAKE]).toEqual([2, 10, 20]);
+  it('pins the canonical versions and Lichess win-percentage thresholds', () => {
+    expect(CLASSIFICATION_VERSION).toBe(2);
+    // Lichess winningChanceJudgements 0.10 / 0.20 / 0.30 → win% 5 / 10 / 15.
+    expect([WPLOSS_INACCURACY, WPLOSS_MISTAKE, WPLOSS_BLUNDER]).toEqual([5, 10, 15]);
   });
 
-  it('clamps win percent to [0, 100] and treats mate as ±10000', () => {
+  it('clamps win percent to [0, 100] and to ±1000 cp (Lichess CEILING)', () => {
     expect(winPercentFromCp(0)).toBeCloseTo(50, 1);
-    expect(winPercentFromCp(10000)).toBeGreaterThan(99);
-    expect(winPercentFromCp(-10000)).toBeLessThan(1);
+    // cp is capped at ±1000 before the logistic: 10000 behaves like 1000.
+    expect(winPercentFromCp(10000)).toBeCloseTo(winPercentFromCp(1000), 6);
+    expect(winPercentFromCp(10000)).toBeGreaterThan(90);
+    expect(winPercentFromCp(-10000)).toBeCloseTo(winPercentFromCp(-1000), 6);
+    expect(winPercentFromCp(-10000)).toBeLessThan(10);
+    // cpValueOf still exposes the raw mate magnitude used for cp math.
     expect(cpValueOf(cp(3, null))).toBe(10000);
     expect(cpValueOf(cp(-2, null))).toBe(-10000);
     expect(cpValueOf(cp(null, 40))).toBe(40);
@@ -59,7 +64,7 @@ describe('classifyMove (WDL path)', () => {
     expect(classifyMove({ ...base, topCpValues: [30, 27] })).toBe('good');
   });
 
-  it('classifies a 15-point win-percentage loss as mistake (ADR-023 worked example)', () => {
+  it('classifies a 13.6-point win-percentage loss as mistake (10 ≤ loss < 15)', () => {
     // evalBefore +30 → 52.8% ; evalAfter -120 → 39.1% ⇒ wpLoss ≈ 13.6.
     expect(classifyMove(inputs())).toBe('mistake');
   });
@@ -69,14 +74,25 @@ describe('classifyMove (WDL path)', () => {
     expect(classifyMove(base)).toBe('good');
   });
 
-  it('bands a ~4-point loss as inaccuracy', () => {
+  it('bands a ~6.5-point loss as inaccuracy (5 ≤ loss < 10)', () => {
     const base = inputs({ evalAfter: { cp: -40, mate: null } });
     expect(classifyMove(base)).toBe('inaccuracy');
   });
 
-  it('classifies a decisive loss as blunder', () => {
+  it('classifies a decisive loss as blunder (≥ 15)', () => {
     const base = inputs({ evalAfter: { cp: -1000, mate: null } });
     expect(classifyMove(base)).toBe('blunder');
+  });
+
+  it('bands a big win-percentage swing as blunder and a 13.6-point one as mistake', () => {
+    // winPercent(200) ≈ 67.6 ; winPercent(-200) ≈ 32.4 ⇒ loss ≈ 35 → blunder.
+    const blunder = inputs({
+      evalBefore: { cp: 200, mate: null },
+      evalAfter: { cp: -200, mate: null },
+    });
+    expect(classifyMove(blunder)).toBe('blunder');
+    // The ADR worked-example 13.6-point loss is a mistake (10 ≤ loss < 15).
+    expect(classifyMove(inputs())).toBe('mistake');
   });
 
   it('caps a forced move at mistake', () => {

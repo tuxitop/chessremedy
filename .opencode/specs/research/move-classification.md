@@ -1,5 +1,16 @@
 # Move Classification Research
 
+> **Revision (2026-09-06).** The "Lichess bands" in §2 and the threshold
+> table in §5 were **wrong**: they were invented by inverting the accuracy
+> curve and do not match Lichess. Lichess's actual classifier is
+> `modules/tree/src/main/Advice.scala` (`CpAdvice.winningChanceJudgements`):
+> a move is Inaccuracy / Mistake / Blunder when the mover's **winning-chance
+> loss ≥ 0.10 / 0.20 / 0.30** on the `[−1, 1]` logistic scale (≈ 5 / 10 / 15
+> win%), and nothing below 0.10 is annotated; cp is clamped to ±1000 before
+> the logistic and best moves are never labelled. ADR-023 (V2) and the
+> implementation now use these bands. The worked examples below that rely on
+> the old bands are historical only.
+
 ## Question
 
 How should ChessRemedy classify each analyzed move into one of:

@@ -70,7 +70,7 @@ describe('buildAnalysisSummary (counts + accuracy over canonical fixtures)', () 
     expect(built.userMoves).toBe(6);
     expect(built.totalMoves).toBe(12);
     expect(built.accuracyMoves).toBe(6);
-    expect(built.accuracy).toBeCloseTo(94.675, 2);
+    expect(built.accuracy).toBeCloseTo(93.417, 2);
   });
 
   it('reports the blunder-review fixture counts and accuracy (user White)', () => {
@@ -84,7 +84,9 @@ describe('buildAnalysisSummary (counts + accuracy over canonical fixtures)', () 
     });
     expect(built.userMoves).toBe(2);
     expect(built.accuracyMoves).toBe(2);
-    expect(built.accuracy).toBeCloseTo(52.239, 3);
+    // Lichess gameAccuracy: the volatility-weighted + harmonic blend weights
+    // the mate-blunder heavily, so this is far below the arithmetic mean.
+    expect(built.accuracy).toBeCloseTo(30.337, 3);
   });
 
   it('counts only the white-user side', () => {

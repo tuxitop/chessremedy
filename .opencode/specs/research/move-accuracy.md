@@ -1,5 +1,17 @@
 # Move Accuracy Research
 
+> **Revision (2026-09-06).** §2/§6/§9 claimed Lichess's per-game accuracy is
+> the unweighted arithmetic mean of per-move accuracies and that per-move
+> accuracy uses the rounded constants. Verified against
+> `modules/analyse/src/main/AccuracyPercent.scala` (commit 5013970), Lichess's
+> per-game figure is the **mean of the volatility-weighted mean and the
+> harmonic mean** of per-move accuracies (`gameAccuracy`, with window =
+> `(n/10).squeeze(2,8)` and weights = window Win% stdev `.squeeze(0.5,12)`),
+> and per-move accuracy uses the full constants
+> `103.1668100711649·e^(−0.04354415386753951·Δ) − 3.166924740191411` plus a
+> `+1` uncertainty bonus; cp is clamped to ±1000 before the logistic. ADR-024
+> (V2) and `domain/analysis/accuracy.ts` now implement the real method.
+
 ## Question
 
 How should ChessRemedy measure a player's move accuracy across a game, a

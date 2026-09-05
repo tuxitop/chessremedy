@@ -48,7 +48,7 @@ export {
   cpValueOf,
   isBestMoveTie,
   winPercentFromCp,
-  WPLOSS_GOOD,
+  WPLOSS_BLUNDER,
   WPLOSS_INACCURACY,
   WPLOSS_MISTAKE,
 } from './classification';

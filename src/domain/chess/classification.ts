@@ -4,7 +4,8 @@
  * Feature 008 applies this while producing `MoveAnalysis`; Features 009/010/014
  * consume the persisted result. No later feature redefines these rules. The
  * algorithm is deterministic for a fixed input tuple and every output record
- * carries `classificationVersion` (V1 = 1).
+ * carries `classificationVersion` (currently 2 after the Lichess-band
+ * calibration).
  *
  * Inputs arrive from the Feature-008 pipeline: for a move from `positionFen`,
  * `evalBefore` is the engine's best evaluation from the mover's perspective and
@@ -14,18 +15,48 @@
 
 import type { GamePhase, EvalCpMate, MoveClassification, PlayedMove, Wdl } from './analysis';
 
-export const CLASSIFICATION_VERSION = 1;
+export const CLASSIFICATION_VERSION = 2;
 
-/** WDL-path win-percentage-loss thresholds (ADR-023). */
-export const WPLOSS_GOOD = 2;
-export const WPLOSS_INACCURACY = 10;
-export const WPLOSS_MISTAKE = 20;
+/**
+ * Winning-percentage-loss thresholds (Lichess `Advice.scala` —
+ * `winningChanceJudgements` on the `[−1, 1]` winning-chance scale converted to
+ * win-percentage points): inaccuracy ≥ 0.10, mistake ≥ 0.20, blunder ≥ 0.30.
+ * Lichess does not annotate losses below 0.10 (V1 keeps those as `good`).
+ * Prior to V2 the inaccuracy floor was 2 and the blunder floor 20 — those
+ * values were derived by inverting the accuracy curve and did not match
+ * Lichess, inflating inaccuracy counts and deflating blunders.
+ */
+export const WPLOSS_INACCURACY = 5;
+export const WPLOSS_MISTAKE = 10;
+export const WPLOSS_BLUNDER = 15;
 
 /** Best-move-tie delta in centipawns (ADR-023 special case). */
 export const BEST_TIE_CP = 5;
 
+/**
+ * Centipawn ceiling applied before the logistic win-percentage conversion,
+ * matching Lichess (`scalachess eval.scala` `Eval.Cp.CEILING = 1000`). A forced
+ * mate is treated as ±1000 through this ceiling.
+ */
+const CP_CEILING = 1_000;
+
 /** Centipawn evaluation used when an evaluation is a forced mate (ADR-023). */
 const MATE_CP = 10_000;
+
+/**
+ * Centipawn value of an evaluation for classification math: a mate distance is
+ * treated as ±10000 (ADR-023); a missing cp falls back to 0.
+ */
+export function cpValueOf(evaluation: EvalCpMate): number {
+  if (evaluation.mate !== null) {
+    return evaluation.mate > 0 ? MATE_CP : -MATE_CP;
+  }
+  return evaluation.cp ?? 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
 
 /**
  * The Chess.com phase-dependent centipawn thresholds used by the `fast`
@@ -54,26 +85,13 @@ export interface ClassificationInputs {
 }
 
 /**
- * Centipawn value of an evaluation for classification math: a mate distance is
- * treated as ±10000 (ADR-023); a missing cp falls back to 0.
- */
-export function cpValueOf(evaluation: EvalCpMate): number {
-  if (evaluation.mate !== null) {
-    return evaluation.mate > 0 ? MATE_CP : -MATE_CP;
-  }
-  return evaluation.cp ?? 0;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-/**
  * Lichess logistic win-percentage curve (ADR-023), clamped to `[0, 100]`.
- * Centipawns are from the side to move.
+ * Centipawns are from the side to move and are first clamped to ±1000
+ * (Lichess `Eval.Cp.CEILING`), so mate scores behave like ±1000.
  */
 export function winPercentFromCp(cp: number): number {
-  const win = 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+  const bounded = clamp(cp, -CP_CEILING, CP_CEILING);
+  const win = 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * bounded)) - 1);
   return clamp(win, 0, 100);
 }
 
@@ -138,13 +156,13 @@ export function classifyMove(inputs: ClassificationInputs): MoveClassification {
 }
 
 function classifyWpLoss(wpLoss: number, legalMovesCount: number): MoveClassification {
-  if (wpLoss >= WPLOSS_MISTAKE) {
+  if (wpLoss >= WPLOSS_BLUNDER) {
     return legalMovesCount === 1 ? 'mistake' : 'blunder';
   }
-  if (wpLoss >= WPLOSS_INACCURACY) {
+  if (wpLoss >= WPLOSS_MISTAKE) {
     return 'mistake';
   }
-  if (wpLoss >= WPLOSS_GOOD) {
+  if (wpLoss >= WPLOSS_INACCURACY) {
     return 'inaccuracy';
   }
   return 'good';
