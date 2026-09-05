@@ -231,8 +231,9 @@ export class DexieGamesRepository implements GamesRepository {
   /**
    * Batch delete inside one transaction (Game Library). Game-scoped derived
    * rows follow their source game (ARCHITECTURE.md §7): Feature-008 analysis
-   * records and analysis jobs are removed here. The independent FEN-keyed
-   * engine cache (ADR-018) is deliberately NOT touched.
+   * records and analysis jobs plus Feature-010 per-analysis summaries and
+   * puzzle candidates are removed here. The independent FEN-keyed engine
+   * cache (ADR-018) is deliberately NOT touched.
    */
   async deleteGames(ids: readonly GameId[]): Promise<void> {
     if (ids.length === 0) {
@@ -244,10 +245,14 @@ export class DexieGamesRepository implements GamesRepository {
       this.database.games,
       this.database.analyses,
       this.database.analysisJobs,
+      this.database.analysisSummaries,
+      this.database.puzzleCandidates,
       async () => {
         await this.database.games.bulkDelete(gameIds);
         await this.database.analyses.where('gameId').anyOf(gameIds).delete();
         await this.database.analysisJobs.where('gameId').anyOf(gameIds).delete();
+        await this.database.analysisSummaries.where('gameId').anyOf(gameIds).delete();
+        await this.database.puzzleCandidates.where('sourceGameId').anyOf(gameIds).delete();
       },
     );
   }

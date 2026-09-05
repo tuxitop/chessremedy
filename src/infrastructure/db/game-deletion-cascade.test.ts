@@ -3,10 +3,45 @@ import { db } from './database';
 import { gamesRepository } from './games-repository';
 import { analysesRepository } from './analysis-repository';
 import { analysisJobsRepository } from './analysis-jobs-repository';
+import { summariesRepository } from './summaries-repository';
+import { puzzleCandidatesRepository } from './candidates-repository';
 import { DexieEngineAnalysisCache } from './engine-cache-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { makeRecords, TEST_ENGINE } from '@/domain/analysis/test-support';
 import { createAnalysisJob } from '@/domain/analysis';
+import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
+import { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from '@/domain/tactics';
+
+function candidateRow(gameId: string, analysisId: string, sourcePly: number) {
+  return {
+    id: `${analysisId}:${sourcePly}`,
+    analysisId,
+    sourceGameId: gameId,
+    sourcePly,
+    startingFen: 'r1bqkb1r/pppp1pp1/2n2n1p/4p1N1/2B1P3/8/PPPP1PPP/RNBQK2R w KQkq - 0 5',
+    userMovePlayed: 'h7h6',
+    bestMove: 'g5f7',
+    bestPv: ['g5f7', 'd8e7', 'f7h8'],
+    wpLoss: 42.3,
+    evalCpBefore: 300,
+    evalCpAfterUserMove: -180,
+    candidateGenerationVersion: CANDIDATE_GENERATION_VERSION,
+    createdAt: 1_700_000_000_000,
+    tacticalObjective: 'winning_material',
+    candidateSolutionLength: 3,
+    verificationMetadata: {
+      engineName: TEST_ENGINE.engineName,
+      engineVersion: TEST_ENGINE.engineVersion,
+      engineBuild: TEST_ENGINE.engineBuild,
+      analysisVersion: 1,
+      verificationDepth: 22,
+      verificationTimestamp: 1_700_000_000_000,
+      wdlAfterBestLine: { w: 950, d: 40, l: 10 },
+    },
+    detectionVersion: DETECTION_VERSION,
+    verificationStatus: 'verified',
+  } as const;
+}
 
 describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
   beforeEach(async () => {
@@ -14,15 +49,53 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     await db.analyses.clear();
     await db.analysisJobs.clear();
     await db.positionAnalysisCache.clear();
+    await db.analysisSummaries.clear();
+    await db.puzzleCandidates.clear();
   });
 
-  it('removes game-scoped MoveAnalysis and jobs but retains the FEN engine cache', async () => {
+  it('removes game-scoped MoveAnalysis, jobs, summaries and candidates but retains the engine cache', async () => {
     const game = fixtureGame('cc-blitz-clean');
     await gamesRepository.saveGame(game);
+    const other = fixtureGame('li-rapid-clean');
+    await gamesRepository.saveGame(other);
 
     const job = createAnalysisJob(game.id, TEST_ENGINE, 14, 1);
     await analysisJobsRepository.putJob(job);
     await analysesRepository.replaceAnalysis(makeRecords(game.id, job.id, 14));
+
+    // Feature-010 derived rows for the deleted game…
+    const summary = buildAnalysisSummary(makeRecords(game.id, job.id, 14), game.userColor, {
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+    });
+    await summariesRepository.putForAnalysis({
+      analysisId: job.id,
+      gameId: game.id,
+      userColor: game.userColor,
+      updatedAt: 1,
+      ...summary,
+    });
+    await puzzleCandidatesRepository.bulkPutForAnalysis([
+      candidateRow(game.id, job.id, 7),
+      candidateRow(game.id, job.id, 9),
+    ]);
+
+    // …and identical rows for a different game that must survive.
+    const otherJob = createAnalysisJob(other.id, TEST_ENGINE, 6, 1);
+    const otherSummary = buildAnalysisSummary(
+      makeRecords(other.id, otherJob.id, 6),
+      other.userColor,
+      { detectionState: 'queued' },
+    );
+    await summariesRepository.putForAnalysis({
+      analysisId: otherJob.id,
+      gameId: other.id,
+      userColor: other.userColor,
+      updatedAt: 1,
+      ...otherSummary,
+    });
+    await puzzleCandidatesRepository.bulkPutForAnalysis([candidateRow(other.id, otherJob.id, 1)]);
 
     const cache = new DexieEngineAnalysisCache();
     await cache.put('shared-fen-key', {
@@ -38,10 +111,18 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
 
     await gamesRepository.deleteGames([game.id]);
 
-    expect(await db.games.count()).toBe(0);
+    expect(await db.games.count()).toBe(1);
     expect(await analysesRepository.countForGame(game.id)).toBe(0);
     expect(await analysisJobsRepository.listByGame(game.id)).toHaveLength(0);
+    expect(await summariesRepository.getForAnalysis(job.id)).toBeUndefined();
+    expect(await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id)).toEqual([]);
     // The engine cache is position-keyed and shared — never purged.
     expect(await cache.count()).toBe(1);
+    // Another game's derived rows are untouched.
+    expect(await gamesRepository.hasGame(other.id)).toBe(true);
+    expect(await summariesRepository.getForAnalysis(otherJob.id)).toBeDefined();
+    expect(
+      await puzzleCandidatesRepository.listForGameAndAnalysis(other.id, otherJob.id),
+    ).toHaveLength(1);
   });
 });

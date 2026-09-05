@@ -44,7 +44,7 @@ describe('v2 → v3 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(6);
+      expect(migrated.verno).toBe(7);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -52,6 +52,8 @@ describe('v2 → v3 schema migration', () => {
         'analysisJobs',
         'analyses',
         'positionAnalysisCache',
+        'analysisSummaries',
+        'puzzleCandidates',
       ]);
 
       const theme = await migrated.settings.get('theme');

@@ -6,11 +6,14 @@ import {
   applyV4Schema,
   applyV5Schema,
   applyV6Schema,
+  applyV7Schema,
 } from './schema';
 import type { GameRow } from './games-repository';
 import type { AnalysisJob } from '@/domain/analysis';
 import type { MoveAnalysis } from '@/domain/chess';
 import type { EngineCacheRow } from './engine-cache-repository';
+import type { AnalysisSummaryRow } from './summaries-repository';
+import type { PuzzleCandidateRow } from './candidates-repository';
 import { PERSISTENCE_SCHEMA_VERSION } from '@/config/app-config';
 import type { ImportJob } from '@/domain/import/job';
 
@@ -30,6 +33,10 @@ export class ChessRemedyDatabase extends Dexie {
   analysisJobs!: Table<AnalysisJob, string>;
   /** ADR-018 FEN-keyed engine cache (independent of games). */
   positionAnalysisCache!: Table<EngineCacheRow, string>;
+  /** Feature-010 per-analysis summaries (schema v7), keyed by analysis id. */
+  analysisSummaries!: Table<AnalysisSummaryRow, string>;
+  /** Feature-010 puzzle candidates (schema v7), keyed `[analysisId, sourcePly]`. */
+  puzzleCandidates!: Table<PuzzleCandidateRow, [string, number]>;
 
   constructor(name = 'chessremedy') {
     super(name);
@@ -40,14 +47,15 @@ export class ChessRemedyDatabase extends Dexie {
     applyV4Schema(this);
     applyV5Schema(this);
     applyV6Schema(this);
+    applyV7Schema(this);
   }
 }
 
 export const db = new ChessRemedyDatabase();
 
-if (PERSISTENCE_SCHEMA_VERSION !== 6) {
+if (PERSISTENCE_SCHEMA_VERSION !== 7) {
   throw new Error(
-    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v6. ` +
+    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v7. ` +
       `Bump PERSISTENCE_SCHEMA_VERSION in app-config.ts and add a new schema module ` +
       `when extending the database.`,
   );
