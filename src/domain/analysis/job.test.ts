@@ -3,6 +3,7 @@ import type { EngineMetadata } from '@/domain/chess';
 import {
   analysisJobId,
   createAnalysisJob,
+  gameAnalysisConfigFingerprint,
   jobForRun,
   markCancelled,
   markCompleted,
@@ -34,6 +35,47 @@ describe('analysis job identity', () => {
       base,
     );
   });
+
+  it('keeps the historical id when no Game-analysis overrides apply', () => {
+    expect(analysisJobId('lichess:abc', ENGINE, undefined, undefined)).toBe(
+      analysisJobId('lichess:abc', ENGINE),
+    );
+    expect(analysisJobId('lichess:abc', ENGINE, undefined, null)).toBe(
+      analysisJobId('lichess:abc', ENGINE),
+    );
+    // An empty config object is not an override either.
+    expect(analysisJobId('lichess:abc', ENGINE, undefined, {})).toBe(
+      analysisJobId('lichess:abc', ENGINE),
+    );
+  });
+
+  it('appends a deterministic fingerprint when depth/time overrides apply', () => {
+    const base = analysisJobId('lichess:abc', ENGINE);
+    const depth = analysisJobId('lichess:abc', ENGINE, undefined, { maxDepth: 25 });
+    const time = analysisJobId('lichess:abc', ENGINE, undefined, { movetimeMs: 5000 });
+    const both = analysisJobId('lichess:abc', ENGINE, undefined, {
+      maxDepth: 25,
+      movetimeMs: 5000,
+    });
+    expect(depth).not.toBe(base);
+    expect(time).not.toBe(base);
+    expect(both).not.toBe(base);
+    expect(both).not.toBe(depth);
+    expect(both).not.toBe(time);
+    // Order-stable: identical overrides produce identical ids regardless of
+    // insertion order in the config object.
+    expect(
+      analysisJobId('lichess:abc', ENGINE, undefined, { maxDepth: 25, movetimeMs: 5000 }),
+    ).toBe(both);
+  });
+
+  it('fingerprints depth/time only, in a stable order', () => {
+    expect(gameAnalysisConfigFingerprint(undefined)).toBeUndefined();
+    expect(gameAnalysisConfigFingerprint({})).toBeUndefined();
+    expect(gameAnalysisConfigFingerprint({ maxDepth: 25 })).toBe('d25');
+    expect(gameAnalysisConfigFingerprint({ movetimeMs: 5000 })).toBe('t5000');
+    expect(gameAnalysisConfigFingerprint({ maxDepth: 25, movetimeMs: 5000 })).toBe('d25,t5000');
+  });
 });
 
 describe('analysis job state machine', () => {
@@ -44,6 +86,16 @@ describe('analysis job state machine', () => {
     expect(job.totalPositions).toBe(40);
     expect(job.startedAt).toBeNull();
     expect(job.id).toBe(analysisJobId('lichess:abc', ENGINE));
+    expect(job.config).toBeUndefined();
+  });
+
+  it('stores overrides on the job and reflects them in the id', () => {
+    const job = createAnalysisJob('lichess:abc', ENGINE, 40, 100, { maxDepth: 25 });
+    expect(job.config).toEqual({ maxDepth: 25 });
+    expect(job.id).toBe(analysisJobId('lichess:abc', ENGINE, undefined, { maxDepth: 25 }));
+    const noOverride = createAnalysisJob('lichess:abc', ENGINE, 40, 100, {});
+    expect(noOverride.config).toBeUndefined();
+    expect(noOverride.id).toBe(analysisJobId('lichess:abc', ENGINE));
   });
 
   it('transitions through inProgress/completed and records times', () => {
@@ -95,6 +147,18 @@ describe('analysis job restart behaviour', () => {
     expect(retried.id).toBe(failed.id);
     expect(retried.createdAt).toBe(failed.createdAt);
     expect(retried.completedPositions).toBe(0);
+  });
+
+  it('preserves overrides when restarting a terminal job', () => {
+    const failed = markFailed(
+      createAnalysisJob('lichess:abc', ENGINE, 40, 100, { maxDepth: 30 }),
+      'boom',
+      110,
+    );
+    const retried = jobForRun(failed, 'lichess:abc', ENGINE, 40, 200);
+    expect(retried.state).toBe('queued');
+    expect(retried.id).toBe(failed.id);
+    expect(retried.config).toEqual({ maxDepth: 30 });
   });
 
   it('creates a fresh job when none exists', () => {

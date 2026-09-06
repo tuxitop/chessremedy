@@ -8,6 +8,7 @@
 export {
   createAnalysisJob,
   analysisJobId,
+  gameAnalysisConfigFingerprint,
   jobForRun,
   markCancelled,
   markCompleted,
@@ -17,7 +18,7 @@ export {
   patchJob,
   DEFAULT_ANALYSIS_PROFILE,
 } from './job';
-export type { AnalysisJob, AnalysisJobPatch } from './job';
+export type { AnalysisJob, AnalysisJobPatch, GameAnalysisConfig } from './job';
 export { planGameAnalysis, countLegalMoves } from './plan';
 export type { GameAnalysisPlan, PlannedMove, PlanErrorCode, PlanResult } from './plan';
 export { buildMoveAnalyses, negateEval, swapWdl, terminalEvalFor } from './build';
@@ -30,7 +31,7 @@ export {
   latestCompletedJob,
 } from './status';
 export type { GameAnalysisStatus } from './status';
-export type { EngineIdentity } from './status';
+export type { EngineIdentity, ExpectedAnalysisConfig } from './status';
 export {
   CLASSIFICATION_LABELS,
   CLASSIFICATION_NAG,

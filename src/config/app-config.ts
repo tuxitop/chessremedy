@@ -13,6 +13,7 @@ export const SETTINGS_KEYS = {
   theme: 'theme',
   engineDefaults: 'engine.defaults',
   boardAppearance: 'board.appearance',
+  analysisGame: 'analysis.game',
   chessComUsername: 'import.chesscom.username',
   lichessUsername: 'import.lichess.username',
   chessComFilters: 'import.chesscom.filters',

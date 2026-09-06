@@ -47,6 +47,8 @@ import {
   planGameAnalysis,
   type AnalysisJob,
   type EngineIdentity,
+  type ExpectedAnalysisConfig,
+  type GameAnalysisConfig,
   type GameAnalysisStatus,
   type InputPositionResult,
 } from '@/domain/analysis';
@@ -58,6 +60,12 @@ export interface AnalysisRunOptions {
   readonly signal?: AbortSignal;
   /** Force a re-analysis of already-completed games (engine/settings change). */
   readonly force?: boolean;
+  /**
+   * Game-analysis depth/search-time overrides (Settings "Game analysis").
+   * These flow into the job identity, the engine options and the ADR-018 cache
+   * key. Absent = the profile's own defaults apply.
+   */
+  readonly config?: GameAnalysisConfig;
   /** Notified whenever a job is persisted (progress / transitions). */
   readonly onJobProgress?: (job: AnalysisJob) => void;
 }
@@ -142,16 +150,18 @@ export class AnalysisService {
   }
 
   /** UI-facing: analysis status of one game, from persisted state only. */
-  async statusOf(gameId: GameId): Promise<GameAnalysisStatus> {
+  async statusOf(gameId: GameId, expected?: ExpectedAnalysisConfig): Promise<GameAnalysisStatus> {
     return analysisLibraryStatus(
       await this.jobs.listByGame(gameId),
       this.currentEngine ?? undefined,
+      expected,
     );
   }
 
   /** UI-facing: analysis status of many games (Game Library). */
   async statusesOf(
     gameIds: readonly GameId[],
+    expected?: ExpectedAnalysisConfig,
   ): Promise<Readonly<Record<string, GameAnalysisStatus>>> {
     const ids = [...new Set(gameIds)];
     if (ids.length === 0) {
@@ -166,7 +176,11 @@ export class AnalysisService {
     }
     const out: Record<string, GameAnalysisStatus> = {};
     for (const id of ids) {
-      out[id] = analysisLibraryStatus(byGame.get(id) ?? [], this.currentEngine ?? undefined);
+      out[id] = analysisLibraryStatus(
+        byGame.get(id) ?? [],
+        this.currentEngine ?? undefined,
+        expected,
+      );
     }
     return out;
   }
@@ -278,6 +292,7 @@ export class AnalysisService {
     run?: AnalysisRunOptions,
   ): Promise<readonly AnalysisJob[]> {
     const engine = this.engineMetadata(profile);
+    const config = run?.config;
     // A new explicit run supersedes any earlier per-row cancels for these
     // games (e.g. a cancel-then-retry on the same game).
     for (const id of ids) {
@@ -286,7 +301,7 @@ export class AnalysisService {
 
     const prepared: AnalysisJob[] = [];
     for (const gameId of ids) {
-      let stored = await this.jobs.getJob(analysisJobId(gameId, engine));
+      let stored = await this.jobs.getJob(analysisJobId(gameId, engine, undefined, config));
       if (stored?.state === 'completed' && run?.force === true) {
         // A forced re-analysis clears the completed run's records and restarts
         // the same analysis identity under the current engine configuration.
@@ -296,7 +311,7 @@ export class AnalysisService {
       }
       // Total positions are patched when each job starts; queued here is the
       // persistent "needs work" marker that survives an application restart.
-      const job = jobForRun(stored, gameId, engine, 0, this.now());
+      const job = jobForRun(stored, gameId, engine, 0, this.now(), config);
       if (job.state === 'queued') {
         await this.jobs.putJob(job);
       }
@@ -542,13 +557,22 @@ export class AnalysisService {
    * One position: serve from the ADR-018 cache when present (except on an
    * explicit forced re-analysis, which must genuinely re-run the engine),
    * else run a real engine job (off the UI thread) and store its result.
+   * Game-analysis overrides (depth/search time) are folded into both the
+   * engine request and the cache key so different configurations stay
+   * distinguishable (Q2 = Option A).
    */
   private async resolvePosition(
     fen: string,
     engine: EngineMetadata,
     run: AnalysisRunOptions | undefined,
   ): Promise<PositionOutcome> {
-    const key = analysisCacheKey(fen, { profile: engine.profile }, engine);
+    const config = run?.config;
+    const scope = {
+      profile: engine.profile,
+      ...(config?.maxDepth !== undefined ? { maxDepth: config.maxDepth } : {}),
+      ...(config?.movetimeMs !== undefined ? { movetimeMs: config.movetimeMs } : {}),
+    };
+    const key = analysisCacheKey(fen, scope, engine);
     // A forced run bypasses the cache so "Re-analyze" always contacts the
     // worker (ADR-018: the cache is an optimization, not a substitute for an
     // explicit user-requested re-run). Fresh results are stored below.
@@ -562,7 +586,7 @@ export class AnalysisService {
       return { kind: 'failed', message: 'Analysis cancelled.' };
     }
 
-    const job = this.engine.analyze(fen, { profile: engine.profile });
+    const job = this.engine.analyze(fen, scope);
     const outcome = await Promise.race([job.outcome, abortSignal(run?.signal)]);
     if (outcome === 'aborted') {
       job.cancel();

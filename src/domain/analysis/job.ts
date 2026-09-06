@@ -19,6 +19,19 @@ export type { AnalysisJobState };
 
 export const DEFAULT_ANALYSIS_PROFILE = 'normal';
 
+/**
+ * Per-position engine overrides carried by a game-analysis run (Game-analysis
+ * settings, Q2 = Option A). Only values the user explicitly overrides are
+ * present; the profile's own depth/hash/MultiPV stay the baseline (they are
+ * part of the engine identity). `scope` does not exist (Q1 dropped — analysis
+ * always classifies both sides).
+ */
+export interface GameAnalysisConfig {
+  readonly maxDepth?: number;
+  /** Per-position search time in milliseconds. */
+  readonly movetimeMs?: number;
+}
+
 export interface AnalysisJob {
   /** Deterministic analysis-identity id; also the `analysisId` on records. */
   readonly id: string;
@@ -33,6 +46,11 @@ export interface AnalysisJob {
   readonly totalPositions: number;
   /** Positions analysed so far (drives game-level progress). */
   readonly completedPositions: number;
+  /**
+   * Depth/search-time overrides of the Game-analysis settings under which this
+   * run was created. Absent when the run used the profile defaults.
+   */
+  readonly config?: GameAnalysisConfig;
   readonly lastError: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -50,10 +68,41 @@ export interface AnalysisJobPatch {
 }
 
 /**
+ * Deterministic, order-stable fingerprint of a run's Game-analysis overrides.
+ * Only user-specified overrides are encoded (profile depth is already part of
+ * the engine identity). `undefined` when no override is in effect, so a plain
+ * run keeps the historical id (stored-key/cache compatibility, ADR-018).
+ */
+export function gameAnalysisConfigFingerprint(
+  config?: GameAnalysisConfig | null,
+): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (config.maxDepth !== undefined) {
+    parts.push(`d${config.maxDepth}`);
+  }
+  if (config.movetimeMs !== undefined) {
+    parts.push(`t${config.movetimeMs}`);
+  }
+  return parts.length > 0 ? parts.join(',') : undefined;
+}
+
+function hasOverrides(config?: GameAnalysisConfig | null): config is GameAnalysisConfig {
+  return (
+    config !== undefined &&
+    config !== null &&
+    (config.maxDepth !== undefined || config.movetimeMs !== undefined)
+  );
+}
+
+/**
  * Deterministic id for an analysis of `gameId` under a configuration. Two
  * analyses of the same game that use materially different configurations are
  * distinguishable (Feature 008 §4, ADR-020). Includes the pipeline/classification/
- * phase versions and the engine identity (name/version/build/profile).
+ * phase versions, the engine identity (name/version/build/profile) and a
+ * fingerprint of the Game-analysis depth/search-time overrides (when present).
  */
 export function analysisJobId(
   gameId: string,
@@ -63,6 +112,7 @@ export function analysisJobId(
     readonly classificationVersion?: number;
     readonly gamePhaseVersion?: number;
   },
+  config?: GameAnalysisConfig | null,
 ): string {
   const analysisVersion = versions?.analysisVersion ?? ANALYSIS_VERSION;
   const classificationVersion = versions?.classificationVersion ?? CLASSIFICATION_VERSION;
@@ -73,7 +123,8 @@ export function analysisJobId(
     engine.engineBuild,
     engine.profile,
   ].join('@');
-  return `${gameId}|a${analysisVersion}|c${classificationVersion}|p${gamePhaseVersion}|${enginePart}`;
+  const configPart = hasOverrides(config) ? `|cfg:${gameAnalysisConfigFingerprint(config)}` : '';
+  return `${gameId}|a${analysisVersion}|c${classificationVersion}|p${gamePhaseVersion}|${enginePart}${configPart}`;
 }
 
 export function createAnalysisJob(
@@ -81,9 +132,10 @@ export function createAnalysisJob(
   engine: EngineMetadata,
   totalPositions: number,
   nowMs: number,
+  config?: GameAnalysisConfig | null,
 ): AnalysisJob {
-  return {
-    id: analysisJobId(gameId, engine),
+  const job: AnalysisJob = {
+    id: analysisJobId(gameId, engine, undefined, config),
     gameId,
     engine,
     analysisVersion: ANALYSIS_VERSION,
@@ -98,6 +150,7 @@ export function createAnalysisJob(
     startedAt: null,
     completedAt: null,
   };
+  return hasOverrides(config) ? { ...job, config } : job;
 }
 
 /**
@@ -114,6 +167,7 @@ export function jobForRun(
   engine: EngineMetadata,
   totalPositions: number,
   nowMs: number,
+  config?: GameAnalysisConfig | null,
 ): AnalysisJob {
   if (stored) {
     if (stored.state === 'queued' || stored.state === 'inProgress') {
@@ -122,15 +176,16 @@ export function jobForRun(
     if (stored.state === 'completed') {
       return stored;
     }
-    const fresh = createAnalysisJob(gameId, engine, totalPositions, nowMs);
-    return {
+    const fresh = createAnalysisJob(gameId, engine, totalPositions, nowMs, config);
+    const out: AnalysisJob = {
       ...fresh,
       id: stored.id,
       createdAt: stored.createdAt,
       engine: stored.engine,
     };
+    return stored.config !== undefined ? { ...out, config: stored.config } : out;
   }
-  return createAnalysisJob(gameId, engine, totalPositions, nowMs);
+  return createAnalysisJob(gameId, engine, totalPositions, nowMs, config);
 }
 
 /** Pure transition applying a small patch. */
@@ -145,6 +200,7 @@ export function patchJob(job: AnalysisJob, patch: AnalysisJobPatch, nowMs: numbe
     state: patch.state ?? job.state,
     totalPositions: patch.totalPositions ?? job.totalPositions,
     completedPositions: patch.completedPositions ?? job.completedPositions,
+    ...(job.config !== undefined ? { config: job.config } : {}),
     lastError: 'lastError' in patch ? (patch.lastError ?? null) : job.lastError,
     createdAt: job.createdAt,
     updatedAt: nowMs,

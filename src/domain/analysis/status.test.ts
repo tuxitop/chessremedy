@@ -86,4 +86,35 @@ describe('analysisLibraryStatus (outdated detection)', () => {
     const fresh = markCompleted(createAnalysisJob('lichess:abc', ENGINE, 10, 1), 2);
     expect(analysisLibraryStatus([fresh], undefined)).toBe('completed');
   });
+
+  it('reports completed when a run matches the expected Game-analysis config', () => {
+    const job = markCompleted(createAnalysisJob('lichess:abc', ENGINE, 10, 1), 2);
+    expect(analysisLibraryStatus([job], CURRENT, { profile: 'normal' })).toBe('completed');
+    const withOverride = markCompleted(
+      createAnalysisJob('lichess:abc', ENGINE, 10, 1, { maxDepth: 25 }),
+      2,
+    );
+    expect(
+      analysisLibraryStatus([withOverride], CURRENT, {
+        profile: 'normal',
+        config: { maxDepth: 25 },
+      }),
+    ).toBe('completed');
+  });
+
+  it('reports outdated when the completed run predates the current Game-analysis config', () => {
+    const plain = markCompleted(createAnalysisJob('lichess:abc', ENGINE, 10, 1), 2);
+    // Current settings want a depth override → the plain run is outdated.
+    expect(
+      analysisLibraryStatus([plain], CURRENT, { profile: 'normal', config: { maxDepth: 25 } }),
+    ).toBe('outdated');
+    // Current settings use a different profile → the run is outdated.
+    const deep = markCompleted(
+      createAnalysisJob('lichess:abc', { ...ENGINE, profile: 'deep' }, 10, 1),
+      2,
+    );
+    expect(analysisLibraryStatus([deep], CURRENT, { profile: 'normal' })).toBe('outdated');
+    // When no expected config is supplied the check is disabled (legacy statuses).
+    expect(analysisLibraryStatus([deep], CURRENT)).toBe('completed');
+  });
 });

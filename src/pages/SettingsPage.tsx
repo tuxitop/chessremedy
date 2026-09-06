@@ -2,6 +2,15 @@ import type * as React from 'react';
 import { ThemePicker } from '@/components/ui/ThemePicker';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { useBoardAppearance } from '@/hooks/useBoardAppearance';
+import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
+import {
+  clampGameAnalysisDepth,
+  clampGameAnalysisSearchSeconds,
+  gameAnalysisProfileDepth,
+  GAME_ANALYSIS_PROFILE_ORDER,
+  type GameAnalysisProfile,
+  type GameAnalysisSettings,
+} from '@/components/analysis/gameAnalysisSettings';
 import { readBrowserCapabilities } from '@/infrastructure/engine/capabilities';
 import {
   ARROW_MODES,
@@ -40,6 +49,88 @@ const SETTINGS_PLACEHOLDERS: SettingPlaceholder[] = [
   },
 ];
 
+interface GameAnalysisDefaultsProps {
+  settings: GameAnalysisSettings;
+  onSave(next: GameAnalysisSettings): void;
+}
+
+/** Number input whose blank value maps to `null` (profile default / no bound). */
+function OptionalNumberField({
+  label,
+  value,
+  placeholder,
+  min,
+  testId,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  placeholder: string;
+  min: number;
+  testId: string;
+  onChange(value: number | null): void;
+}): React.JSX.Element {
+  return (
+    <label className={styles.rowField}>
+      <span className={styles.rowFieldLabel}>{label}</span>
+      <input
+        type="number"
+        min={min}
+        placeholder={placeholder}
+        value={value ?? ''}
+        onChange={(e) => {
+          const raw = e.target.value.trim();
+          onChange(raw === '' ? null : Number(raw));
+        }}
+        data-testid={testId}
+      />
+    </label>
+  );
+}
+
+function GameAnalysisDefaults({ settings, onSave }: GameAnalysisDefaultsProps): React.JSX.Element {
+  const saveProfile = (profile: GameAnalysisProfile): void => onSave({ ...settings, profile });
+  const saveDepth = (v: number | null): void =>
+    onSave({ ...settings, depthOverride: v === null ? null : clampGameAnalysisDepth(v) });
+  const saveSearch = (v: number | null): void =>
+    onSave({ ...settings, searchSeconds: v === null ? null : clampGameAnalysisSearchSeconds(v) });
+
+  return (
+    <div className={styles.engineDefaults}>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>Profile</span>
+        <select
+          value={settings.profile}
+          onChange={(e) => saveProfile(e.target.value as GameAnalysisProfile)}
+          data-testid="setting-game-analysis-profile"
+        >
+          {GAME_ANALYSIS_PROFILE_ORDER.map((p) => (
+            <option key={p} value={p}>
+              {p} (depth {gameAnalysisProfileDepth(p)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <OptionalNumberField
+        label="Depth override"
+        value={settings.depthOverride}
+        placeholder={`Profile depth (${gameAnalysisProfileDepth(settings.profile)})`}
+        min={1}
+        testId="setting-game-analysis-depth"
+        onChange={saveDepth}
+      />
+      <OptionalNumberField
+        label="Per-position search (s)"
+        value={settings.searchSeconds}
+        placeholder="None"
+        min={1}
+        testId="setting-game-analysis-search-seconds"
+        onChange={saveSearch}
+      />
+    </div>
+  );
+}
+
 export function SettingsPage(): React.JSX.Element {
   const { defaults, isReady, save } = useEngineDefaults();
   const {
@@ -47,6 +138,11 @@ export function SettingsPage(): React.JSX.Element {
     isReady: appearanceReady,
     save: saveAppearance,
   } = useBoardAppearance();
+  const {
+    settings: gameAnalysis,
+    isReady: gameAnalysisReady,
+    save: saveGameAnalysis,
+  } = useGameAnalysisSettings();
   const capabilities = readBrowserCapabilities();
 
   return (
@@ -95,6 +191,26 @@ export function SettingsPage(): React.JSX.Element {
             />
           ) : (
             <p className={styles.engineLoading}>Loading engine defaults…</p>
+          )}
+        </li>
+
+        <li className={styles.row} data-testid="settings-row-game-analysis">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Game analysis</h2>
+            <p className={styles.rowDescription}>
+              Engine configuration used when analyzing whole games (Library analysis and Review).
+              The profile sets the analysis depth; optionally override the per-position depth or cap
+              each position&apos;s search time. Analyses run under an older configuration read{' '}
+              &quot;outdated&quot; and can be re-run with the current settings.
+            </p>
+          </div>
+          {gameAnalysisReady && gameAnalysis ? (
+            <GameAnalysisDefaults
+              settings={gameAnalysis}
+              onSave={(next) => void saveGameAnalysis(next)}
+            />
+          ) : (
+            <p className={styles.engineLoading}>Loading game-analysis settings…</p>
           )}
         </li>
 

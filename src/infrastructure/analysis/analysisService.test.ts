@@ -7,7 +7,7 @@ import { DexieEngineAnalysisCache } from '@/infrastructure/db/engine-cache-repos
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
-import { createAnalysisJob, planGameAnalysis } from '@/domain/analysis';
+import { analysisJobId, createAnalysisJob, planGameAnalysis } from '@/domain/analysis';
 import { DETECTION_VERSION } from '@/domain/tactics';
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
 import { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
@@ -408,6 +408,63 @@ describe('AnalysisService batch orchestration', () => {
     expect(jobs[0]!.state).toBe('completed');
     expect(jobs[1]!.state).toBe('failed');
     expect(jobs[1]!.lastError).toContain('no longer exists');
+  });
+
+  it('threads Game-analysis depth/time overrides into engine options, cache key and job identity', async () => {
+    const gameId = await seedFixture('cc-bullet-blunder');
+    const rig = createFakeEngine();
+    const service = serviceOf(rig);
+
+    const jobs = await service.analyzeGames([gameId], 'normal', {
+      config: { maxDepth: 25, movetimeMs: 3000 },
+    });
+    const job = jobs[0]!;
+    expect(job.state).toBe('completed');
+    expect(job.config).toEqual({ maxDepth: 25, movetimeMs: 3000 });
+    // The override run is a distinct analysis identity from a plain normal run.
+    const plainId = analysisJobId(gameId, FAKE_ENGINE_META);
+    expect(job.id).not.toBe(plainId);
+    // Every engine request carried the override options.
+    for (const handle of rig.activeJobs) {
+      expect(handle.options.maxDepth).toBe(25);
+      expect(handle.options.movetimeMs).toBe(3000);
+    }
+  });
+
+  it('keeps the plain identity and cache scope when no overrides apply', async () => {
+    const gameId = await seedFixture('cc-bullet-blunder');
+    const rig = createFakeEngine();
+    const service = serviceOf(rig);
+
+    const jobs = await service.analyzeGames([gameId], 'normal', {});
+    const job = jobs[0]!;
+    expect(job.id).toBe(analysisJobId(gameId, FAKE_ENGINE_META));
+    expect(job.config).toBeUndefined();
+    for (const handle of rig.activeJobs) {
+      expect(handle.options.maxDepth).toBeUndefined();
+      expect(handle.options.movetimeMs).toBeUndefined();
+    }
+  });
+
+  it('reports a completed run as outdated when the settings profile/overrides changed', async () => {
+    const gameId = await seedFixture('cc-bullet-blunder');
+    const rig = createFakeEngine();
+    const service = serviceOf(rig);
+
+    // Run under a depth override; then the user removes it → run reads outdated.
+    await service.analyzeGames([gameId], 'normal', { config: { maxDepth: 30 } });
+    expect(await service.statusesOf([gameId])).toEqual({ [gameId]: 'completed' });
+    expect(
+      await service.statusesOf([gameId], { profile: 'normal', config: { maxDepth: 30 } }),
+    ).toEqual({ [gameId]: 'completed' });
+    expect(await service.statusesOf([gameId], { profile: 'normal' })).toEqual({
+      [gameId]: 'outdated',
+    });
+
+    // A profile change (deep) also reads outdated against a normal-settings run.
+    expect(await service.statusesOf([gameId], { profile: 'deep' })).toEqual({
+      [gameId]: 'outdated',
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AnalysisJob } from '@/domain/analysis';
+import type { AnalysisJob, ExpectedAnalysisConfig, GameAnalysisConfig } from '@/domain/analysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { AnalysisProfile } from '@/domain/chess';
 import type { AnalysisRunOptions, GameAnalysisProgress } from '@/infrastructure/analysis';
@@ -11,7 +11,10 @@ export interface AnalysisServiceLike {
     profile?: AnalysisProfile,
     run?: AnalysisRunOptions,
   ): Promise<readonly AnalysisJob[]>;
-  statusesOf(gameIds: readonly string[]): Promise<Readonly<Record<string, GameAnalysisStatus>>>;
+  statusesOf(
+    gameIds: readonly string[],
+    expected?: ExpectedAnalysisConfig,
+  ): Promise<Readonly<Record<string, GameAnalysisStatus>>>;
   listActiveJobs(): Promise<readonly AnalysisJob[]>;
   /** Optional live per-game progress (queued/in-progress positions). */
   jobProgress?(
@@ -25,11 +28,12 @@ export interface UseGameAnalysis {
   readonly busy: boolean;
   /** User-facing error from a failed run (or `null`). */
   readonly error: string | null;
-  /** Analyze/resume/retry the given games under the default profile. */
+  /** Analyze/resume/retry the given games under a profile + optional overrides. */
   analyze(
     gameIds: readonly string[],
     profile?: AnalysisProfile,
     force?: boolean,
+    config?: GameAnalysisConfig,
   ): Promise<readonly AnalysisJob[]>;
   /** Abort the active run(s); queued requests become cancelled in turn. */
   cancel(): void;
@@ -63,6 +67,7 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
       gameIds: readonly string[],
       profile: AnalysisProfile = 'normal',
       force = false,
+      config?: GameAnalysisConfig,
     ): Promise<readonly AnalysisJob[]> => {
       if (!service) {
         setError('Game analysis is unavailable right now.');
@@ -87,6 +92,7 @@ export function useGameAnalysis(service: AnalysisServiceLike | null): UseGameAna
         const jobs = await service.analyzeGames([...gameIds], profile, {
           signal: controller.signal,
           ...(force ? { force: true } : {}),
+          ...(config !== undefined ? { config } : {}),
         });
         return jobs;
       } catch (err) {
