@@ -20,6 +20,12 @@ export interface AnalysisBoardProps {
   readonly boardColumn: React.ReactNode;
   /** Evaluation-bar contents, or `null` to omit the column. */
   readonly bar: React.ReactNode;
+  /**
+   * Vertical offset (px) to push the evaluation-bar column down so it starts
+   * exactly at the board, not at a player/clock bar rendered above the board
+   * inside `boardColumn`. Defaults to 0 (no offset).
+   */
+  readonly barOffsetPx?: number;
   /** Side-panel contents. */
   readonly sidePanel: React.ReactNode;
   /** Optional inline style for the side panel (e.g. fixed board height). */
@@ -33,6 +39,7 @@ export function AnalysisBoard({
   boardSize,
   boardColumn,
   bar,
+  barOffsetPx = 0,
   sidePanel,
   sidePanelStyle,
   surface = false,
@@ -44,7 +51,11 @@ export function AnalysisBoard({
       {bar !== null ? (
         <div
           className={styles.evalBarColumn}
-          style={!boardSize.isMobile ? { height: boardSize.size } : undefined}
+          style={
+            !boardSize.isMobile
+              ? { height: boardSize.size, ...(barOffsetPx > 0 ? { marginTop: barOffsetPx } : {}) }
+              : undefined
+          }
         >
           {bar}
         </div>

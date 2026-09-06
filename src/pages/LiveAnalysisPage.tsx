@@ -343,7 +343,6 @@ export function LiveAnalysisPage(): React.JSX.Element {
         bar={
           <EvaluationBar
             evaluation={controller.lines.length > 0 ? controller.lines[0]!.evaluation : null}
-            bottomColor={settings.orientation}
             sideToMove={sideToMove}
           />
         }

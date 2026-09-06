@@ -62,8 +62,16 @@ import { Button } from '@/components/ui/Button';
 import styles from './GameReviewPage.module.css';
 import './reviewBoardHighlights.css';
 
-/** Approx. height added to the board column by the two player clock bars. */
-const CLOCK_BAR_COLUMN_EXTRA_PX = 76;
+/** Player clock-bar height and the gap inside the board column (see css). */
+const CLOCK_BAR_HEIGHT_PX = 34;
+const BOARD_GAP_PX = 8;
+/** Height added to the board column by the two player clock bars. */
+const CLOCK_BAR_COLUMN_EXTRA_PX = CLOCK_BAR_HEIGHT_PX * 2 + BOARD_GAP_PX;
+/**
+ * Offset from the top of the board column to the top of the chessboard: the
+ * evaluation bar must start at the board, not at the top clock bar.
+ */
+const CLOCK_BAR_TOP_INSET_PX = CLOCK_BAR_HEIGHT_PX + BOARD_GAP_PX;
 
 interface GameReviewPageProps {
   /** Injectable for tests; defaults to the browser analysis service. */
@@ -278,7 +286,11 @@ function GameReview({
   }, [position]);
   const lastMove = useMemo(() => {
     const last = path[path.length - 1];
-    return last ? ([last.from, last.to] as readonly [Key, Key]) : null;
+    if (!last) {
+      return null;
+    }
+    const dest = plyDestSquare(last);
+    return [last.from, dest ?? last.to] as readonly [Key, Key];
   }, [path]);
   const summary = useMemo(() => summarizeAnalysis(records, userColor), [records, userColor]);
   const clocks = useMemo(() => {
@@ -611,13 +623,14 @@ function GameReview({
   }, [activePly, classificationByPly]);
 
   // Board glyph chips (same style/formatting as the Playground): the active
-  // ply's classification renders as a small NAG badge on its destination
-  // square when it is visually emphasized (never for ordinary `good` moves).
+  // ply's classification renders as a small badge on its destination square —
+  // the king's landing square for a castling move (never for ordinary `good`
+  // moves).
   const boardBadges = useMemo<readonly SquareBadgeItem[]>(
     () =>
       classificationBoardBadges({
         classification: activeClassification,
-        square: activePly?.to,
+        square: activePly ? plyDestSquare(activePly) : undefined,
       }),
     [activePly, activeClassification],
   );
@@ -632,7 +645,8 @@ function GameReview({
     if (!NEGATIVE_CLASSIFICATIONS.has(activeClassification)) {
       return null;
     }
-    return [activePly.from, activePly.to] as readonly [Key, Key];
+    const dest = plyDestSquare(activePly);
+    return [activePly.from, (dest ?? activePly.to) as Key] as readonly [Key, Key];
   }, [activePly, activeClassification]);
 
   const customSquareClasses = useMemo(() => {
@@ -718,6 +732,7 @@ function GameReview({
       <AnalysisBoard
         boardSize={boardSize}
         dataTestId="review-layout"
+        barOffsetPx={CLOCK_BAR_TOP_INSET_PX}
         {...(sidePanelStyle !== undefined ? { sidePanelStyle } : {})}
         boardColumn={
           <BoardPane
@@ -744,13 +759,7 @@ function GameReview({
             }
           />
         }
-        bar={
-          <EvaluationBar
-            evaluation={barEvaluation}
-            bottomColor={orientation}
-            sideToMove={barSideToMove}
-          />
-        }
+        bar={<EvaluationBar evaluation={barEvaluation} sideToMove={barSideToMove} />}
         sidePanel={
           <>
             <AnalysisPanel
@@ -1080,6 +1089,33 @@ function oppositeOf(color: 'white' | 'black'): 'white' | 'black' {
  * on the move's destination square — the same SquareBadges chips the
  * Playground uses. `null`/ordinary classifications render nothing.
  */
+/** Best-move board marker: a quiet star. `!!` (NAG 3) stays reserved for a
+ * future great/brilliant-move detector, so engine-best moves are not shown
+ * with an exaggerated "brilliant" glyph on the board either. */
+const BEST_MOVE_MARK = '★';
+const BEST_MOVE_MARK_COLOR = '#15781b';
+
+/**
+ * Destination square used for a ply's board badge / highlights. For a
+ * castling move the badge belongs on the square the **king** lands on
+ * (g1/g8 for O-O, c1/c8 for O-O-O), never on the rook's starting square.
+ * Accepts a structural ply subset so it is trivially unit-testable.
+ */
+export function plyDestSquare(
+  ply: { readonly san: string; readonly color: 'white' | 'black'; readonly to: string } | undefined,
+): string | undefined {
+  if (!ply) {
+    return undefined;
+  }
+  if (ply.san === 'O-O') {
+    return ply.color === 'white' ? 'g1' : 'g8';
+  }
+  if (ply.san === 'O-O-O') {
+    return ply.color === 'white' ? 'c1' : 'c8';
+  }
+  return ply.to;
+}
+
 export function classificationBoardBadges(input: {
   classification: MoveClassification | null | undefined;
   square: string | undefined;
@@ -1087,6 +1123,18 @@ export function classificationBoardBadges(input: {
   const { classification, square } = input;
   if (!classification || !square) {
     return [];
+  }
+  // The engine-best label gets a quiet star, never `!!` (reserved).
+  if (classification === 'best') {
+    return [
+      {
+        square,
+        text: BEST_MOVE_MARK,
+        color: BEST_MOVE_MARK_COLOR,
+        kind: 'nag',
+        testId: 'nag-badge',
+      },
+    ];
   }
   const nag = nagForClassification(classification);
   if (nag === null) {

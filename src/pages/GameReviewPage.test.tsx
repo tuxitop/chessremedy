@@ -14,7 +14,7 @@ import type { EngineMetadata, MoveAnalysis } from '@/domain/chess';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import { createFakeAnalysisService } from '@/components/games/test-support/fakeAnalysisService';
 import { renderWithProviders } from '@/test/test-utils';
-import { GameReviewPage, classificationBoardBadges } from '@/pages/GameReviewPage';
+import { GameReviewPage, classificationBoardBadges, plyDestSquare } from '@/pages/GameReviewPage';
 
 const { chessboardProps } = vi.hoisted(() => ({
   chessboardProps: [] as Array<Record<string, unknown>>,
@@ -186,13 +186,14 @@ describe('Game Review page (Feature 008)', () => {
       ]),
     );
 
-    // Qh4# is the engine's best move → a !! chip anchored to h4.
+    // Qh4# is the engine's best move → a quiet ★ chip anchored to h4 (the
+    // `!!` glyph is reserved for a future brilliant-move detector).
     await user.click(
       screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!,
     );
     await waitFor(() =>
       expect(overlayItems()).toEqual([
-        { square: 'h4', text: '!!', color: '#0a7a3c', kind: 'nag', testId: 'nag-badge' },
+        { square: 'h4', text: '★', color: '#15781b', kind: 'nag', testId: 'nag-badge' },
       ]),
     );
   });
@@ -549,7 +550,7 @@ describe('classificationBoardBadges (review board chips)', () => {
     ]);
     expect(classificationBoardBadges({ classification: 'best', square: 'h4' })[0]).toMatchObject({
       square: 'h4',
-      text: '!!',
+      text: '★',
     });
     expect(classificationBoardBadges({ classification: 'inaccuracy', square: 'c5' })[0]?.text).toBe(
       '?!',
@@ -564,5 +565,19 @@ describe('classificationBoardBadges (review board chips)', () => {
     expect(classificationBoardBadges({ classification: null, square: 'f3' })).toEqual([]);
     expect(classificationBoardBadges({ classification: undefined, square: 'f3' })).toEqual([]);
     expect(classificationBoardBadges({ classification: 'blunder', square: undefined })).toEqual([]);
+  });
+});
+
+describe('plyDestSquare (badge lands on the king square for castling)', () => {
+  it('maps O-O / O-O-O to the king landing square regardless of the stored destination', () => {
+    expect(plyDestSquare({ san: 'O-O', color: 'white', to: 'h1' })).toBe('g1');
+    expect(plyDestSquare({ san: 'O-O', color: 'black', to: 'h8' })).toBe('g8');
+    expect(plyDestSquare({ san: 'O-O-O', color: 'white', to: 'a1' })).toBe('c1');
+    expect(plyDestSquare({ san: 'O-O-O', color: 'black', to: 'a8' })).toBe('c8');
+  });
+
+  it('keeps the plain destination for ordinary moves and returns undefined without a ply', () => {
+    expect(plyDestSquare({ san: 'Nf3', color: 'white', to: 'f3' })).toBe('f3');
+    expect(plyDestSquare(undefined)).toBeUndefined();
   });
 });

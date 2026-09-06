@@ -499,7 +499,6 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
             evaluation={
               engineController.lines.length > 0 ? engineController.lines[0]!.evaluation : null
             }
-            bottomColor={settings.orientation}
             sideToMove={sideToMove}
           />
         </div>
