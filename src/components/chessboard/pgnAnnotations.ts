@@ -155,10 +155,13 @@ export interface NagMeta {
 
 const GOOD = '#15781b';
 const BRILLIANT = '#0a7a3c';
-const MISTAKE = '#c77400';
+// Inaccuracy vs mistake must read as clearly different (P5): amber vs
+// orange-red. Values are the single source also used (as rgba) by the
+// classification square highlights in reviewBoardHighlights.css.
+const MISTAKE = '#d94f00';
 const BLUNDER = '#c4261c';
 const INTERESTING = '#1a56db';
-const DUBIOUS = '#a06a00';
+const DUBIOUS = '#d89000';
 const MISS = '#c2185b';
 
 export const NAG_META: Readonly<Record<number, NagMeta>> = {

@@ -59,5 +59,28 @@ describe('pgnAnnotations', () => {
       const colors = Object.values(NAG_META).map((m) => m.color);
       expect(new Set(colors).size).toBe(Object.keys(NAG_META).length);
     });
+
+    it('keeps inaccuracy visually distinct from mistake (and mistake from blunder)', () => {
+      const hue = (hex: string): number => {
+        const value = Number.parseInt(hex.slice(1), 16);
+        const r = (value >> 16) & 255;
+        const g = (value >> 8) & 255;
+        const b = value & 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        if (max === min) return 0;
+        let h = 0;
+        if (max === r) h = 60 * (((g - b) / (max - min)) % 6);
+        else if (max === g) h = 60 * ((b - r) / (max - min) + 2);
+        else h = 60 * ((r - g) / (max - min) + 4);
+        return (h + 360) % 360;
+      };
+      const inaccuracy = hue(nagMeta(6)!.color);
+      const mistake = hue(nagMeta(2)!.color);
+      const blunder = hue(nagMeta(4)!.color);
+      // Amber (#d89000) vs orange-red (#d94f00) vs deep red (#c4261c).
+      expect(Math.abs(inaccuracy - mistake)).toBeGreaterThan(12);
+      expect(Math.abs(mistake - blunder)).toBeGreaterThan(10);
+    });
   });
 });

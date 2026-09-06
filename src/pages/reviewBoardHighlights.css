@@ -14,11 +14,13 @@ cg-board square.review-cls-best {
 }
 
 cg-board square.review-cls-inaccuracy {
+  /* #d89000 amber — see NAG_META in pgnAnnotations.ts (P5). */
   background-color: rgba(216, 144, 0, 0.42);
 }
 
 cg-board square.review-cls-mistake {
-  background-color: rgba(199, 116, 0, 0.48);
+  /* #d94f00 orange-red — clearly distinct from inaccuracy amber (P5). */
+  background-color: rgba(217, 79, 0, 0.48);
 }
 
 cg-board square.review-cls-blunder {
