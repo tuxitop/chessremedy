@@ -424,6 +424,37 @@
   flex-wrap: wrap;
 }
 
+.rowAction {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.rowReviewLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--color-accent, #1f6feb);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  text-decoration: none;
+}
+
+.reviewGlyph {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.rowReviewLink:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+}
+
+.rowReviewLink:focus-visible {
+  outline: 2px solid var(--color-focus, #2563eb);
+  outline-offset: 1px;
+}
+
 .statusLabel {
   color: var(--color-fg-muted);
 }
@@ -431,6 +462,71 @@
 .analyzing {
   color: var(--color-accent, #1f6feb);
   font-style: italic;
+}
+
+/* Compact colored analysis-status badge (queued/in-progress/cancelled/failed/
+   outdated) shown at the end of the row actions. Colour + glyph carry the
+   state; hover/tap/focus reveal the explanatory text (never colour-only). */
+.statusBadgeWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  cursor: default;
+}
+
+.statusBadge:focus-visible {
+  outline: 2px solid var(--color-focus, #2563eb);
+  outline-offset: 1px;
+}
+
+.statusBadgemuted {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  border-color: var(--color-border);
+}
+
+.statusBadgeaccent {
+  background: var(--color-accent, #1f6feb);
+}
+
+.statusBadgewarning {
+  background: #d89000;
+}
+
+.statusBadgedanger {
+  background: #c4261c;
+}
+
+.statusBadgeInfo {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  width: max-content;
+  max-width: 16rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop, 0 4px 12px rgba(0, 0, 0, 0.18));
+  font-size: var(--font-size-sm);
+  color: var(--color-fg);
+  white-space: normal;
 }
 
 .retryButton {
@@ -442,6 +538,51 @@
 .rowProgress {
   color: var(--color-fg-muted);
   font-size: var(--font-size-sm);
+}
+
+/* Full-width progress strip along the bottom of an analyzing row: a thin bar
+   that takes (almost) the container width minus the status report, which sits
+   beside it; on narrow screens the report wraps to its own line below. */
+.rowProgressBar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  border-top: 1px dashed var(--color-border);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.rowProgressTrack {
+  flex: 1 1 auto;
+  min-width: 6rem;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-bg-sunken);
+  overflow: hidden;
+}
+
+.rowProgressFill {
+  display: block;
+  height: 100%;
+  background: var(--color-accent, #1f6feb);
+  transition: width var(--duration-fast, 120ms) var(--easing-standard, ease-out);
+}
+
+.rowProgressText {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  /* The report wraps to its own line below the full-width bar. */
+  .rowProgressText {
+    order: 2;
+    flex-basis: 100%;
+  }
 }
 
 @media (max-width: 768px) {

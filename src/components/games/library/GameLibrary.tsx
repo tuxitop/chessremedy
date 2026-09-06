@@ -17,6 +17,14 @@ import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { GameAnalysisProgress } from '@/infrastructure/analysis';
 import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import {
+  ANALYSIS_GLYPH,
+  CloseIcon,
+  RefreshIcon,
+  REVIEW_GLYPH,
+  TrashIcon,
+} from '@/components/ui/icons';
 import { GameLibraryToolbar } from './GameLibraryToolbar';
 import styles from './GameLibrary.module.css';
 
@@ -47,7 +55,7 @@ export function GameLibrary({
   const { filters } = library;
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<readonly string[] | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const totalCount = library.rows.length;
@@ -58,6 +66,13 @@ export function GameLibrary({
   const selectedCount = library.selected.count;
   const customTimeFrame = isCustomTimeFrame(filters.timeFrame) ? filters.timeFrame : null;
   const timeFrameError = customTimeFrame ? validateTimeFrame(customTimeFrame) : null;
+
+  // A selection can be re-analyzed when at least one of its games has a
+  // completed (or outdated) run under the current engine configuration.
+  const canReanalyze = [...library.selected.ids].some((id) => {
+    const status = analysis.statuses[id];
+    return status === 'completed' || status === 'outdated';
+  });
 
   const update = (next: GameLibraryFilters, replace?: boolean): void => {
     setPage(1);
@@ -76,6 +91,7 @@ export function GameLibrary({
         isFiltering={library.isFiltering}
         selectedCount={selectedCount}
         analysisEnabled={analysis.enabled}
+        canReanalyze={canReanalyze}
         importOpen={importOpen}
         onFilters={set}
         onClearFilters={() => library.clearAllFilters()}
@@ -85,7 +101,12 @@ export function GameLibrary({
             analysis.analyze([...library.selected.ids]);
           }
         }}
-        onDelete={() => setConfirmingDelete(true)}
+        onReanalyze={() => {
+          if (analysis) {
+            analysis.reanalyzeMany([...library.selected.ids]);
+          }
+        }}
+        onDelete={() => setDeleteTarget([...library.selected.ids])}
       />
 
       {importOpen ? (
@@ -171,6 +192,7 @@ export function GameLibrary({
             rows={shownRows}
             selectedIds={library.selected.ids}
             onToggle={library.toggleRow}
+            onDeleteGame={(id) => setDeleteTarget([id])}
             analysis={analysis.enabled ? analysis : null}
             statuses={analysis.statuses}
           />
@@ -189,13 +211,14 @@ export function GameLibrary({
         </>
       ) : null}
 
-      {confirmingDelete ? (
+      {deleteTarget ? (
         <DeleteDialog
-          count={selectedCount}
-          onCancel={() => setConfirmingDelete(false)}
+          count={deleteTarget.length}
+          onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {
-            setConfirmingDelete(false);
-            void library.deleteSelected();
+            const ids = deleteTarget;
+            setDeleteTarget(null);
+            void library.deleteGames(ids);
           }}
         />
       ) : null}
@@ -209,12 +232,14 @@ function GameRows({
   onToggle,
   analysis,
   statuses,
+  onDeleteGame,
 }: {
   rows: readonly LibraryGameRow[];
   selectedIds: ReadonlySet<string>;
   onToggle: (id: string) => void;
   analysis: LibraryAnalysisApi | null;
   statuses: Readonly<Record<string, GameAnalysisStatus>>;
+  onDeleteGame: (id: string) => void;
 }): React.JSX.Element {
   return (
     <div
@@ -299,6 +324,7 @@ function GameRows({
                 onRun={analysis.retry}
                 onReanalyze={analysis.reanalyze}
                 onCancelGame={analysis.cancelGame}
+                onDelete={() => onDeleteGame(row.id)}
                 {...(analysis.perGameProgress[row.id]
                   ? { progress: analysis.perGameProgress[row.id] }
                   : {})}
@@ -307,6 +333,9 @@ function GameRows({
           ) : null}
           <GameRowMeta row={row} />
           <GameRowInsights row={row} />
+          {analysis?.perGameProgress[row.id] ? (
+            <RowProgressBar gameId={row.id} progress={analysis.perGameProgress[row.id]!} />
+          ) : null}
         </div>
       ))}
     </div>
@@ -502,12 +531,123 @@ function GameRowInsights({ row }: { row: LibraryGameRow }): React.JSX.Element | 
 const STATUS_LABELS: Readonly<Record<GameAnalysisStatus, string>> = {
   unanalyzed: 'Not analyzed',
   queued: 'Queued',
-  inProgress: 'Analyzing…',
+  inProgress: 'Analyzing',
   completed: 'Completed',
   cancelled: 'Cancelled',
   failed: 'Failed',
   outdated: 'Outdated',
 };
+
+interface StatusBadgeMeta {
+  readonly tone: 'muted' | 'accent' | 'warning' | 'danger';
+  readonly glyph: string;
+  readonly info: string;
+}
+
+/** Which non-trivial statuses get a colored badge at the end of the actions. */
+const STATUS_BADGES: Partial<Record<GameAnalysisStatus, StatusBadgeMeta>> = {
+  queued: {
+    tone: 'muted',
+    glyph: '…',
+    info: 'Queued — this game is waiting for the engine.',
+  },
+  inProgress: {
+    tone: 'accent',
+    glyph: '…',
+    info: 'Analyzing — the engine is working through this game.',
+  },
+  cancelled: {
+    tone: 'muted',
+    glyph: '✕',
+    info: 'Cancelled — this run was stopped. Retry to analyze it.',
+  },
+  failed: {
+    tone: 'danger',
+    glyph: '!',
+    info: 'Failed — the engine could not analyze this game. Retry to analyze it.',
+  },
+  outdated: {
+    tone: 'warning',
+    glyph: '!',
+    info: 'Outdated — this analysis used an older engine or settings. Re-analyze to refresh it.',
+  },
+};
+
+/**
+ * Compact colored status indicator for non-trivial analysis states. The glyph
+ * and colour carry the state; activating it (hover on desktop, tap on touch,
+ * Enter/Space with a keyboard) reveals the explanatory text so colour is never
+ * the only signal.
+ */
+function RowStatusBadge({
+  gameId,
+  status,
+  progress,
+}: {
+  gameId: string;
+  status: GameAnalysisStatus;
+  progress?: GameAnalysisProgress;
+}): React.JSX.Element | null {
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const meta = STATUS_BADGES[status];
+  if (!meta) {
+    return null;
+  }
+  const open = hover || pinned;
+  const detail =
+    status === 'inProgress' && progress && progress.totalPositions > 0
+      ? `${meta.info} ${progress.completedPositions}/${progress.totalPositions} positions.`
+      : meta.info;
+  return (
+    <span className={styles.statusBadgeWrap}>
+      <button
+        type="button"
+        className={`${styles.statusBadge} ${styles[`statusBadge${meta.tone}`]}`}
+        data-testid={`game-status-${gameId}`}
+        aria-expanded={open}
+        aria-label={`${STATUS_LABELS[status]}: ${detail}`}
+        title={detail}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={() => setPinned((current) => !current)}
+      >
+        <span aria-hidden="true">{meta.glyph}</span>
+      </button>
+      {open ? (
+        <span
+          className={styles.statusBadgeInfo}
+          role="status"
+          data-testid={`game-status-info-${gameId}`}
+        >
+          {detail}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function DeleteRowButton({
+  gameId,
+  status,
+  onDelete,
+}: {
+  gameId: string;
+  status: GameAnalysisStatus;
+  onDelete: (gameId: string) => void;
+}): React.JSX.Element {
+  return (
+    <IconButton
+      label={`Delete ${STATUS_LABELS[status].toLowerCase()} game`}
+      dataTestId={`game-delete-${gameId}`}
+      className={styles.rowAction!}
+      onClick={() => onDelete(gameId)}
+    >
+      <TrashIcon />
+    </IconButton>
+  );
+}
+
 function AnalysisCell({
   gameId,
   status,
@@ -515,6 +655,7 @@ function AnalysisCell({
   onRun,
   onReanalyze,
   onCancelGame,
+  onDelete,
 }: {
   gameId: string;
   status: GameAnalysisStatus;
@@ -526,99 +667,110 @@ function AnalysisCell({
   onReanalyze: (gameId: string) => void;
   /** Cancel this game's queued/in-progress job (per-row cancel). */
   onCancelGame: (gameId: string) => void;
+  /** Open the delete confirmation for this one game. */
+  onDelete: (gameId: string) => void;
 }): React.JSX.Element {
-  if (status === 'completed') {
-    return (
-      <span className={styles.statusWrap}>
-        <Link
-          className={styles.reviewLink}
-          data-testid={`game-review-${gameId}`}
-          to={`/games/${gameId}/review`}
-        >
-          Review
-        </Link>
-        <Button
-          variant="ghost"
-          className={styles.retryButton!}
-          data-testid={`game-reanalyze-${gameId}`}
-          onClick={() => onReanalyze(gameId)}
-        >
-          Re-analyze
-        </Button>
-      </span>
-    );
-  }
-  if (status === 'outdated') {
-    return (
-      <span className={styles.statusWrap}>
-        <span className={styles.statusLabel}>{STATUS_LABELS[status]}</span>
-        <Link
-          className={styles.reviewLink}
-          data-testid={`game-review-${gameId}`}
-          to={`/games/${gameId}/review`}
-        >
-          Review
-        </Link>
-        <Button
-          variant="ghost"
-          className={styles.retryButton!}
-          data-testid={`game-reanalyze-${gameId}`}
-          onClick={() => onReanalyze(gameId)}
-        >
-          Re-analyze
-        </Button>
-      </span>
-    );
-  }
-  if (status === 'failed' || status === 'cancelled') {
-    return (
-      <span className={styles.statusWrap}>
-        <span className={styles.statusLabel}>{STATUS_LABELS[status]}</span>
-        <Button
-          variant="ghost"
-          className={styles.retryButton!}
-          data-testid={`game-retry-${gameId}`}
-          onClick={() => onRun(gameId)}
-        >
-          Retry
-        </Button>
-      </span>
-    );
-  }
-  if (status === 'unanalyzed') {
-    return (
-      <span className={styles.statusWrap}>
-        <Button
-          variant="ghost"
-          className={styles.retryButton!}
-          data-testid={`game-analyze-${gameId}`}
-          onClick={() => onRun(gameId)}
-        >
-          Analyze
-        </Button>
-      </span>
-    );
-  }
+  const showOutdated = status === 'outdated';
+  const showFailed = status === 'failed' || status === 'cancelled';
+  const showActive = status === 'queued' || status === 'inProgress';
+
   return (
     <span className={styles.statusWrap}>
-      <span className={status === 'inProgress' ? styles.analyzing : styles.statusLabel}>
-        {STATUS_LABELS[status]}
-      </span>
-      {progress && progress.totalPositions > 0 ? (
-        <span className={styles.rowProgress} data-testid={`game-progress-${gameId}`}>
-          {progress.completedPositions}/{progress.totalPositions} positions ·{' '}
-          {positionPercent(progress)}% · {progress.profile}
-        </span>
+      {status === 'completed' || showOutdated ? (
+        <>
+          <Link
+            className={styles.rowReviewLink}
+            data-testid={`game-review-${gameId}`}
+            to={`/games/${gameId}/review`}
+            aria-label={`Review ${gameId}`}
+            title="Review"
+          >
+            <span aria-hidden="true" className={styles.reviewGlyph}>
+              {REVIEW_GLYPH}
+            </span>
+          </Link>
+          <IconButton
+            label="Re-analyze"
+            dataTestId={`game-reanalyze-${gameId}`}
+            className={styles.rowAction!}
+            onClick={() => onReanalyze(gameId)}
+          >
+            <RefreshIcon />
+          </IconButton>
+        </>
       ) : null}
-      <Button
-        variant="ghost"
-        className={styles.retryButton!}
-        data-testid={`game-cancel-${gameId}`}
-        onClick={() => onCancelGame(gameId)}
-      >
-        Cancel
-      </Button>
+
+      {showFailed ? (
+        <IconButton
+          label="Retry analysis"
+          dataTestId={`game-retry-${gameId}`}
+          className={styles.rowAction!}
+          onClick={() => onRun(gameId)}
+        >
+          <RefreshIcon />
+        </IconButton>
+      ) : null}
+
+      {status === 'unanalyzed' ? (
+        <IconButton
+          label="Analyze game"
+          dataTestId={`game-analyze-${gameId}`}
+          className={styles.rowAction!}
+          onClick={() => onRun(gameId)}
+        >
+          <span aria-hidden="true">{ANALYSIS_GLYPH}</span>
+        </IconButton>
+      ) : null}
+
+      {showActive ? (
+        <IconButton
+          label="Cancel analysis"
+          dataTestId={`game-cancel-${gameId}`}
+          className={styles.rowAction!}
+          onClick={() => onCancelGame(gameId)}
+        >
+          <CloseIcon />
+        </IconButton>
+      ) : null}
+
+      <DeleteRowButton gameId={gameId} status={status} onDelete={onDelete} />
+      <RowStatusBadge gameId={gameId} status={status} {...(progress ? { progress } : {})} />
     </span>
+  );
+}
+
+/** Full-width row progress strip (bar + status text) under an analyzing row. */
+function RowProgressBar({
+  gameId,
+  progress,
+}: {
+  gameId: string;
+  progress: GameAnalysisProgress;
+}): React.JSX.Element | null {
+  const percent = progress.totalPositions > 0 ? positionPercent(progress) : 0;
+  const profileLabel = progress.profile;
+  return (
+    <div
+      className={styles.rowProgressBar}
+      data-testid={`game-progress-bar-${gameId}`}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-label={`Analyzing ${progress.completedPositions} of ${progress.totalPositions} positions, ${percent} per cent, ${profileLabel} profile`}
+    >
+      <span className={styles.rowProgressTrack}>
+        <span
+          className={styles.rowProgressFill}
+          style={{ width: `${percent}%` }}
+          data-testid={`game-progress-fill-${gameId}`}
+        />
+      </span>
+      <span className={styles.rowProgressText} data-testid={`game-progress-${gameId}`}>
+        {progress.completedPositions}/{progress.totalPositions} positions · {percent}% ·{' '}
+        {profileLabel}
+      </span>
+    </div>
   );
 }
 

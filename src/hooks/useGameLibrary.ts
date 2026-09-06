@@ -42,7 +42,10 @@ export interface UseGameLibrary {
   toggleRow(id: string): void;
   selectAllVisible(): void;
   clearSelection(): void;
+  /** Delete the currently selected games. */
   deleteSelected(): Promise<void>;
+  /** Delete specific games (per-row delete) and reload. */
+  deleteGames(ids: readonly string[]): Promise<void>;
   clearAllFilters(): void;
 }
 
@@ -221,6 +224,13 @@ export function useGameLibrary(refreshKey: number): UseGameLibrary {
     if (ids.length === 0) {
       return;
     }
+    await deleteGames(ids);
+  }
+
+  async function deleteGames(ids: readonly string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -267,6 +277,7 @@ export function useGameLibrary(refreshKey: number): UseGameLibrary {
     selectAllVisible,
     clearSelection,
     deleteSelected,
+    deleteGames,
     clearAllFilters,
   };
 }

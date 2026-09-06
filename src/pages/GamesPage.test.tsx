@@ -329,4 +329,168 @@ describe('GamesPage analysis workflow (Feature 008)', () => {
     );
     expect((await analysisJobsRepository.listByGame(game.id))[0]!.state).toBe('cancelled');
   });
+
+  it('renders a full-width progress bar driven by completed/total positions', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(game);
+    const job = createAnalysisJob(game.id, FAKE_ENGINE_META, 4, 1);
+    await analysisJobsRepository.putJob({
+      ...job,
+      state: 'inProgress',
+      completedPositions: 1,
+      startedAt: 1,
+    });
+
+    const fake = createFakeAnalysisService();
+    renderWithAnalysis(fake);
+
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-progress-bar-${game.id}`)).toBeInTheDocument(),
+    );
+    const bar = screen.getByTestId(`game-progress-bar-${game.id}`);
+    expect(bar).toHaveAttribute('role', 'progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '25');
+    expect(screen.getByTestId(`game-progress-fill-${game.id}`)).toHaveStyle({ width: '25%' });
+  });
+
+  it('bulk Re-analyze is enabled only when the selection has a completed/outdated run', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(game);
+
+    const fake = createFakeAnalysisService();
+    renderWithAnalysis(fake);
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(1));
+    await user.click(screen.getByTestId(`game-select-${game.id}`));
+    // Unanalyzed selection → Re-analyze is disabled.
+    expect(screen.getByTestId('library-reanalyze')).toBeDisabled();
+
+    // Analyze → completed → the same selection enables Re-analyze.
+    await user.click(screen.getByTestId('library-analyze'));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'completed',
+      ),
+    );
+    expect(screen.getByTestId('library-reanalyze')).toBeEnabled();
+  });
+
+  it('bulk Re-analyze force-re-runs completed selections', async () => {
+    const game = fixtureGame('cc-blitz-clean');
+    await gamesRepository.saveGame(game);
+
+    const fake = createFakeAnalysisService();
+    renderWithAnalysis(fake);
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(1));
+    await user.click(screen.getByTestId(`game-select-${game.id}`));
+    await user.click(screen.getByTestId('library-analyze'));
+    await waitFor(async () => expect(await analysesRepository.countForGame(game.id)).toBe(14));
+
+    // A plain analyze on a completed game is a no-op; bulk Re-analyze reruns.
+    await user.click(screen.getByTestId('library-reanalyze'));
+    await waitFor(async () => expect(await analysesRepository.countForGame(game.id)).toBe(14));
+    expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument();
+  });
+
+  it('deletes a single game from its per-row delete action with confirmation', async () => {
+    const a = fixtureGame('cc-bullet-blunder');
+    const b = fixtureGame('cc-blitz-clean');
+    await gamesRepository.saveGames([a, b]);
+
+    const fake = createFakeAnalysisService();
+    renderWithAnalysis(fake);
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
+
+    // Per-row delete opens the dialog for that one game; cancelling keeps it.
+    await user.click(screen.getByTestId(`game-delete-${a.id}`));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Delete 1 game?');
+    await user.click(screen.getByTestId('delete-cancel'));
+    expect(await gamesRepository.countGames()).toBe(2);
+
+    // Confirming removes only that game.
+    await user.click(screen.getByTestId(`game-delete-${a.id}`));
+    await user.click(screen.getByTestId('delete-confirm'));
+    await waitFor(async () => expect(await gamesRepository.countGames()).toBe(1));
+    expect(await gamesRepository.hasGame(a.id)).toBe(false);
+    expect(await gamesRepository.hasGame(b.id)).toBe(true);
+  });
+
+  it('shows a colored status badge instead of plain text for non-trivial states', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(game);
+    const older = createAnalysisJob(
+      game.id,
+      {
+        engineName: 'stockfish',
+        engineVersion: '17.0.0',
+        engineBuild: 'stockfish-17-lite-single',
+        profile: 'normal',
+      },
+      4,
+      1,
+    );
+    await analysisJobsRepository.putJob(markCompleted(older, 2));
+
+    renderWithAnalysis(createFakeAnalysisService());
+
+    const badge = await screen.findByTestId(`game-status-${game.id}`);
+    // The badge carries an accessible name spelling out the state + info.
+    expect(badge).toHaveAttribute('aria-label', expect.stringContaining('Outdated'));
+    expect(badge).toHaveAttribute('title', expect.stringContaining('Re-analyze'));
+
+    // Tapping (touch) reveals the explanatory text.
+    await userEvent.setup().click(badge);
+    expect(screen.getByTestId(`game-status-info-${game.id}`)).toHaveTextContent('Outdated');
+  });
+
+  it('renders no status badge for completed or unanalyzed rows', async () => {
+    const a = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(a);
+    await analysisJobsRepository.putJob(
+      markCompleted(createAnalysisJob(a.id, FAKE_ENGINE_META, 4, 1), 2),
+    );
+    const bare = fixtureGame('cc-blitz-clean');
+    await gamesRepository.saveGame(bare);
+
+    renderWithAnalysis(createFakeAnalysisService());
+
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
+    expect(screen.queryByTestId(`game-status-${a.id}`)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`game-status-${bare.id}`)).not.toBeInTheDocument();
+  });
+
+  it('reveals the status explanation on hover (desktop) for a badge', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(game);
+    const older = createAnalysisJob(
+      game.id,
+      {
+        engineName: 'stockfish',
+        engineVersion: '17.0.0',
+        engineBuild: 'stockfish-17-lite-single',
+        profile: 'normal',
+      },
+      4,
+      1,
+    );
+    await analysisJobsRepository.putJob(markCompleted(older, 2));
+
+    renderWithAnalysis(createFakeAnalysisService());
+
+    const badge = await screen.findByTestId(`game-status-${game.id}`);
+    expect(screen.queryByTestId(`game-status-info-${game.id}`)).not.toBeInTheDocument();
+
+    await userEvent.setup().hover(badge);
+    expect(screen.getByTestId(`game-status-info-${game.id}`)).toHaveTextContent('Outdated');
+
+    // Leaving the badge hides the explanation again.
+    fireEvent.mouseLeave(badge);
+    expect(screen.queryByTestId(`game-status-info-${game.id}`)).not.toBeInTheDocument();
+  });
 });

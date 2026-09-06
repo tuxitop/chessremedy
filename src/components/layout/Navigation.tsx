@@ -16,6 +16,11 @@ export function Navigation(): React.JSX.Element {
           }
           data-testid={`nav-${item.label.toLowerCase()}`}
         >
+          {item.glyph ? (
+            <span className={styles.glyph} aria-hidden="true">
+              {item.glyph}
+            </span>
+          ) : null}
           {item.label}
         </NavLink>
       ))}

@@ -11,7 +11,13 @@ import { TIME_CONTROL_CATEGORIES } from '@/domain/chess/timeControl';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { BoltIcon, PlusIcon, SearchIcon, TrashIcon } from '@/components/ui/icons';
+import {
+  ANALYSIS_GLYPH,
+  PlusIcon,
+  RefreshIcon,
+  SearchIcon,
+  TrashIcon,
+} from '@/components/ui/icons';
 import styles from './GameLibraryToolbar.module.css';
 
 const TIME_FRAME_LABELS: Readonly<Record<string, string>> = {
@@ -40,11 +46,14 @@ export interface GameLibraryToolbarProps {
   readonly isFiltering: boolean;
   readonly selectedCount: number;
   readonly analysisEnabled: boolean;
+  /** True when the selection contains ≥1 game that can be re-analyzed. */
+  readonly canReanalyze: boolean;
   readonly importOpen: boolean;
   onFilters(patch: Partial<GameLibraryFilters>, replace?: boolean): void;
   onClearFilters(): void;
   onToggleImport(): void;
   onAnalyze(): void;
+  onReanalyze(): void;
   onDelete(): void;
 }
 
@@ -63,11 +72,13 @@ export function GameLibraryToolbar({
   isFiltering,
   selectedCount,
   analysisEnabled,
+  canReanalyze,
   importOpen,
   onFilters,
   onClearFilters,
   onToggleImport,
   onAnalyze,
+  onReanalyze,
   onDelete,
 }: GameLibraryToolbarProps): React.JSX.Element {
   const custom = isCustomTimeFrame(filters.timeFrame) ? filters.timeFrame : null;
@@ -238,7 +249,15 @@ export function GameLibraryToolbar({
               disabled={!analysisEnabled}
               onClick={onAnalyze}
             >
-              <BoltIcon />
+              <span aria-hidden="true">{ANALYSIS_GLYPH}</span>
+            </IconButton>
+            <IconButton
+              label="Re-analyze selected games"
+              dataTestId="library-reanalyze"
+              disabled={!canReanalyze}
+              onClick={onReanalyze}
+            >
+              <RefreshIcon />
             </IconButton>
             <IconButton
               label="Delete selected games"

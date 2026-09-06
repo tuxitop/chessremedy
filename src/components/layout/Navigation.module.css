@@ -37,3 +37,10 @@
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
+
+.glyph {
+  display: inline-flex;
+  margin-right: var(--space-1);
+  font-size: 1rem;
+  line-height: 1;
+}

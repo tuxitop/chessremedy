@@ -62,3 +62,35 @@ export function PlusIcon({ size = 16 }: IconProps): React.JSX.Element {
     </svg>
   );
 }
+
+export function RefreshIcon({ size = 16 }: IconProps): React.JSX.Element {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
+export function CloseIcon({ size = 16 }: IconProps): React.JSX.Element {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+export function PlayIcon({ size = 16 }: IconProps): React.JSX.Element {
+  return (
+    <svg {...svgProps(size)}>
+      <polygon points="6 3 20 12 6 21 6 3" />
+    </svg>
+  );
+}
+
+/** The shared 🔬 analysis glyph (top nav + analysis actions). */
+export const ANALYSIS_GLYPH = '\u{1F52C}';
+
+/** The game-review glyph (opens the Review surface) — distinct from analysis. */
+export const REVIEW_GLYPH = '\u{1F4DD}';
