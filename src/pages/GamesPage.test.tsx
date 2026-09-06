@@ -388,11 +388,25 @@ describe('GamesPage analysis workflow (Feature 008)', () => {
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(1));
     await user.click(screen.getByTestId(`game-select-${game.id}`));
     await user.click(screen.getByTestId('library-analyze'));
+
+    // Wait for the run to persist its records and surface `completed`.
     await waitFor(async () => expect(await analysesRepository.countForGame(game.id)).toBe(14));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'completed',
+      ),
+    );
 
     // A plain analyze on a completed game is a no-op; bulk Re-analyze reruns.
     await user.click(screen.getByTestId('library-reanalyze'));
     await waitFor(async () => expect(await analysesRepository.countForGame(game.id)).toBe(14));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'completed',
+      ),
+    );
     expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument();
   });
 
