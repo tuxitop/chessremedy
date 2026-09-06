@@ -12,15 +12,29 @@ import {
 } from '@/components/analysis/gameAnalysisSettings';
 import { useGameAnalysis, type AnalysisServiceLike } from './useGameAnalysis';
 
+/** Aggregate engine-position progress across a batch/queue. */
+export interface AnalysisQueuePositions {
+  readonly done: number;
+  readonly total: number;
+}
+
 export interface LibraryAnalysisApi {
   /** Per-game analysis status for the currently displayed rows. */
   readonly statuses: Readonly<Record<string, GameAnalysisStatus>>;
   /** Per-game live progress for rows with an active queued/in-progress job. */
   readonly perGameProgress: Readonly<Record<string, GameAnalysisProgress>>;
-  /** True while a batch run is active (progress is live). */
+  /**
+   * True while any analysis work is queued or running (drives the top
+   * progress banner; false once everything in the queue is finished/cancelled).
+   */
   readonly running: boolean;
   /** Human-readable batch/per-game progress while running, or `null`. */
   readonly progressLine: string | null;
+  /**
+   * Aggregate engine positions across the games of the running batch (done/total
+   * where the total is known), or `null` when no live totals exist yet.
+   */
+  readonly positions: AnalysisQueuePositions | null;
   /** True when a further batch is queued behind the active one. */
   readonly queuedNote: string | null;
   readonly error: string | null;
@@ -115,52 +129,96 @@ function collectProgress(
   return out;
 }
 
+interface QueuedBatch {
+  readonly ids: string[];
+  readonly force: boolean;
+}
+
+interface ActiveRun {
+  readonly ids: string[];
+  readonly force: boolean;
+}
+
 /**
- * Ties the Game Library's selected games to the analysis service: exposes
- * persisted per-game statuses and per-game progress (refreshed on row changes,
- * after runs and polled while a batch is running or an active job persists)
- * plus the batch analyze / per-row and batch cancel actions and a
- * human-readable progress line built from persistent job state (no fabricated
- * ETA).
+ * Ties the Game Library's selected games to the analysis service. Requests are
+ * serialized through a real FIFO queue held here (one batch runs on the engine
+ * at a time; the rest wait, visible as `queued` on their rows and cancellable
+ * individually). Live per-game progress is read from persisted jobs (polled
+ * while a batch runs), and the queue-facing statuses/progress are derived so
+ * the top banner updates the instant a game is queued.
  */
 export function useLibraryAnalysis(
   service: AnalysisServiceLike | null,
   gameIds: readonly string[],
 ): LibraryAnalysisApi {
   const { busy, error, analyze, cancel } = useGameAnalysis(service);
-  const [statuses, setStatuses] = useState<Readonly<Record<string, GameAnalysisStatus>>>({});
+  const [persistedStatuses, setPersistedStatuses] = useState<
+    Readonly<Record<string, GameAnalysisStatus>>
+  >({});
   const [perGameProgress, setPerGameProgress] = useState<
     Readonly<Record<string, GameAnalysisProgress>>
   >({});
-  const [running, setRunning] = useState(false);
-  const [progressLine, setProgressLine] = useState<string | null>(null);
-  const [queuedNote, setQueuedNote] = useState<string | null>(null);
-  const activeIdsRef = useRef<readonly string[] | null>(null);
-  const queuedCountRef = useRef(0);
+  /** Ids of the batch the engine is currently working on (for progress polls). */
+  const [activeIds, setActiveIds] = useState<readonly string[]>([]);
+  /** Ids of games whose request is still waiting behind the active batch. */
+  const [queuedIds, setQueuedIds] = useState<readonly string[]>([]);
+  /** How many logical batches are waiting behind the active one. */
+  const [pendingBatchCount, setPendingBatchCount] = useState(0);
+  const activeRef = useRef<ActiveRun | null>(null);
+  const pendingRef = useRef<readonly QueuedBatch[]>([]);
+  /** Last known per-game position totals, kept so a finished batch member still
+   *  contributes to the aggregate queue progress until the batch is released. */
+  const [knownTotals, setKnownTotals] = useState<Readonly<Record<string, number>>>({});
+  const unmountedRef = useRef(false);
 
   const key = gameIds.join('\u0000');
 
-  async function runBatch(ids: readonly string[], force: boolean): Promise<void> {
+  /** Hand one pending batch to the engine at a time (the rest stay queued). */
+  async function drain(): Promise<void> {
+    if (!service || unmountedRef.current) {
+      return;
+    }
+    if (activeRef.current !== null) {
+      return;
+    }
+    const next = pendingRef.current[0];
+    if (!next) {
+      setActiveIds([]);
+      setQueuedIds([]);
+      setPendingBatchCount(0);
+      return;
+    }
+    pendingRef.current = pendingRef.current.slice(1);
+    const run: ActiveRun = { ids: [...next.ids], force: next.force };
+    activeRef.current = run;
+    setActiveIds(run.ids);
+    setQueuedIds(pendingRef.current.flatMap((batch) => batch.ids));
+    setPendingBatchCount(pendingRef.current.length);
+    try {
+      const resolved = await resolvedGameAnalysis();
+      await analyze([...run.ids], resolved.profile, run.force, resolved.config);
+    } finally {
+      // Only clear the slot we own: an explicit `cancel()` (or a newer run that
+      // started after it) leaves the active marker alone.
+      if (activeRef.current === run) {
+        activeRef.current = null;
+        setActiveIds([]);
+        setQueuedIds(pendingRef.current.flatMap((batch) => batch.ids));
+        setPendingBatchCount(pendingRef.current.length);
+      }
+      void drain();
+    }
+  }
+
+  function runBatch(ids: readonly string[], force: boolean): void {
     if (!service) {
       return;
     }
-    activeIdsRef.current = ids;
-    queuedCountRef.current += 1;
-    setRunning(true);
-    setProgressLine(force ? 'Queued re-analysis…' : 'Queued…');
-    setQueuedNote(
-      queuedCountRef.current > 1 ? `${queuedCountRef.current - 1} batch(es) queued` : null,
-    );
-    try {
-      const resolved = await resolvedGameAnalysis();
-      await analyze([...ids], resolved.profile, force, resolved.config);
-    } finally {
-      queuedCountRef.current = Math.max(0, queuedCountRef.current - 1);
-      setQueuedNote(
-        queuedCountRef.current > 0 ? `${queuedCountRef.current} batch(es) queued` : null,
-      );
-      setRunning(false);
-      activeIdsRef.current = null;
+    pendingRef.current = [...pendingRef.current, { ids: [...ids], force }];
+    setQueuedIds(pendingRef.current.flatMap((batch) => batch.ids));
+    setPendingBatchCount(pendingRef.current.length);
+    if (activeRef.current === null) {
+      void drain();
     }
   }
 
@@ -168,29 +226,138 @@ export function useLibraryAnalysis(
     if (!service) {
       return;
     }
-    const activeIds = activeIdsRef.current ?? ids;
+    // Progress is queried for the running batch (all its members have a
+    // persisted queued/in-progress job); when nothing of ours is running but
+    // the user landed on rows with an active job (resume after navigation),
+    // fall back to the displayed rows.
+    const active = activeRef.current;
+    const progressTarget = active && active.ids.length > 0 ? active.ids : ids;
     const expected = await expectedAnalysisConfig();
     const [rows, progress] = await Promise.all([
       service.statusesOf(ids, expected).catch(() => null),
       service.jobProgress
-        ? service.jobProgress(activeIds).catch(() => null)
+        ? service.jobProgress(progressTarget).catch(() => null)
         : Promise.resolve(null),
     ]);
     if (rows !== null) {
-      setStatuses(rows);
+      setPersistedStatuses(rows);
     }
     if (progress !== null) {
       const collected = collectProgress(progress);
+      // Remember each member's total positions so a game that finishes keeps
+      // contributing to the aggregate queue progress.
+      setKnownTotals((previous) => {
+        const totals: Record<string, number> = { ...previous };
+        for (const [id, value] of Object.entries(collected)) {
+          if (value.totalPositions > 0) {
+            totals[id] = value.totalPositions;
+          }
+        }
+        return totals;
+      });
       setPerGameProgress(collected);
-      const sts = await service.statusesOf(activeIds, expected).catch(() => null);
-      if (sts !== null) {
-        setProgressLine(buildProgressLine(activeIds, sts, collected));
-      }
     } else {
       setPerGameProgress({});
-      setProgressLine(null);
     }
   }
+
+  // Displayed statuses: persisted job status, overlaid with a `queued` marker
+  // for games whose request is waiting behind the active batch. This makes a
+  // queued re-analysis/analyze visible on its row before it ever touches the
+  // engine (no persisted job exists yet).
+  const statuses = useMemo<Readonly<Record<string, GameAnalysisStatus>>>(() => {
+    const out: Record<string, GameAnalysisStatus> = {};
+    for (const id of queuedIds) {
+      out[id] = 'queued';
+    }
+    for (const [id, status] of Object.entries(persistedStatuses)) {
+      if (!(id in out)) {
+        out[id] = status;
+      }
+    }
+    return out;
+  }, [persistedStatuses, queuedIds]);
+
+  const hasActiveRows = useMemo(
+    () => Object.values(statuses).some((status) => status === 'inProgress' || status === 'queued'),
+    [statuses],
+  );
+
+  /** True while there is any work queued or running (drives the top banner). */
+  const running = activeIds.length > 0 || queuedIds.length > 0;
+
+  /**
+   * Aggregate engine positions across the members of the running batch. A
+   * member still carrying a live job contributes its current position totals; a
+   * member that already completed contributes its full remembered total, so the
+   * percentage grows monotonically within a batch.
+   */
+  const positions = useMemo<AnalysisQueuePositions | null>(() => {
+    if (activeIds.length === 0) {
+      return null;
+    }
+    let done = 0;
+    let total = 0;
+    for (const id of activeIds) {
+      const status = statuses[id];
+      const live = perGameProgress[id];
+      if (live && live.totalPositions > 0) {
+        done += live.completedPositions;
+        total += live.totalPositions;
+      } else if (status === 'completed' || status === 'outdated') {
+        const remembered = knownTotals[id];
+        if (remembered && remembered > 0) {
+          done += remembered;
+          total += remembered;
+        }
+      }
+    }
+    return total > 0 ? { done, total } : null;
+  }, [activeIds, statuses, perGameProgress, knownTotals]);
+
+  const progressLine = useMemo<string | null>(() => {
+    if (!running) {
+      return null;
+    }
+    const work = new Set([...activeIds, ...queuedIds]);
+    if (work.size === 0) {
+      return null;
+    }
+    const workStatuses: Record<string, GameAnalysisStatus> = {};
+    for (const id of work) {
+      workStatuses[id] = statuses[id] ?? 'unanalyzed';
+    }
+    const total = work.size;
+    const completed = countBy(workStatuses, 'completed') + countBy(workStatuses, 'outdated');
+    const inProgress = countBy(workStatuses, 'inProgress');
+    const queuedCount = countBy(workStatuses, 'queued');
+    const failed = countBy(workStatuses, 'failed');
+
+    const parts: string[] = [];
+    const underway = completed + inProgress;
+    if (inProgress > 0 || queuedCount > 0 || underway < total || failed > 0) {
+      parts.push(`Analyzing ${Math.min(Math.max(underway, 1), total)} of ${total} games`);
+    } else if (completed === total) {
+      parts.push(`Analyzed ${total} games`);
+    }
+    if (failed > 0) {
+      parts.push(`${failed} failed`);
+    }
+    if (positions) {
+      parts.push(`${positions.done}/${positions.total} positions`);
+    }
+    return parts.length > 0 ? parts.join(' · ') : 'Analyzing…';
+  }, [running, activeIds, queuedIds, statuses, positions]);
+
+  const queuedNote = useMemo<string | null>(
+    () =>
+      pendingBatchCount > 0
+        ? pendingBatchCount === 1
+          ? '1 more batch queued'
+          : `${pendingBatchCount} more batches queued`
+        : null,
+    [pendingBatchCount],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -208,14 +375,10 @@ export function useLibraryAnalysis(
         // Ignore transient read errors; the Library surface reports its own.
       }
     }
-    // Reload whenever the displayed row set changes or after each run.
+    // Reload whenever the displayed row set changes, after each run, or when a
+    // new batch becomes active (so its rows surface queued/in-progress at once).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, service, busy, running]);
-
-  const hasActiveRows = useMemo(
-    () => Object.values(statuses).some((status) => status === 'inProgress' || status === 'queued'),
-    [statuses],
-  );
+  }, [key, service, busy, running, activeIds]);
 
   // Poll live progress while a batch runs or while any displayed row still has
   // a persisted queued/in-progress job (progress survives navigation).
@@ -230,12 +393,22 @@ export function useLibraryAnalysis(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, hasActiveRows, key, service]);
 
+  // On unmount stop the active run and never start queued batches.
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true;
+      pendingRef.current = [];
+      activeRef.current = null;
+    };
+  }, []);
+
   return useMemo<LibraryAnalysisApi>(() => {
     const api: LibraryAnalysisApi = {
       statuses,
       perGameProgress,
       running,
       progressLine,
+      positions,
       queuedNote,
       error,
       enabled: service !== null,
@@ -252,6 +425,13 @@ export function useLibraryAnalysis(
         void runBatch([...ids], true);
       },
       cancel() {
+        // Explicit Cancel stops the active run and clears the queued requests
+        // (their not-yet-started hook runs are dropped).
+        pendingRef.current = [];
+        activeRef.current = null;
+        setActiveIds([]);
+        setQueuedIds([]);
+        setPendingBatchCount(0);
         cancel();
       },
       cancelGame(gameId: string) {
@@ -259,10 +439,26 @@ export function useLibraryAnalysis(
           return;
         }
         void (async () => {
-          try {
-            await service.cancelGame(gameId);
-          } catch {
-            // Ignore transient cancel errors; the next poll reconciles state.
+          const waiting = pendingRef.current.some((batch) => batch.ids.includes(gameId));
+          if (waiting) {
+            // The game is waiting in the queue behind the active batch: pull it
+            // out so it never runs (no persisted job exists for it yet).
+            const kept = pendingRef.current
+              .map((batch) => ({ ...batch, ids: batch.ids.filter((id) => id !== gameId) }))
+              .filter((batch) => batch.ids.length > 0);
+            pendingRef.current = kept;
+            setQueuedIds(kept.flatMap((batch) => batch.ids));
+            setPendingBatchCount(kept.length);
+          } else {
+            // The game has (or will have) a persisted job: cancel it at the
+            // service. This covers both the running batch (its job is stopped
+            // at the next boundary; the rest keeps going) and a persisted
+            // queued/in-progress job left over from an earlier session.
+            try {
+              await service.cancelGame(gameId);
+            } catch {
+              // Ignore transient cancel errors; the next poll reconciles state.
+            }
           }
           await refreshRowsAndProgress(gameIds);
         })();
@@ -275,42 +471,11 @@ export function useLibraryAnalysis(
     perGameProgress,
     running,
     progressLine,
+    positions,
     queuedNote,
     error,
     service,
     analyze,
     cancel,
   ]);
-}
-
-function buildProgressLine(
-  ids: readonly string[],
-  statuses: Readonly<Record<string, GameAnalysisStatus>>,
-  progress: Readonly<Record<string, GameAnalysisProgress>>,
-): string {
-  const completed = countBy(statuses, 'completed');
-  const inProgress = countBy(statuses, 'inProgress');
-  const queued = countBy(statuses, 'queued');
-  const failed = countBy(statuses, 'failed');
-  const total = ids.length;
-
-  const parts: string[] = [];
-  const underway = completed + inProgress;
-  if (inProgress > 0 || queued > 0 || underway < total) {
-    parts.push(`Analyzing ${Math.min(underway || 1, total)} of ${total} games`);
-  } else if (completed === total) {
-    parts.push(`Analyzed ${total} games`);
-  }
-  if (failed > 0) {
-    parts.push(`${failed} failed`);
-  }
-  const active = Object.entries(progress).find(([, value]) => value.state === 'inProgress');
-  if (active?.[1]) {
-    const detail = active[1]!;
-    if (detail.totalPositions > 0) {
-      parts.push(`${detail.completedPositions}/${detail.totalPositions} positions`);
-    }
-    parts.push(`${detail.profile} profile`);
-  }
-  return parts.length > 0 ? parts.join(' · ') : 'Analyzing…';
 }

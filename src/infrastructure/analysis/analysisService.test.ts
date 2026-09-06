@@ -54,11 +54,11 @@ function tick(): Promise<void> {
 }
 
 /** Yield ticks until `predicate` holds (capped); lets async prep make progress. */
-async function waitFor(predicate: () => boolean): Promise<void> {
-  for (let i = 0; i < 200 && !predicate(); i += 1) {
+async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 200 && !(await predicate()); i += 1) {
     await tick();
   }
-  expect(predicate()).toBe(true);
+  expect(await predicate()).toBe(true);
 }
 
 /**
@@ -540,7 +540,12 @@ describe('AnalysisService — Feature-010 completion hooks', () => {
     const job = jobs[0]!;
     expect(job.state).toBe('completed');
 
-    // The completed run's summary ends `completed` with the verified count.
+    // Detection is detached from the analysis queue (Feature 008 §10): the run
+    // resolves `completed` before the background pass settles, so wait for it.
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(job.id);
+      return summary?.detectionState === 'completed';
+    });
     const summary = await summariesRepository.getForAnalysis(job.id);
     expect(summary).toBeDefined();
     expect(summary?.gameId).toBe(gameId);
@@ -583,9 +588,10 @@ describe('AnalysisService — Feature-010 completion hooks', () => {
     const firstRig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
     const first = await serviceWithDetectionOf(firstRig).analyzeGames([gameId]);
     expect(first[0]!.state).toBe('completed');
-    expect((await summariesRepository.getForAnalysis(first[0]!.id))?.detectionState).toBe(
-      'completed',
-    );
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(first[0]!.id);
+      return summary?.detectionState === 'completed';
+    });
 
     // A forced re-analysis that fails leaves no stale Feature-010 rows behind.
     const failingFen = plan.plan.analyzeFens[0]!;
@@ -607,6 +613,10 @@ describe('AnalysisService — Feature-010 completion hooks', () => {
     });
     expect(rerun[0]!.state).toBe('completed');
     expect(await analysesRepository.countForGame(gameId)).toBe(plan.plan.moves.length);
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(rerun[0]!.id);
+      return summary?.detectionState === 'completed';
+    });
     const summary = await summariesRepository.getForAnalysis(rerun[0]!.id);
     expect(summary?.detectionState).toBe('completed');
     expect(summary?.missedTacticCount).toBe(1);
@@ -649,5 +659,45 @@ describe('AnalysisService — Feature-010 completion hooks', () => {
     expect(await analysesRepository.countForGame(b)).toBe(14);
     // The queued summary was still written before the (broken) detection hook.
     expect((await summariesRepository.getForAnalysis(jobs[0]!.id))?.detectionState).toBe('queued');
+  });
+
+  it('starts the next game as soon as the previous analysis completes (detection never holds the queue)', async () => {
+    const a = await seedFixture('cc-bullet-blunder');
+    const b = await seedFixture('cc-blitz-clean');
+    let detectionStarted = false;
+    let releaseDetection!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseDetection = resolve;
+    });
+    const detection = {
+      runPassForCompletedJob: async (): Promise<void> => {
+        detectionStarted = true;
+        await gate;
+      },
+    } as unknown as TacticalDetectionService;
+    const rig = createFakeEngine();
+    const service = new AnalysisService({
+      games: gamesRepository,
+      analyses: analysesRepository,
+      jobs: analysisJobsRepository,
+      engine: rig.service,
+      engineCache: new DexieEngineAnalysisCache(),
+      engineMetadata: (profile: AnalysisProfile): EngineMetadata => ({
+        ...FAKE_ENGINE_META,
+        profile,
+      }),
+      now,
+      detection,
+    });
+
+    // A's detection pass is gated (never settles) yet the batch must still
+    // advance to B and resolve both jobs `completed` — detection is derived
+    // data that runs detached from the analysis queue.
+    const jobs = await service.analyzeGames([a, b]);
+    expect(detectionStarted).toBe(true);
+    expect(jobs.map((job) => job.state)).toEqual(['completed', 'completed']);
+    expect(await analysesRepository.countForGame(a)).toBe(4);
+    expect(await analysesRepository.countForGame(b)).toBe(14);
+    releaseDetection();
   });
 });

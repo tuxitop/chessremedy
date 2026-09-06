@@ -226,6 +226,12 @@ When the user selects multiple games and chooses `Analyze`:
 
 A failure in one game must not abort the entire batch.
 
+A game is considered done — and the queue advances to the next queued
+game/batch — the moment its job is persisted `completed` (every required
+position analyzed). Feature-010's missed-tactic detection pass is derived data
+that runs *detached* right after that persist: it never holds the batch or the
+queue open, so a game that finished can never stall the games behind it.
+
 Example:
 
     Game 1 → completed

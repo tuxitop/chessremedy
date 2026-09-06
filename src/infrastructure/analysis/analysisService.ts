@@ -17,10 +17,13 @@
  * Feature-010 completion hooks (optional dependencies): when a completed run
  * is persisted the per-analysis summary is written in the `queued` detection
  * state and — when a `TacticalDetectionService` is wired in — the two-stage
- * detection pass runs for the completed run (abort-aware). A forced
- * re-analysis also clears the superseded run's summary and puzzle-candidate
- * rows so the new run starts from an absent detection state. Detection is
- * derived data: it never fails or blocks an analysis batch.
+ * detection pass is scheduled for the completed run. Detection is derived
+ * data: it never fails an analysis batch and it never holds the analysis queue
+ * open — a game's job is `completed` (and the next queued game/batch starts)
+ * as soon as its analysis is persisted, while detection runs in the background
+ * (abort-aware, idempotent, resumable, sharing the single engine FIFO). A
+ * forced re-analysis also clears the superseded run's summary and
+ * puzzle-candidate rows so the new run starts from an absent detection state.
  */
 
 import type { EngineService, EngineAnalysisResult } from '@/infrastructure/engine/types';
@@ -146,6 +149,24 @@ export class AnalysisService {
       };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Number of distinct engine positions a game requires (its plan's
+   * `analyzeFens`), or `0` when the game/plan is unavailable. Used at batch
+   * prep so a persisted `queued` job already carries its real total.
+   */
+  private async positionTotalFor(gameId: GameId): Promise<number> {
+    try {
+      const game = await this.games.getGame(gameId);
+      if (!game) {
+        return 0;
+      }
+      const planned = planGameAnalysis(game);
+      return planned.ok ? planned.plan.analyzeFens.length : 0;
+    } catch {
+      return 0;
     }
   }
 
@@ -326,9 +347,13 @@ export class AnalysisService {
         await this.clearDetectionState(stored.id);
         stored = undefined;
       }
-      // Total positions are patched when each job starts; queued here is the
-      // persistent "needs work" marker that survives an application restart.
-      const job = jobForRun(stored, gameId, engine, 0, this.now(), config);
+      // Total positions are known up front (planning is pure/cheap) so a
+      // queued-but-not-started job already carries its real total — the queue
+      // progress UI can sum the whole batch before a game starts.
+      const totalPositions = await this.positionTotalFor(gameId);
+      // Total positions are also patched when each job starts; queued here is
+      // the persistent "needs work" marker that survives an application restart.
+      const job = jobForRun(stored, gameId, engine, totalPositions, this.now(), config);
       if (job.state === 'queued') {
         await this.jobs.putJob(job);
       }
@@ -479,7 +504,12 @@ export class AnalysisService {
     current = markCompleted(current, this.now());
     await this.writeQueuedSummary(current, game, records);
     await this.persist(current, run);
-    await this.runDetection(current, game, records, run);
+    // Detection is derived data and must never hold the analysis queue open
+    // (Feature 008 §7/§10 + module header): the job is `completed` and the next
+    // game of the batch / next queued batch starts as soon as this persist
+    // lands, while the detection pass runs detached in the background (it is
+    // abort-aware, idempotent and resumable, and shares the single engine FIFO).
+    void this.runDetection(current, game, records);
     return current;
   }
 
@@ -510,17 +540,18 @@ export class AnalysisService {
 
   /**
    * Trigger the Feature-010 two-stage detection pass for a completed run
-   * (Stage 1 + Stage 2, abort-aware, cache-aware and idempotent per analysis
-   * identity). Detection runs after the run's job is persisted; a failure here
-   * never aborts the analysis batch.
+   * (Stage 1 + Stage 2, cache-aware and idempotent per analysis identity).
+   * Called detached (never awaited) from `runGameJob` after the run's job is
+   * persisted `completed`, so detection never blocks the analysis queue; a
+   * failure here never fails the completed job. The pass runs to completion
+   * with its own lifecycle (it is resumable and shares the engine FIFO).
    */
   private async runDetection(
     job: AnalysisJob,
     game: Game,
     records: readonly MoveAnalysis[],
-    run?: AnalysisRunOptions,
   ): Promise<void> {
-    if (!this.detection || run?.signal?.aborted) {
+    if (!this.detection) {
       return;
     }
     try {
@@ -528,7 +559,6 @@ export class AnalysisService {
         job,
         { id: game.id, userColor: game.userColor },
         records,
-        run?.signal,
       );
     } catch {}
   }

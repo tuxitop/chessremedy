@@ -593,6 +593,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-2);
   font-size: var(--font-size-sm);
   color: var(--color-fg-muted);
@@ -601,4 +602,24 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+}
+
+.progressText {
+  flex: 1 1 auto;
+  min-width: 12rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.progressNote {
+  color: var(--color-fg-muted);
+}
+
+/* Aggregate queue progress (top banner): a slim full-row bar + % readout. */
+.queueProgress {
+  flex: 1 1 auto;
+  min-width: 8rem;
+  max-width: 24rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
 }

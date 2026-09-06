@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
@@ -10,6 +10,7 @@ import { gameFromPgn } from '@/domain/chess/parseGame';
 import { planGameAnalysis, createAnalysisJob, markCompleted } from '@/domain/analysis';
 import { createFakeImportService } from '@/components/games/test-support/fakeImportService';
 import { FAKE_ENGINE_META } from '@/infrastructure/analysis/test-support/fakeAnalysisEngine';
+import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import {
   createFakeAnalysisService,
   type FakeAnalysisService,
@@ -36,6 +37,70 @@ function renderWithAnalysis(fake: FakeAnalysisService): void {
   renderWithProviders(<GamesPage service={rig.service} analysisService={fake.service} />, {
     initialEntries: ['/games'],
   });
+}
+
+interface HeldAnalysisRig {
+  readonly service: AnalysisServiceLike;
+  readonly calls: string[][];
+  release(): void;
+  setStatus(gameId: string, status: string): void;
+  setProgress(gameId: string, done: number, total: number): void;
+}
+
+/** AnalysisServiceLike that holds every batch until `release`, with scriptable
+ *  persisted statuses/progress — lets the queue banner be observed mid-run. */
+function createHeldAnalysisService(): HeldAnalysisRig {
+  const calls: string[][] = [];
+  const waiters: Array<() => void> = [];
+  const statuses: Record<string, string> = {};
+  const progress: Record<string, { done: number; total: number }> = {};
+  const service: AnalysisServiceLike = {
+    async analyzeGames(gameIds) {
+      calls.push([...gameIds]);
+      await new Promise<void>((resolve) => waiters.push(resolve));
+      return gameIds.map(() => ({ state: 'completed' })) as never;
+    },
+    async statusesOf(gameIds) {
+      const out: Record<string, string> = {};
+      for (const id of gameIds) {
+        out[id] = statuses[id] ?? 'unanalyzed';
+      }
+      return out as never;
+    },
+    async listActiveJobs() {
+      return [];
+    },
+    async cancelGame(gameId) {
+      statuses[gameId] = 'cancelled';
+    },
+    async jobProgress(gameIds) {
+      const out: Record<string, unknown> = {};
+      for (const id of gameIds) {
+        if (statuses[id] === 'inProgress' && progress[id]) {
+          out[id] = {
+            state: 'inProgress',
+            completedPositions: progress[id]!.done,
+            totalPositions: progress[id]!.total,
+            profile: 'normal',
+          };
+        }
+      }
+      return out as never;
+    },
+  };
+  return {
+    service,
+    calls,
+    release() {
+      waiters.shift()?.();
+    },
+    setStatus(gameId, status) {
+      statuses[gameId] = status;
+    },
+    setProgress(gameId, done, total) {
+      progress[gameId] = { done, total };
+    },
+  };
 }
 
 describe('GamesPage (Game Library)', () => {
@@ -408,6 +473,79 @@ describe('GamesPage analysis workflow (Feature 008)', () => {
       ),
     );
     expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument();
+  });
+
+  it('shows the queue banner, counts queued games and clears when the queue drains', async () => {
+    const bullet = fixtureGame('cc-bullet-blunder');
+    const blitz = fixtureGame('cc-blitz-clean');
+    await gamesRepository.saveGames([bullet, blitz]);
+
+    const held = createHeldAnalysisService();
+    const rig = createFakeImportService();
+    renderWithProviders(<GamesPage service={rig.service} analysisService={held.service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
+
+    // Analyze the first game; the engine is held so the run stays visible.
+    await user.click(screen.getByTestId(`game-select-${bullet.id}`));
+    await user.click(screen.getByTestId('library-analyze'));
+    await waitFor(() => expect(held.calls).toEqual([[bullet.id]]));
+
+    act(() => {
+      held.setStatus(bullet.id, 'inProgress');
+      held.setProgress(bullet.id, 2, 4);
+    });
+    const banner = () => screen.getByTestId('library-progress');
+    await waitFor(() => expect(banner()).toHaveTextContent('Analyzing 1 of 1 games'));
+    await waitFor(() => expect(screen.getByTestId('library-progress-bar')).toBeInTheDocument());
+    const bar = screen.getByTestId('library-progress-bar');
+    expect(bar).toHaveAttribute('role', 'progressbar');
+    await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '50'));
+    expect(screen.getByTestId('library-progress-fill')).toHaveStyle({ width: '50%' });
+
+    // Queue a second game while the first runs → the banner widens to 1 of 2
+    // and the queued row exposes a per-row cancel. Analyze the *selection*, so
+    // clear the first game's checkbox first.
+    await user.click(screen.getByTestId(`game-select-${bullet.id}`));
+    await user.click(screen.getByTestId(`game-select-${blitz.id}`));
+    await user.click(screen.getByTestId('library-analyze'));
+    await waitFor(() => expect(held.calls).toEqual([[bullet.id]])); // not started yet
+    await waitFor(() => expect(banner()).toHaveTextContent('Analyzing 1 of 2 games'));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${blitz.id}`)).toHaveAttribute(
+        'data-status',
+        'queued',
+      ),
+    );
+
+    // Cancel the queued game: it is pulled out of the queue and never runs.
+    await user.click(screen.getByTestId(`game-cancel-${blitz.id}`));
+    await waitFor(() => expect(banner()).toHaveTextContent('Analyzing 1 of 1 games'));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${blitz.id}`)).toHaveAttribute(
+        'data-status',
+        'unanalyzed',
+      ),
+    );
+
+    // The active game finishes → the banner disappears (nothing left queued).
+    act(() => {
+      held.setStatus(bullet.id, 'completed');
+    });
+    act(() => held.release());
+    await waitFor(() => expect(held.calls).toEqual([[bullet.id]]));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${bullet.id}`)).toHaveAttribute(
+        'data-status',
+        'completed',
+      ),
+    );
+    await waitFor(() => expect(screen.queryByTestId('library-progress')).not.toBeInTheDocument(), {
+      timeout: 3000,
+    });
   });
 
   it('deletes a single game from its per-row delete action with confirmation', async () => {

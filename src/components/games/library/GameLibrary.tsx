@@ -12,7 +12,11 @@ import {
 import { dateIsoOf } from '@/domain/gameLibrary/timeframe';
 import { terminationLabel, fallbackTermination } from '@/domain/chess/gameEnd';
 import { useGameLibrary } from '@/hooks/useGameLibrary';
-import { useLibraryAnalysis, type LibraryAnalysisApi } from '@/hooks/useLibraryAnalysis';
+import {
+  useLibraryAnalysis,
+  type AnalysisQueuePositions,
+  type LibraryAnalysisApi,
+} from '@/hooks/useLibraryAnalysis';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { GameAnalysisProgress } from '@/infrastructure/analysis';
@@ -265,17 +269,27 @@ export function GameLibrary({
       ) : null}
 
       {analysis?.running ? (
-        <p className={styles.progress} data-testid="library-progress" aria-live="polite">
-          <span>{analysis.progressLine}</span>
+        <div className={styles.progress} data-testid="library-progress" aria-live="polite">
+          <span className={styles.progressText} data-testid="library-progress-line">
+            {analysis.progressLine}
+            {analysis.queuedNote ? (
+              <span className={styles.progressNote} data-testid="library-queued-note">
+                {' '}
+                · {analysis.queuedNote}
+              </span>
+            ) : null}
+          </span>
+          {analysis.positions ? <QueueProgressBar positions={analysis.positions} /> : null}
           <Button
             variant="ghost"
             className={styles.cancelInline!}
             data-testid="library-analyze-cancel"
             onClick={() => analysis.cancel()}
+            title="Cancel the running analysis and remove queued games"
           >
             Cancel analysis
           </Button>
-        </p>
+        </div>
       ) : null}
 
       {shownRows.length > 0 ? (
@@ -845,6 +859,36 @@ function AnalysisCell({
       <DeleteRowButton gameId={gameId} status={status} onDelete={onDelete} />
       <RowStatusBadge gameId={gameId} status={status} {...(progress ? { progress } : {})} />
     </span>
+  );
+}
+
+/**
+ * Top-of-list queue progress: one bar over the aggregate positions of every
+ * game currently in the analysis queue, with the percentage spelled out.
+ */
+function QueueProgressBar({ positions }: { positions: AnalysisQueuePositions }): React.JSX.Element {
+  const percent = positions.total > 0 ? Math.round((positions.done / positions.total) * 100) : 0;
+  return (
+    <div
+      className={styles.queueProgress}
+      data-testid="library-progress-bar"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-label={`Analysis queue: ${positions.done} of ${positions.total} positions, ${percent} per cent`}
+    >
+      <span className={styles.rowProgressTrack}>
+        <span
+          className={styles.rowProgressFill}
+          style={{ width: `${percent}%` }}
+          data-testid="library-progress-fill"
+        />
+      </span>
+      <span className={styles.rowProgressText} data-testid="library-progress-percent">
+        {positions.done}/{positions.total} positions · {percent}%
+      </span>
+    </div>
   );
 }
 
