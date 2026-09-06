@@ -1,5 +1,5 @@
 import type * as React from 'react';
-import { Fragment, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { parseTimeControl } from '@/domain/chess/timeControl';
@@ -16,6 +16,11 @@ import { useLibraryAnalysis, type LibraryAnalysisApi } from '@/hooks/useLibraryA
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { GameAnalysisProgress } from '@/infrastructure/analysis';
+import { formatAccuracy } from '@/domain/analysis/classificationMeta';
+import {
+  classificationCountColor,
+  missedTacticCountColor,
+} from '@/components/analysis/classificationColors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import {
@@ -73,6 +78,93 @@ export function GameLibrary({
     const status = analysis.statuses[id];
     return status === 'completed' || status === 'outdated';
   });
+
+  // Auto-refresh: a row's insights strip appears as soon as its game's
+  // analysis completes (queued/in-progress → completed/outdated) without a
+  // manual page refresh. One debounced `library.reload()` per settling batch.
+  const lastStatusSignature = useRef<string | null>(null);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRowReload = useCallback(() => {
+    if (reloadTimer.current !== null) {
+      clearTimeout(reloadTimer.current);
+    }
+    reloadTimer.current = setTimeout(() => {
+      reloadTimer.current = null;
+      library.reload();
+    }, 250);
+  }, [library]);
+
+  useEffect(() => {
+    const signature = Object.entries(analysis.statuses)
+      .filter(
+        ([, status]) =>
+          status === 'queued' ||
+          status === 'inProgress' ||
+          status === 'completed' ||
+          status === 'outdated',
+      )
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([id, status]) => `${id}:${status}`)
+      .join('|');
+    if (lastStatusSignature.current === null) {
+      lastStatusSignature.current = signature;
+      return;
+    }
+    if (signature !== lastStatusSignature.current) {
+      lastStatusSignature.current = signature;
+      scheduleRowReload();
+    }
+  }, [analysis.statuses, scheduleRowReload]);
+
+  useEffect(() => {
+    const timer = reloadTimer.current;
+    return () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    };
+  }, []);
+
+  // Summary backfill (Feature 010): older analyzed games whose latest
+  // completed run predates the per-analysis summary table have no insights.
+  // For any displayed completed/outdated row still missing them, derive and
+  // store an `absent`-detection summary, then reload once.
+  const backfillAttempted = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!analysisService) {
+      return;
+    }
+    const needBackfill = library.rows.filter((row) => {
+      if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
+        return false;
+      }
+      if (backfillAttempted.current.has(row.id)) {
+        return false;
+      }
+      return !row.accuracy && !row.classificationCounts;
+    });
+    if (needBackfill.length === 0) {
+      return;
+    }
+    const ids = needBackfill.map((row) => row.id);
+    for (const id of ids) {
+      backfillAttempted.current.add(id);
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        await analysisService.ensureSummariesForRows?.(ids);
+      } catch {
+        // Backfill is best-effort; the strip simply stays absent.
+      }
+      if (!cancelled) {
+        library.reload();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisService, library, library.rows]);
 
   const update = (next: GameLibraryFilters, replace?: boolean): void => {
     setPage(1);
@@ -248,19 +340,6 @@ function GameRows({
       aria-label="Imported games"
       data-testid="library-rows"
     >
-      <div className={styles.header} role="row">
-        <span role="columnheader" className={styles.checkHeader} aria-label="Select">
-          Select
-        </span>
-        <span role="columnheader">White</span>
-        <span role="columnheader">Black</span>
-        <span role="columnheader">Result</span>
-        <span role="columnheader">Time control</span>
-        <span role="columnheader">Platform</span>
-        <span role="columnheader">Your side</span>
-        <span role="columnheader">Date</span>
-        {analysis ? <span role="columnheader">Analysis</span> : null}
-      </div>
       {rows.map((row) => (
         <div
           role="row"
@@ -281,42 +360,38 @@ function GameRows({
               onChange={() => onToggle(row.id)}
             />
           </span>
-          <span role="cell" data-testid="game-white" data-col="White">
-            <PlayerName
-              name={row.whiteName}
-              rating={row.whiteRating}
-              isYou={row.userColor === 'white'}
-            />
+
+          {/* Lichess-style card body: players + result line, then the meta line. */}
+          <span role="cell" className={styles.rowBody}>
+            <span className={styles.playersLine}>
+              <PlayerName
+                name={row.whiteName}
+                rating={row.whiteRating}
+                isYou={row.userColor === 'white'}
+                testId="game-white"
+              />
+              <span aria-hidden="true" className={styles.vsToken}>
+                vs
+              </span>
+              <PlayerName
+                name={row.blackName}
+                rating={row.blackRating}
+                isYou={row.userColor === 'black'}
+                testId="game-black"
+              />
+              <span data-testid="game-result" className={styles.resultCell}>
+                <ResultChip result={row.result} userColor={row.userColor} />
+              </span>
+            </span>
+            <GameRowMeta row={row} />
           </span>
-          <span role="cell" data-testid="game-black" data-col="Black">
-            <PlayerName
-              name={row.blackName}
-              rating={row.blackRating}
-              isYou={row.userColor === 'black'}
-            />
-          </span>
-          <span role="cell" data-testid="game-result" data-col="Result">
-            <ResultChip result={row.result} userColor={row.userColor} />
-          </span>
-          <span role="cell" data-testid="game-timecontrol" data-col="Time control">
-            <span className={styles.timeControl}>{parseTimeControl(row.timeControl).display}</span>
-            <span className={styles.timeControlCategory}> · {row.normalizedTimeControl}</span>
-          </span>
-          <span role="cell" data-testid="game-source" data-col="Platform">
-            {GAME_SOURCE_LABELS[row.source]}
-          </span>
-          <span role="cell" data-testid="game-side" data-col="Your side">
-            {row.userColor}
-          </span>
-          <span role="cell" data-testid="game-date" data-col="Date">
-            {formatDate(row.playedAt)}
-          </span>
+
           {analysis ? (
             <span
               role="cell"
               data-testid={`game-analysis-${row.id}`}
-              data-col="Analysis"
               data-status={statuses[row.id] ?? 'unanalyzed'}
+              className={styles.analysisCell}
             >
               <AnalysisCell
                 gameId={row.id}
@@ -331,7 +406,6 @@ function GameRows({
               />
             </span>
           ) : null}
-          <GameRowMeta row={row} />
           <GameRowInsights row={row} />
           {analysis?.perGameProgress[row.id] ? (
             <RowProgressBar gameId={row.id} progress={analysis.perGameProgress[row.id]!} />
@@ -347,13 +421,15 @@ function PlayerName({
   name,
   rating,
   isYou,
+  testId,
 }: {
   name: string;
   rating: number | null;
   isYou: boolean;
+  testId?: string;
 }): React.JSX.Element {
   return (
-    <span className={styles.playerCell}>
+    <span className={styles.playerCell} data-testid={testId}>
       <span className={styles.playerName}>
         {name}
         {rating !== null ? <span className={styles.playerRating}> {rating}</span> : null}
@@ -403,19 +479,45 @@ function ResultChip({
   );
 }
 
-/** Second, full-width row line: how the game ended + its length. */
+/** Second, full-width row line: date · platform · time control · side · end. */
 function GameRowMeta({ row }: { row: LibraryGameRow }): React.JSX.Element | null {
-  if (row.moveCount === 0 && row.result === '*') {
-    return null;
+  const parts: Array<{ key: string; testId?: string; text: string }> = [];
+  const date = formatDate(row.playedAt);
+  if (date !== '—') {
+    parts.push({ key: 'date', testId: 'game-date', text: date });
   }
-  const effective = row.termination ?? fallbackTermination(row.result);
-  const parts: string[] = [terminationLabel(effective)];
-  if (row.moveCount > 0) {
-    parts.push(`${row.moveCount} ${row.moveCount === 1 ? 'move' : 'moves'}`);
+  parts.push({ key: 'source', testId: 'game-source', text: GAME_SOURCE_LABELS[row.source] });
+  const control = parseTimeControl(row.timeControl).display;
+  parts.push({
+    key: 'time',
+    testId: 'game-timecontrol',
+    text: `${control} · ${row.normalizedTimeControl}`,
+  });
+  parts.push({ key: 'side', testId: 'game-side', text: row.userColor });
+  if (row.moveCount > 0 || row.result !== '*') {
+    const effective = row.termination ?? fallbackTermination(row.result);
+    const end: string[] = [terminationLabel(effective)];
+    if (row.moveCount > 0) {
+      end.push(`${row.moveCount} ${row.moveCount === 1 ? 'move' : 'moves'}`);
+    }
+    parts.push({ key: 'end', text: end.join(' · ') });
+  }
+  if (parts.length === 0) {
+    return null;
   }
   return (
     <div className={styles.rowMeta} data-testid={`game-meta-${row.id}`}>
-      {parts.join(' · ')}
+      {parts.map((part, index) => (
+        <Fragment key={part.key}>
+          {index > 0 ? (
+            <span aria-hidden="true" className={styles.separator}>
+              {' '}
+              ·{' '}
+            </span>
+          ) : null}
+          <span data-testid={part.testId}>{part.text}</span>
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -423,13 +525,14 @@ function GameRowMeta({ row }: { row: LibraryGameRow }): React.JSX.Element | null
 /**
  * One presentable statistics value of the row insights strip. `text` is the
  * visible form; `spoken` spells it out for the labelled region's
- * screen-reader sentence.
+ * screen-reader sentence; `color` (optional) tints the count value.
  */
 interface RowInsightItem {
   readonly key: string;
   readonly testId: string;
   readonly text: string;
   readonly spoken: string;
+  readonly color?: string;
 }
 
 const ERROR_COUNT_ITEMS: ReadonlyArray<{
@@ -456,6 +559,8 @@ function spokenCount(count: number, singular: string, plural: string): string {
  * The user-side insight values of a row's latest completed analysis. Renders
  * only for a completed/outdated run and only when the owning data exists —
  * absent data is never rendered as a zero (specs/domain/game-library.md §7).
+ * Accuracy is shown with one decimal; counts are tinted by classification
+ * (zero → green for the negative classes, neutral for best/good).
  */
 function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
   if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
@@ -466,8 +571,8 @@ function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
     items.push({
       key: 'accuracy',
       testId: 'row-insights-accuracy',
-      text: `Accuracy ${row.accuracy}%`,
-      spoken: `Accuracy ${row.accuracy} per cent`,
+      text: `Accuracy ${formatAccuracy(row.accuracy)}%`,
+      spoken: `Accuracy ${formatAccuracy(row.accuracy)} per cent`,
     });
   }
   const counts = row.classificationCounts;
@@ -479,6 +584,7 @@ function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
         testId: meta.testId,
         text: `${meta.plural} ${count}`,
         spoken: spokenCount(count, meta.singular, meta.plural.toLowerCase()),
+        color: classificationCountColor(meta.countKey, count),
       });
     }
   }
@@ -489,6 +595,7 @@ function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
       testId: 'row-insights-missed-tactics',
       text: `Missed tactics ${count}`,
       spoken: spokenCount(count, 'missed tactic', 'missed tactics'),
+      color: missedTacticCountColor(count),
     });
   }
   return items;
@@ -521,7 +628,9 @@ function GameRowInsights({ row }: { row: LibraryGameRow }): React.JSX.Element | 
               ·{' '}
             </span>
           ) : null}
-          <span data-testid={item.testId}>{item.text}</span>
+          <span data-testid={item.testId} style={item.color ? { color: item.color } : undefined}>
+            {item.text}
+          </span>
         </Fragment>
       ))}
     </div>

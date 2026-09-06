@@ -8,6 +8,8 @@ import {
   MISSED_TACTIC_NAG,
   MISSED_TACTIC_LABEL,
   MISSED_TACTIC_EXPLANATION,
+  accuracyText,
+  formatAccuracy,
   nagForClassification,
   isEmphasized,
   missedTacticMeta,
@@ -84,5 +86,28 @@ describe('classificationMeta (Feature 009 canonical presentation mapping)', () =
     // The marker must not collide with any classification NAG: it renders as
     // an extra glyph alongside (never instead of) the classification.
     expect(Object.values(CLASSIFICATION_NAG)).not.toContain(MISSED_TACTIC_NAG);
+  });
+
+  it('formats accuracy with one decimal by default and preserves the stored float', () => {
+    expect(formatAccuracy(78)).toBe('78.0');
+    expect(formatAccuracy(78.44)).toBe('78.4');
+    expect(formatAccuracy(61.5)).toBe('61.5');
+    expect(formatAccuracy(99.999)).toBe('100.0');
+    expect(formatAccuracy(0)).toBe('0.0');
+    // Absent values render an em-dash, never a zero.
+    expect(formatAccuracy(null)).toBe('—');
+    expect(formatAccuracy(undefined)).toBe('—');
+  });
+
+  it('formats accuracy with a configurable decimal count', () => {
+    expect(formatAccuracy(78.444, 2)).toBe('78.44');
+    expect(formatAccuracy(78, 0)).toBe('78');
+  });
+
+  it('builds the canonical strip accuracy sentence', () => {
+    expect(accuracyText(78.44)).toBe('Accuracy 78.4%');
+    expect(accuracyText(61)).toBe('Accuracy 61.0%');
+    expect(accuracyText(null)).toBe('Accuracy —');
+    expect(accuracyText(undefined)).toBe('Accuracy —');
   });
 });

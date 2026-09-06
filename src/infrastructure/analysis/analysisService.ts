@@ -193,6 +193,23 @@ export class AnalysisService {
   }
 
   /**
+   * Feature-010 lazy backfill: for games whose latest completed analysis has no
+   * per-analysis summary yet, derive and store one (`detectionState: 'absent'`)
+   * so older analyzed games gain Library insights without a re-analysis. A no-op
+   * when no detection service is wired. Returns the number of summaries created.
+   */
+  async ensureSummariesForRows(gameIds: readonly GameId[]): Promise<number> {
+    if (!this.detection) {
+      return 0;
+    }
+    try {
+      return await this.detection.ensureSummariesForRows(gameIds);
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
    * Cancel one game's queued/in-progress analysis (per-row cancel). Persisted
    * completed work for the game is untouched, and any running batch keeps
    * processing the other games: `runGameJob`/`analyzeGames` detect the

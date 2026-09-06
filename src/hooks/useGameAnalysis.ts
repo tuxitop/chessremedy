@@ -22,6 +22,12 @@ export interface AnalysisServiceLike {
   ): Promise<Readonly<Record<string, GameAnalysisProgress | undefined>>>;
   /** Cancel one game's queued/in-progress job; the rest of a batch continues. */
   cancelGame(gameId: string): Promise<void>;
+  /**
+   * Feature-010 lazy backfill: derive + persist per-analysis summaries for
+   * games whose latest completed analysis has none yet (older runs gain
+   * Library insights without re-analysis). Optional — tests/fakes may omit it.
+   */
+  ensureSummariesForRows?(gameIds: readonly string[]): Promise<number>;
 }
 
 export interface UseGameAnalysis {

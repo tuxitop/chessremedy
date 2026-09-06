@@ -99,3 +99,23 @@ export function missedTacticMeta(): {
     explanation: MISSED_TACTIC_EXPLANATION,
   };
 }
+
+/**
+ * Format an ADR-024 per-game accuracy value for display with `decimals`
+ * places (default 1, Feature 011 polish). `null`/`undefined` (no usable user
+ * move) renders the em-dash, never a zero. The stored value is never rounded —
+ * only the presentation is.
+ */
+export function formatAccuracy(value: number | null | undefined, decimals = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '—';
+  }
+  return value.toFixed(decimals);
+}
+
+/** Full strip sentence: `Accuracy {value}%`, em-dash when absent. */
+export function accuracyText(value: number | null | undefined, decimals = 1): string {
+  return value === null || value === undefined || Number.isNaN(value)
+    ? 'Accuracy —'
+    : `Accuracy ${formatAccuracy(value, decimals)}%`;
+}

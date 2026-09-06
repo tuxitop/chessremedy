@@ -39,6 +39,8 @@ export {
   isEmphasized,
   CLASSIFICATION_LABEL_TEXT,
   CLASSIFICATION_EXPLANATION,
+  accuracyText,
+  formatAccuracy,
 } from './classificationMeta';
 export { moveAccuracy, gameAccuracy, MOVE_ACCURACY_VERSION } from './accuracy';
 export type { GameAccuracy, GameAccuracyOptions } from './accuracy';

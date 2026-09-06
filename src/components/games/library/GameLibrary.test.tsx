@@ -19,6 +19,8 @@ import {
 import { makeEngine, TEST_ENGINE } from '@/domain/analysis/test-support';
 import type { EngineMetadata } from '@/domain/chess';
 import type { Game } from '@/domain/chess/game';
+import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
+import type { GameAnalysisStatus } from '@/domain/analysis';
 import { renderWithProviders } from '@/test/test-utils';
 import { GameLibrary } from './GameLibrary';
 
@@ -117,7 +119,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
     renderLibrary();
 
     const strip = await screen.findByTestId(`row-insights-${game.id}`);
-    expect(within(strip).getByTestId('row-insights-accuracy')).toHaveTextContent('Accuracy 78%');
+    expect(within(strip).getByTestId('row-insights-accuracy')).toHaveTextContent('Accuracy 78.0%');
     expect(within(strip).getByTestId('row-insights-blunders')).toHaveTextContent('Blunders 2');
     expect(within(strip).getByTestId('row-insights-mistakes')).toHaveTextContent('Mistakes 3');
     expect(within(strip).getByTestId('row-insights-inaccuracies')).toHaveTextContent(
@@ -128,7 +130,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
     );
     expect(strip).toHaveAttribute(
       'aria-label',
-      'Accuracy 78 per cent, 2 blunders, 3 mistakes, 4 inaccuracies, 1 missed tactic',
+      'Accuracy 78.0 per cent, 2 blunders, 3 mistakes, 4 inaccuracies, 1 missed tactic',
     );
   });
 
@@ -151,7 +153,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
     renderLibrary();
 
     const strip = await screen.findByTestId(`row-insights-${game.id}`);
-    expect(within(strip).getByTestId('row-insights-accuracy')).toHaveTextContent('Accuracy 61%');
+    expect(within(strip).getByTestId('row-insights-accuracy')).toHaveTextContent('Accuracy 61.0%');
     expect(within(strip).getByTestId('row-insights-blunders')).toHaveTextContent('Blunders 0');
     expect(within(strip).getByTestId('row-insights-missed-tactics')).toHaveTextContent(
       'Missed tactics 0',
@@ -329,3 +331,101 @@ describe('GameLibrary analysis-result filters (Feature 010)', () => {
 function optionLabels(select: Element): readonly string[] {
   return [...select.querySelectorAll('option')].map((option) => option.textContent?.trim() ?? '');
 }
+
+describe('GameLibrary summary backfill (Feature 010 polish)', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+  });
+
+  function serviceWithBackfill(): AnalysisServiceLike & { backfillCalls: string[][] } {
+    const backfillCalls: string[][] = [];
+    return {
+      backfillCalls,
+      async statusesOf(gameIds): Promise<Readonly<Record<string, GameAnalysisStatus>>> {
+        const out: Record<string, GameAnalysisStatus> = {};
+        for (const id of gameIds) {
+          const jobs = await analysisJobsRepository.listByGame(id);
+          out[id] = jobs.some((job) => job.state === 'completed') ? 'completed' : 'unanalyzed';
+        }
+        return out;
+      },
+      async listActiveJobs() {
+        return [];
+      },
+      async analyzeGames(gameIds) {
+        return gameIds.map((gameId) =>
+          markCompleted(createAnalysisJob(gameId, TEST_ENGINE, 0, 1), 2),
+        );
+      },
+      async jobProgress(gameIds) {
+        const out: Record<string, undefined> = {};
+        for (const id of gameIds) out[id] = undefined;
+        return out;
+      },
+      async cancelGame() {},
+      async ensureSummariesForRows(gameIds) {
+        backfillCalls.push([...gameIds]);
+        for (const gameId of gameIds) {
+          const jobs = await analysisJobsRepository.listByGame(gameId);
+          const completed = jobs
+            .filter((job) => job.state === 'completed')
+            .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+          const game = (await gamesRepository.getGame(gameId))!;
+          if (completed) {
+            await summariesRepository.putForAnalysis(
+              summaryRowFor(completed.id, game, {
+                classificationCounts: { best: 4, good: 2, inaccuracy: 1, mistake: 1, blunder: 1 },
+                userMoves: 6,
+                totalMoves: 12,
+                accuracy: 82.3,
+                accuracyMoves: 6,
+              }),
+            );
+          }
+        }
+        return gameIds.length;
+      },
+    };
+  }
+
+  it('backfills a summary for an older analyzed game so its insights appear', async () => {
+    const game = fixtureGame('cc-blitz-clean');
+    await gamesRepository.saveGame(game);
+    // A completed run whose summary row predates the summary table (absent).
+    await seedJob(game.id, 'completed');
+    const service = serviceWithBackfill();
+
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    // The backfill derives + persists an `absent` summary and the row reloads.
+    await waitFor(() => expect(screen.getByTestId(`row-insights-${game.id}`)).toBeInTheDocument());
+    expect(service.backfillCalls.length).toBeGreaterThan(0);
+    expect(service.backfillCalls.flat()).toContain(game.id);
+    expect(
+      within(screen.getByTestId(`row-insights-${game.id}`)).getByTestId('row-insights-accuracy'),
+    ).toHaveTextContent('Accuracy 82.3%');
+  });
+
+  it('does not call backfill when every completed row already has insights', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 4, good: 2, inaccuracy: 1, mistake: 1, blunder: 1 },
+      accuracy: 80,
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: 1,
+    });
+    const service = serviceWithBackfill();
+
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    await waitFor(() => expect(screen.getByTestId(`row-insights-${game.id}`)).toBeInTheDocument());
+    expect(service.backfillCalls).toEqual([]);
+  });
+});
