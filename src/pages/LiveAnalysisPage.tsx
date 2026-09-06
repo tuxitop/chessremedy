@@ -353,8 +353,6 @@ export function LiveAnalysisPage(): React.JSX.Element {
               controller={controller}
               capabilities={engine.capabilities}
               fen={currentFen}
-              bottomColor={settings.orientation}
-              sideToMove={sideToMove}
               rightSlot={
                 <SettingsPopover
                   state={settingsForPopover}

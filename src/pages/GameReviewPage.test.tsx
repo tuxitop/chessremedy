@@ -98,11 +98,10 @@ describe('Game Review page (Feature 008)', () => {
     expect(glyph).toHaveAttribute('data-nag', '4');
     expect(glyph).toHaveTextContent('??');
 
-    // Black's mating Qh4# is the engine's best move: !! (NAG 3).
+    // Black's mating Qh4# is the engine's best move: best moves render quiet
+    // (no !! glyph) — only negative classifications are annotated (R2-3).
     const qh4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!;
-    const bestGlyph = within(qh4).getByTestId('nag-glyph');
-    expect(bestGlyph).toHaveAttribute('data-nag', '3');
-    expect(bestGlyph).toHaveTextContent('!!');
+    expect(within(qh4).queryByTestId('nag-glyph')).not.toBeInTheDocument();
 
     // Ordinary (`good`) moves — 1.f3 and 1...e5 — render no classification glyph.
     for (const san of ['f3', 'e5']) {
@@ -473,12 +472,10 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
       expect(within(move).queryByTestId('nag-glyph')).not.toBeInTheDocument();
     }
 
-    // Black's mating best move is not a miss: only its !! classification glyph.
+    // Black's mating best move is not a miss and best moves render quiet: no
+    // classification glyph and no marker (R2-3).
     const qh4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!;
-    const bestGlyphs = within(qh4).getAllByTestId('nag-glyph');
-    expect(bestGlyphs).toHaveLength(1);
-    expect(bestGlyphs[0]).toHaveAttribute('data-nag', '3');
-    expect(bestGlyphs[0]).toHaveTextContent('!!');
+    expect(within(qh4).queryByTestId('nag-glyph')).not.toBeInTheDocument();
   });
 
   it('shows the missed-tactic label when the verified-miss move is active', async () => {

@@ -1,8 +1,7 @@
 import type * as React from 'react';
 import type { EngineCapabilities } from '@/infrastructure/engine/capabilities';
 import type { EngineEvaluation } from '@/infrastructure/engine/types';
-import { formatEvaluation, formatPv } from './engineFormat';
-import { evaluationFromBottom, type PlayerColor } from './evaluation';
+import { formatPv, formatWhiteEvaluation } from './engineFormat';
 import { EngineSettingsPopover } from './EngineSettingsPopover';
 import type { AnalysisController } from './useAnalysisController';
 import styles from './AnalysisPanel.module.css';
@@ -11,7 +10,7 @@ import styles from './AnalysisPanel.module.css';
 export interface StoredPanelData {
   /** Identity of the analysis that produced the shown data, e.g. an engine. */
   readonly engineLabel: string | null;
-  /** Header evaluation text (bottom-player perspective), or `null`. */
+  /** Header evaluation text (White-positive), or `null`. */
   readonly evalText: string | null;
   /** Search depth of the top stored line, when reported. */
   readonly depth: number | null;
@@ -22,12 +21,8 @@ export interface StoredPanelData {
 export interface AnalysisPanelProps {
   readonly controller: AnalysisController;
   readonly capabilities: EngineCapabilities;
-  /** FEN of the current position (for rendering PVs). */
+  /** FEN of the current position (for PVs and White-positive eval text). */
   readonly fen: string;
-  /** Player at the bottom of the board (for eval text perspective). */
-  readonly bottomColor: PlayerColor;
-  /** Side to move at the current position. */
-  readonly sideToMove: PlayerColor;
   /** Optional node rendered after the engine-settings gear (board settings). */
   readonly rightSlot?: React.ReactNode;
   /** When given, the panel renders this cached data while the engine is off
@@ -53,8 +48,6 @@ export function AnalysisPanel({
   controller,
   capabilities,
   fen,
-  bottomColor,
-  sideToMove,
   rightSlot,
   stored = null,
 }: AnalysisPanelProps): React.JSX.Element {
@@ -63,13 +56,12 @@ export function AnalysisPanel({
   // engine-lines region must never render an *empty* area when the engine is
   // off. A stored panel with no lines behaves like the plain "off" state.
   const storedActive = stored !== null && !enabled && stored.lines.length > 0;
-
   const liveBestEval: EngineEvaluation | null =
     enabled && lines.length > 0 ? (lines[0]!.evaluation ?? null) : null;
-  const liveEvalText =
-    liveBestEval === null
-      ? null
-      : formatEvaluation(evaluationFromBottom(liveBestEval, bottomColor, sideToMove));
+  // Numeric eval text is White-positive everywhere (D1): "+" always means good
+  // for White, matching the move-list chips. The evaluation bar stays
+  // bottom-oriented for its height only.
+  const liveEvalText = liveBestEval === null ? null : formatWhiteEvaluation(liveBestEval, fen);
 
   const evalText = enabled ? liveEvalText : storedActive ? stored!.evalText : null;
   const statusText = !enabled
@@ -85,7 +77,7 @@ export function AnalysisPanel({
   const displayLines: DisplayLine[] = enabled
     ? lines.map((line) => ({
         key: `${fen}|${line.multipv}`,
-        evalText: formatEvaluation(line.evaluation),
+        evalText: formatWhiteEvaluation(line.evaluation, fen),
         pvText: formatPv(fen, line.principalVariation),
       }))
     : storedActive

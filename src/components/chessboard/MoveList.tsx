@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef } from 'react';
 import type * as React from 'react';
 import type { MoveTree, MovePly, Path } from './positionTree';
 import { nagMeta } from './pgnAnnotations';
@@ -245,6 +245,26 @@ export function MoveList({
   const listRef = useRef<HTMLDivElement | null>(null);
   const activeId = path.length > 0 ? path[path.length - 1]!.id : null;
   const { rows, tokens } = model;
+
+  // Keep the keyboard focus ring on the active move: when the current ply
+  // changes (e.g. left/right game navigation) while a move button is focused,
+  // move the ring along with it instead of leaving a stray border behind.
+  useEffect(() => {
+    if (activeId === null) {
+      return;
+    }
+    const list = listRef.current;
+    const focused = document.activeElement;
+    if (!list || !focused || !list.contains(focused)) {
+      return;
+    }
+    const focusedPly = focused.getAttribute('data-ply-id');
+    if (focusedPly === null || focusedPly === String(activeId)) {
+      return;
+    }
+    const target = list.querySelector<HTMLButtonElement>(`[data-ply-id="${activeId}"]`);
+    target?.focus();
+  }, [activeId]);
 
   const moveToIndex = useCallback((buttons: HTMLButtonElement[], index: number): void => {
     if (buttons.length === 0) {

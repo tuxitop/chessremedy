@@ -21,6 +21,10 @@
 
   --color-focus-ring: rgba(31, 111, 235, 0.4);
 
+  /* Active ply in the move list (subtle, readable on light). */
+  --color-move-active: rgba(31, 130, 60, 0.16);
+  --color-move-active-ring: rgba(31, 130, 60, 0.5);
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.1);
@@ -49,6 +53,10 @@
   --color-danger: #f85149;
 
   --color-focus-ring: rgba(68, 147, 248, 0.5);
+
+  /* Active ply in the move list (a bit stronger on dark so it stands out). */
+  --color-move-active: rgba(63, 185, 80, 0.28);
+  --color-move-active-ring: rgba(63, 185, 80, 0.55);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);

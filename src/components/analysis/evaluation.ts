@@ -7,7 +7,10 @@
  * Engine results are reported from the side-to-move perspective (ADR-019 /
  * UCI `score cp`). The evaluation bar is rendered from the perspective of the
  * *bottom* player (the board orientation), so an evaluation must be sign
- * flipped when the side to move is not the bottom player.
+ * flipped when the side to move is not the bottom player. Numeric *text*
+ * (header, lines, move chips) is White-positive everywhere (`+` = good for
+ * White) via `formatWhiteEvaluation` — see D1; only the bar height is
+ * bottom-oriented.
  */
 
 import type { EngineEvaluation } from '@/infrastructure/engine/types';

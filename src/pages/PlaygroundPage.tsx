@@ -513,8 +513,6 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
             controller={engineController}
             capabilities={engine.capabilities}
             fen={currentFen}
-            bottomColor={settings.orientation}
-            sideToMove={sideToMove}
             rightSlot={
               <SettingsPopover
                 state={settingsForPopover}

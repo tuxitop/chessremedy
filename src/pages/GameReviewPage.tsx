@@ -36,7 +36,6 @@ import { useAnalysisController } from '@/components/analysis/useAnalysisControll
 import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
 import type { StoredPanelData } from '@/components/analysis/AnalysisPanel';
-import { evaluationFromBottom } from '@/components/analysis/evaluation';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { useAnalysisNavigation } from '@/hooks/useAnalysisNavigation';
 import { gameFromPgn } from '@/domain/chess/parseGame';
@@ -51,7 +50,6 @@ import {
   CLASSIFICATION_LABEL_TEXT,
   CLASSIFICATION_EXPLANATION,
   MISSED_TACTIC_NAG,
-  isEmphasized,
   missedTacticMeta,
   nagForClassification,
 } from '@/domain/analysis/classificationMeta';
@@ -71,6 +69,20 @@ interface GameReviewPageProps {
   /** Injectable for tests; defaults to the browser analysis service. */
   readonly analysisService?: AnalysisServiceLike | null;
 }
+
+/**
+ * Classifications that warrant move-list NAGs/colours and board square
+ * highlights in Game Review. `best`/`good` are intentionally *not* annotated:
+ * the engine "best" label (NAG `!!`) is reserved for a future
+ * great/brilliant-move detector, so ordinary strong play stays visually quiet
+ * (D2/R2-3). `best` may still show a small board badge via
+ * `classificationBoardBadges` — that is kept deliberately separate.
+ */
+const NEGATIVE_CLASSIFICATIONS: ReadonlySet<MoveClassification> = new Set([
+  'inaccuracy',
+  'mistake',
+  'blunder',
+]);
 
 export function GameReviewPage({ analysisService }: GameReviewPageProps): React.JSX.Element {
   const { id = '' } = useParams<'id'>();
@@ -470,10 +482,15 @@ function GameReview({
     const engineLabel = records[0]
       ? `${records[0].engine.engineName} ${records[0].engine.engineVersion} · ${records[0].engine.profile}`
       : null;
-    const headerEvalText =
+    // Numeric eval text is White-positive (D1): flip the side-to-move
+    // perspective of `barView` to White so the header agrees with the chips.
+    const storedEval =
       barView.evaluation === null
         ? null
-        : formatEvaluation(evaluationFromBottom(barView.evaluation, userColor, barView.sideToMove));
+        : barView.sideToMove === 'black'
+          ? negateEngineEval(barView.evaluation)
+          : barView.evaluation;
+    const headerEvalText = storedEval === null ? null : formatEvaluation(storedEval);
     const depth = positionRecord?.depth ?? null;
     const lines = positionRecord
       ? positionRecord.multipvLines.map((move) => ({
@@ -482,7 +499,7 @@ function GameReview({
         }))
       : [];
     return { engineLabel, evalText: headerEvalText, depth, lines };
-  }, [records, positionRecord, barView, userColor]);
+  }, [records, positionRecord, barView]);
 
   const liveLines = controller.lines;
   const livePlyEvals = useMemo(
@@ -565,15 +582,17 @@ function GameReview({
     return ids;
   }, [mainline, records]);
 
-  // NAG overrides for the move list derive from that single map: emphasized
-  // classifications render their glyph, ordinary `good`/no-classification plies
-  // override to no glyph. A verified missed tactic emits the canonical marker
-  // NAG (9) after the classification NAG, so both glyphs render — the
-  // classification is preserved, never replaced.
+  // NAG overrides for the move list derive from that single map: only the
+  // negative classifications render a glyph and its colour; `best`/`good`
+  // plies override to no glyph (quiet by default, R2-3). A verified missed
+  // tactic emits the canonical marker NAG (9) after the classification NAG, so
+  // both glyphs render — the classification is preserved, never replaced.
   const effectiveNagOverrides = useMemo(() => {
     const map = new Map<number, readonly number[]>();
     for (const [id, classification] of classificationByPly) {
-      const nag = nagForClassification(classification);
+      const nag = NEGATIVE_CLASSIFICATIONS.has(classification)
+        ? nagForClassification(classification)
+        : null;
       const nags = nag === null ? [] : [nag];
       if (missedTacticByPly.has(id)) {
         nags.push(MISSED_TACTIC_NAG);
@@ -603,10 +622,14 @@ function GameReview({
     [activePly, activeClassification],
   );
 
-  // An emphasized classification also tints the move's start and end squares
+  // A negative classification also tints the move's start and end squares
   // with the classification colour (instead of the plain last-move highlight).
+  // `best`/`good` moves keep only the plain last-move highlight (R2-3).
   const emphasizedSquares = useMemo<readonly [Key, Key] | null>(() => {
-    if (activePly === undefined || !activeClassification || !isEmphasized(activeClassification)) {
+    if (activePly === undefined || !activeClassification) {
+      return null;
+    }
+    if (!NEGATIVE_CLASSIFICATIONS.has(activeClassification)) {
       return null;
     }
     return [activePly.from, activePly.to] as readonly [Key, Key];
@@ -734,8 +757,6 @@ function GameReview({
               controller={controller}
               capabilities={engine.capabilities}
               fen={currentFen ?? ''}
-              bottomColor={orientation}
-              sideToMove={sideToMove}
               stored={storedPanel}
               rightSlot={
                 <SettingsPopover

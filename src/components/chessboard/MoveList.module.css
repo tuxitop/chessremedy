@@ -65,7 +65,7 @@
 
 .moveActive {
   background: var(--color-move-active, rgba(20, 85, 30, 0.2));
-  box-shadow: inset 0 0 0 1px rgba(20, 85, 30, 0.35);
+  box-shadow: inset 0 0 0 1px var(--color-move-active-ring, rgba(20, 85, 30, 0.35));
   border-radius: 4px;
 }
 

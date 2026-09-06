@@ -40,16 +40,7 @@ function Harness({
     capabilities: CAPS,
     autoStart,
   });
-  return (
-    <AnalysisPanel
-      controller={controller}
-      capabilities={CAPS}
-      fen={fen}
-      bottomColor="white"
-      sideToMove="white"
-      stored={stored}
-    />
-  );
+  return <AnalysisPanel controller={controller} capabilities={CAPS} fen={fen} stored={stored} />;
 }
 
 describe('AnalysisPanel', () => {
