@@ -29,6 +29,7 @@ import type { EngineEvaluation } from '@/infrastructure/engine/types';
 import { formatEvaluation } from '@/components/analysis/engineFormat';
 import { EvaluationBar } from '@/components/analysis/EvaluationBar';
 import { AnalysisBoard } from '@/components/analysis/board/AnalysisBoard';
+import { EvaluationDiagram } from '@/components/analysis/board/EvaluationDiagram';
 import { engineArrowBrush, engineArrowShapes } from '@/components/analysis/engineArrows';
 import { buildPlyEvaluations } from '@/components/analysis/moveEvals';
 import { liveClassificationForTree } from '@/components/analysis/liveClassification';
@@ -50,10 +51,17 @@ import {
   CLASSIFICATION_LABEL_TEXT,
   CLASSIFICATION_EXPLANATION,
   MISSED_TACTIC_NAG,
+  formatAccuracy,
   missedTacticMeta,
   nagForClassification,
 } from '@/domain/analysis/classificationMeta';
 import { summarizeAnalysis } from '@/domain/analysis/summary';
+import { gameAccuracy } from '@/domain/analysis/accuracy';
+import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
+import {
+  classificationCountColor,
+  missedTacticCountColor,
+} from '@/components/analysis/classificationColors';
 import type { AnalysisJob, GameAnalysisStatus } from '@/domain/analysis';
 import { useGameReview } from '@/hooks/useGameReview';
 import { useGameAnalysis, type AnalysisServiceLike } from '@/hooks/useGameAnalysis';
@@ -162,6 +170,60 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
     return () => clearInterval(timer);
   }, [data.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Whether the shown analysis's Feature-010 detection pass is genuinely
+  // running in this session. A persisted `queued`/`inProgress` summary only
+  // means "scanning…" while the shared service reports it live; otherwise the
+  // pass was interrupted (an earlier session / cancelled run) and the Review
+  // says so instead of lying about a running scan.
+  const [detectionRunning, setDetectionRunning] = useState(false);
+
+  // While the detection pass for the shown analysis is pending, poll the live
+  // registry: refresh so the missed-tactic row/marker appear the moment the
+  // pass completes, and stop once nothing is running (an interrupted pass must
+  // never cause endless reloads). Pure display work — never schedules scans.
+  useEffect(() => {
+    const pending = data.detectionState === 'queued' || data.detectionState === 'inProgress';
+    if (!pending) {
+      return;
+    }
+    let disposed = false;
+    let checks = 0;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const check = async (): Promise<void> => {
+      checks += 1;
+      let live = false;
+      if (effectiveService && typeof effectiveService.activeDetectionGames === 'function') {
+        try {
+          live = (await effectiveService.activeDetectionGames()).includes(id);
+        } catch {
+          live = false;
+        }
+      }
+      if (disposed) {
+        return;
+      }
+      setDetectionRunning(live);
+      if (live) {
+        data.reload();
+      } else if (checks >= 3) {
+        // Nothing running across a few cycles: the pass is interrupted. Stop
+        // polling — the note settles to the truthful interrupted state.
+        if (timer !== null) {
+          clearInterval(timer);
+          timer = null;
+        }
+      }
+    };
+    timer = setInterval(() => void check(), 2000);
+    void check();
+    return () => {
+      disposed = true;
+      if (timer !== null) {
+        clearInterval(timer);
+      }
+    };
+  }, [data.detectionState, effectiveService, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (data.loading) {
     return (
       <StatePanel title="Loading analysis…" description="Reading the stored game and analysis." />
@@ -179,6 +241,8 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         playerLabel={playerLabel(data.game)}
         records={data.records}
         obsolete={data.obsolete || serviceOutdated}
+        detectionState={data.detectionState}
+        detectionRunning={detectionRunning}
         onReanalyze={runAnalysis}
         reanalyzing={running}
       />
@@ -209,6 +273,8 @@ function GameReview({
   playerLabel,
   records,
   obsolete,
+  detectionState,
+  detectionRunning,
   onReanalyze,
   reanalyzing,
 }: {
@@ -217,6 +283,9 @@ function GameReview({
   playerLabel: string;
   records: readonly MoveAnalysis[];
   obsolete: boolean;
+  detectionState: SummaryDetectionState | null;
+  /** True while this analysis's detection pass is live in this session. */
+  detectionRunning: boolean;
   onReanalyze: () => void;
   reanalyzing: boolean;
 }): React.JSX.Element {
@@ -293,6 +362,16 @@ function GameReview({
     return [last.from, dest ?? last.to] as readonly [Key, Key];
   }, [path]);
   const summary = useMemo(() => summarizeAnalysis(records, userColor), [records, userColor]);
+  // ADR-024 per-game accuracy over the user's moves — and the opponent's — for
+  // the two summary columns; `null` when no usable move exists (em-dash).
+  const userAccuracy = useMemo(
+    () => gameAccuracy(records, userColor).accuracy,
+    [records, userColor],
+  );
+  const opponentAccuracy = useMemo(
+    () => gameAccuracy(records, oppositeOf(userColor)).accuracy,
+    [records, userColor],
+  );
   const clocks = useMemo(() => {
     const parsed = gameFromPgn(pgn, { source: 'fixture', userColor });
     return parsed.ok ? gameClocks(parsed.game.moves) : [];
@@ -400,6 +479,10 @@ function GameReview({
         : gameMeta.blackName;
   const opponentName = nameOfSide(topSide);
   const userName = nameOfSide(orientation);
+  // Summary column headers always name the two colours by their stored player
+  // (independent of the board orientation the user may have flipped to).
+  const summaryUserLabel = nameOfSide(userColor);
+  const summaryOpponentLabel = nameOfSide(oppositeOf(userColor));
   const opponentMs = remainingClockForColor(path.length, topSide, clocks, initialClockMs);
   const userMs = remainingClockForColor(path.length, orientation, clocks, initialClockMs);
 
@@ -694,11 +777,36 @@ function GameReview({
 
   const currentPly = path.length;
   const totalPlies = pathToEnd(tree, []).length;
-  // Match the Live board: the side panel spans the board plus its two
-  // name/clock bars so the move list keeps a stable, comparable size.
-  const sidePanelStyle = !boardSize.isMobile
+
+  // Detection derived state (Feature 010): a completed analysis that was never
+  // scanned (or whose scan is pending/failed) is never presented as a real
+  // zero — the summary shows either the scanned count or an explicit note, so
+  // a game is never silently missing its missed-tactic result.
+  const detectionCompleted =
+    detectionState === 'completed' || records.some((record) => record.detectionVersion !== null);
+  const missedTacticsCount = detectionCompleted ? summary.userMissedTactics : null;
+  const detectionNote = detectionCompleted
+    ? null
+    : detectionState === 'queued' || detectionState === 'inProgress'
+      ? detectionRunning
+        ? 'Tactics scan in progress…'
+        : 'Tactics scan interrupted. Re-analyze to retry.'
+      : detectionState === 'failed'
+        ? 'Tactics scan failed.'
+        : detectionState === 'absent'
+          ? 'Tactics not scanned. Re-analyze to scan.'
+          : null;
+
+  // The move list / side-panel chrome spans the board column (board + its two
+  // clock bars) so it keeps a stable, comparable height; the relocated Summary
+  // sits below it, beside the evaluation diagram under the board (Q4 layout).
+  const sidePanelBodyStyle = !boardSize.isMobile
     ? { height: boardSize.size + CLOCK_BAR_COLUMN_EXTRA_PX }
     : undefined;
+
+  const seekDiagramPly = (ply: number): void => {
+    handleSeek(mainline.slice(0, ply + 1));
+  };
 
   return (
     <div className={styles.page} data-testid="game-review-page">
@@ -724,85 +832,111 @@ function GameReview({
               Re-analyze
             </Button>
           </div>
-        ) : null}
+        ) : (
+          <Button
+            variant="secondary"
+            data-testid="review-reanalyze-action"
+            disabled={reanalyzing}
+            onClick={onReanalyze}
+          >
+            Re-analyze
+          </Button>
+        )}
       </header>
-
-      <ReviewSummary summary={summary} userColor={userColor} />
 
       <AnalysisBoard
         boardSize={boardSize}
         dataTestId="review-layout"
         barOffsetPx={CLOCK_BAR_TOP_INSET_PX}
-        {...(sidePanelStyle !== undefined ? { sidePanelStyle } : {})}
         boardColumn={
-          <BoardPane
-            boardSize={boardSize}
-            position={position}
-            settings={boardSettings}
-            lastMove={emphasizedSquares ? null : lastMove}
-            arrows={effectiveArrows}
-            opponentName={opponentName}
-            opponentMs={opponentMs}
-            userName={userName}
-            userMs={userMs}
-            chessboardRef={chessboardRef}
-            interactive={boardSettings.interactive}
-            drawable={boardSettings.drawable}
-            moving={pendingPromotion === null && !finished}
-            onMove={handleMove}
-            onPromotionRequired={(p) => setPendingPromotion(p)}
-            {...(customSquareClasses !== undefined ? { customSquareClasses } : {})}
-            overlay={
-              boardBadges.length > 0 ? (
-                <SquareBadges orientation={orientation} items={boardBadges} />
-              ) : undefined
-            }
-          />
+          <>
+            <BoardPane
+              boardSize={boardSize}
+              position={position}
+              settings={boardSettings}
+              lastMove={emphasizedSquares ? null : lastMove}
+              arrows={effectiveArrows}
+              opponentName={opponentName}
+              opponentMs={opponentMs}
+              userName={userName}
+              userMs={userMs}
+              chessboardRef={chessboardRef}
+              interactive={boardSettings.interactive}
+              drawable={boardSettings.drawable}
+              moving={pendingPromotion === null && !finished}
+              onMove={handleMove}
+              onPromotionRequired={(p) => setPendingPromotion(p)}
+              {...(customSquareClasses !== undefined ? { customSquareClasses } : {})}
+              overlay={
+                boardBadges.length > 0 ? (
+                  <SquareBadges orientation={orientation} items={boardBadges} />
+                ) : undefined
+              }
+            />
+            {/* Full-game evaluation diagram: one column per analyzed ply, at
+                board width, below the bottom clock bar ("board footer"). */}
+            <EvaluationDiagram
+              records={records}
+              activePly={activeMainIndex >= 0 ? activeMainIndex : null}
+              onSeek={seekDiagramPly}
+            />
+          </>
         }
         bar={<EvaluationBar evaluation={barEvaluation} sideToMove={barSideToMove} />}
         sidePanel={
           <>
-            <AnalysisPanel
-              controller={controller}
-              capabilities={engine.capabilities}
-              fen={currentFen ?? ''}
-              stored={storedPanel}
-              rightSlot={
-                <SettingsPopover
-                  state={boardSettings}
-                  onChange={handleBoardSettings}
-                  onResetBoardSize={() => boardSize.setSize(BOARD_SIZE_DEFAULT)}
-                  onClearArrows={() => chessboardRef.current?.clearArrows()}
-                  boardSize={boardSize.size}
-                />
-              }
-            />
-            {selected && selected.missedTactic && selected.detectionVersion !== null ? (
-              <div
-                className={styles.missed}
-                data-testid="review-missed-tactic-label"
-                role="note"
-                title={missedTacticMarker.explanation}
-                aria-label={missedTacticMarker.explanation}
-              >
-                {missedTacticMarker.label}
-              </div>
-            ) : null}
-            <MoveListPane>
-              <MoveList
-                tree={tree}
-                path={path}
-                onSeek={handleSeek}
-                nagOverrides={effectiveNagOverrides}
-                plyEvals={plyEvals}
+            <div className={styles.sidePanelBody} style={sidePanelBodyStyle}>
+              <AnalysisPanel
+                controller={controller}
+                capabilities={engine.capabilities}
+                fen={currentFen ?? ''}
+                stored={storedPanel}
+                rightSlot={
+                  <SettingsPopover
+                    state={boardSettings}
+                    onChange={handleBoardSettings}
+                    onResetBoardSize={() => boardSize.setSize(BOARD_SIZE_DEFAULT)}
+                    onClearArrows={() => chessboardRef.current?.clearArrows()}
+                    boardSize={boardSize.size}
+                  />
+                }
               />
-            </MoveListPane>
-            <div className={styles.navRow}>
-              <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={navigate} />
-              <span className={styles.plyCounter} data-testid="review-ply">
-                {currentPly}/{totalPlies}
-              </span>
+              {selected && selected.missedTactic && selected.detectionVersion !== null ? (
+                <div
+                  className={styles.missed}
+                  data-testid="review-missed-tactic-label"
+                  role="note"
+                  title={missedTacticMarker.explanation}
+                  aria-label={missedTacticMarker.explanation}
+                >
+                  {missedTacticMarker.label}
+                </div>
+              ) : null}
+              <MoveListPane>
+                <MoveList
+                  tree={tree}
+                  path={path}
+                  onSeek={handleSeek}
+                  nagOverrides={effectiveNagOverrides}
+                  plyEvals={plyEvals}
+                />
+              </MoveListPane>
+              <div className={styles.navRow}>
+                <Navigation currentPly={currentPly} totalPlies={totalPlies} onNavigate={navigate} />
+                <span className={styles.plyCounter} data-testid="review-ply">
+                  {currentPly}/{totalPlies}
+                </span>
+              </div>
             </div>
+            <ReviewSummary
+              summary={summary}
+              userAccuracy={userAccuracy}
+              opponentAccuracy={opponentAccuracy}
+              userLabel={summaryUserLabel}
+              opponentLabel={summaryOpponentLabel}
+              missedTactics={missedTacticsCount}
+              detectionNote={detectionNote}
+            />
           </>
         }
       />
@@ -908,62 +1042,136 @@ function ClockBar({
 
 function ReviewSummary({
   summary,
-  userColor,
+  userAccuracy,
+  opponentAccuracy,
+  userLabel,
+  opponentLabel,
+  missedTactics,
+  detectionNote,
 }: {
   summary: ReturnType<typeof summarizeAnalysis>;
-  userColor: 'white' | 'black';
+  userAccuracy: number | null;
+  opponentAccuracy: number | null;
+  userLabel: string;
+  opponentLabel: string;
+  /** Missed-tactic count; `null` hides the row (scan absent/not completed). */
+  missedTactics: number | null;
+  /** Visible detection-state note when the scan has not completed; else null. */
+  detectionNote: string | null;
 }): React.JSX.Element {
   return (
     <section className={styles.summary} data-testid="review-summary" aria-label="Review summary">
-      <h2 className={styles.summaryTitle}>Summary</h2>
-      <SummarySide label={`You (${userColor})`} counts={summary.user} dataTestId="summary-user">
-        {summary.userMissedTactics > 0 ? (
-          <span className={styles.missed} data-testid="summary-missed-tactics">
-            {summary.userMissedTactics} missed tactic
-            {summary.userMissedTactics === 1 ? '' : 's'}
-          </span>
-        ) : null}
-      </SummarySide>
-      <SummarySide label="Opponent" counts={summary.opponent} dataTestId="summary-opponent" />
-    </section>
-  );
-}
-
-function SummarySide({
-  label,
-  counts,
-  dataTestId,
-  children,
-}: {
-  label: string;
-  counts: Record<MoveClassification, number>;
-  dataTestId: string;
-  children?: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className={styles.summarySide}>
-      <h3 className={styles.sideLabel}>{label}</h3>
-      <ul className={styles.counts} data-testid={dataTestId}>
-        {CLASSIFICATION_LABELS.map((classification) => (
-          <li
-            className={styles.countRow}
-            key={classification}
-            data-testid={`${dataTestId}-${classification}`}
-            aria-label={CLASSIFICATION_EXPLANATION[classification]}
-            title={CLASSIFICATION_EXPLANATION[classification]}
+      <div
+        className={styles.summaryTable}
+        role="table"
+        aria-label="Review statistics per player: accuracy, best moves, good moves, inaccuracies, mistakes, blunders and missed tactics"
+      >
+        <div className={styles.summaryHead} role="row">
+          <span
+            role="columnheader"
+            className={styles.summaryColHead}
+            data-testid="summary-user-head"
           >
-            <span className={styles.countName}>{CLASSIFICATION_LABEL_TEXT[classification]}</span>
-            <span
-              className={styles.countValue}
-              data-testid={`${dataTestId}-${classification}-value`}
+            {userLabel}
+          </span>
+          <span role="columnheader" className={styles.summaryRowLabel} aria-hidden="true" />
+          <span
+            role="columnheader"
+            className={styles.summaryColHead}
+            data-testid="summary-opponent-head"
+          >
+            {opponentLabel}
+          </span>
+        </div>
+
+        {/* Accuracy row: each side's own figure — a stat like the rest, only a
+            little larger; never a full-width headline. */}
+        <div
+          className={styles.summaryRow}
+          role="row"
+          aria-label={`Accuracy: you ${formatAccuracy(userAccuracy)} per cent, ${opponentLabel} ${formatAccuracy(opponentAccuracy)} per cent`}
+        >
+          <span
+            role="cell"
+            className={`${styles.summaryValue} ${styles.summaryAccuracyValue}`}
+            data-testid="summary-accuracy-user"
+          >
+            {formatAccuracy(userAccuracy)}%
+          </span>
+          <span role="cell" className={styles.summaryRowLabel}>
+            Accuracy
+          </span>
+          <span
+            role="cell"
+            className={`${styles.summaryValue} ${styles.summaryAccuracyValue}`}
+            data-testid="summary-accuracy-opponent"
+          >
+            {formatAccuracy(opponentAccuracy)}%
+          </span>
+        </div>
+
+        {CLASSIFICATION_LABELS.map((classification) => {
+          const userCount = summary.user[classification];
+          const opponentCount = summary.opponent[classification];
+          const explanation = CLASSIFICATION_EXPLANATION[classification];
+          return (
+            <div
+              className={styles.summaryRow}
+              role="row"
+              key={classification}
+              title={explanation}
+              aria-label={`${CLASSIFICATION_LABEL_TEXT[classification]}: you ${userCount}, ${opponentLabel} ${opponentCount}. ${explanation}`}
             >
-              {counts[classification]}
+              <span
+                role="cell"
+                className={styles.summaryValue}
+                data-testid={`summary-user-${classification}-value`}
+                style={{ color: classificationCountColor(classification, userCount) }}
+              >
+                {userCount}
+              </span>
+              <span role="cell" className={styles.summaryRowLabel}>
+                {CLASSIFICATION_LABEL_TEXT[classification]}
+              </span>
+              <span
+                role="cell"
+                className={styles.summaryValue}
+                data-testid={`summary-opponent-${classification}-value`}
+                style={{ color: classificationCountColor(classification, opponentCount) }}
+              >
+                {opponentCount}
+              </span>
+            </div>
+          );
+        })}
+
+        {missedTactics !== null ? (
+          <div
+            className={styles.summaryRow}
+            role="row"
+            aria-label={`Missed tactics: you ${missedTactics}`}
+          >
+            <span
+              role="cell"
+              className={styles.summaryValue}
+              data-testid="summary-missed-tactics-value"
+              style={{ color: missedTacticCountColor(missedTactics) }}
+            >
+              {missedTactics}
             </span>
-          </li>
-        ))}
-      </ul>
-      {children}
-    </div>
+            <span role="cell" className={styles.summaryRowLabel}>
+              Missed tactics
+            </span>
+            <span role="cell" className={styles.summaryValue} aria-hidden="true" />
+          </div>
+        ) : null}
+      </div>
+      {detectionNote !== null ? (
+        <p className={styles.detectionNote} data-testid="review-detection-state" role="status">
+          {detectionNote}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
@@ -576,6 +576,48 @@ describe('AnalysisService — Feature-010 completion hooks', () => {
         expect(record.detectionVersion).toBeNull();
       }
     }
+  });
+
+  it('registers a game as actively detecting only while its pass runs (P7)', async () => {
+    const gameId = await seedFixture('cc-bullet-blunder');
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = vi.fn();
+    const detection = {
+      async runPassForCompletedJob(): Promise<void> {
+        started();
+        await gate;
+      },
+    } as unknown as TacticalDetectionService;
+    const service = new AnalysisService({
+      games: gamesRepository,
+      analyses: analysesRepository,
+      jobs: analysisJobsRepository,
+      engine: createFakeEngine().service,
+      engineCache: new DexieEngineAnalysisCache(),
+      engineMetadata: (profile: AnalysisProfile): EngineMetadata => ({
+        ...FAKE_ENGINE_META,
+        profile,
+      }),
+      summaries: summariesRepository,
+      candidates: puzzleCandidatesRepository,
+      detection,
+      now,
+    });
+
+    // The analysis run resolves `completed` while the detached pass is still
+    // blocked on our gate → the game must read as "actively detecting".
+    const run = service.analyzeGames([gameId]);
+    await waitFor(() => started.mock.calls.length > 0);
+    expect(await service.activeDetectionGames()).toEqual([gameId]);
+
+    // Once the pass finishes the registry is cleared, so the UI never keeps
+    // showing "scan in progress" for a pass that is no longer running.
+    release();
+    await run;
+    await waitFor(async () => (await service.activeDetectionGames()).length === 0);
   });
 
   it('clears the summary and candidates on a forced re-analysis and re-runs fresh', async () => {

@@ -380,6 +380,23 @@ bar and per-move values show the evaluation **after** the selected move
 from the persisted `MoveAnalysis` and stay synchronized with the board and
 move list.
 
+Below the board column, at board width, Review shows a **full-game
+evaluation area chart** ("board footer"): one data point per analyzed ply
+plotting White's winning-chance percentage across the game. The area below
+the line is White's and the area above it is Black's, with a dashed
+50%-equal reference drawn over both tones; clicking (or keyboard-activating)
+a column seeks that ply. The Review **summary** sits below the move list,
+beside the chart: each player's name heads a centered column of its own
+statistics (accuracy — one decimal, slightly larger — then Best move, Good,
+Inaccuracy, Mistake, Blunder counts; a Missed-tactics row appears for the
+user once a Feature-010 detection pass completed), with metric labels in a
+centred column between the two players. Counts are coloured by the canonical
+Feature-009 palette (zeros of the negative classes read green; colour is
+never the only signal). A completed analysis always offers an explicit
+**Re-analyze** action; the summary also surfaces the Feature-010 detection
+state (scanning / interrupted / failed / not scanned) instead of silently
+omitting missed tactics (§ Feature 010).
+
 The Review board is a **fully interactive analysis board** (mouse and
 touch), identical to the Live Analysis board: the user can play any legal
 move, use the board-settings overlay (orientation, legal-move hints,

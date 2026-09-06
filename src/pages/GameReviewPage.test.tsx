@@ -6,8 +6,11 @@ import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
+import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { createAnalysisJob, markCompleted, markFailed } from '@/domain/analysis';
+import { gameAccuracy } from '@/domain/analysis/accuracy';
+import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
 import { blunderGameRecords } from '@/domain/analysis/fixtures/classificationScenarios';
 import { TEST_ENGINE } from '@/domain/analysis/test-support';
 import type { EngineMetadata, MoveAnalysis } from '@/domain/chess';
@@ -116,8 +119,8 @@ describe('Game Review page (Feature 008)', () => {
     expect(screen.getByTestId('summary-user-good-value')).toHaveTextContent('1');
     expect(screen.getByTestId('summary-opponent-good-value')).toHaveTextContent('1');
 
-    // The missed-tactic count is reserved (zero) until Feature 010.
-    expect(screen.queryByTestId('summary-missed-tactics')).not.toBeInTheDocument();
+    // The missed-tactic row is reserved until a detection pass completed.
+    expect(screen.queryByTestId('summary-missed-tactics-value')).not.toBeInTheDocument();
   });
 
   it('selects a move, marks it aria-current and syncs the board position', async () => {
@@ -219,6 +222,67 @@ describe('Game Review page (Feature 008)', () => {
     expect(await screen.findByTestId('review-obsolete')).toBeInTheDocument();
     expect(screen.getByTestId('review-reanalyze')).toBeInTheDocument();
     expect(screen.getByTestId('engine-version')).toHaveTextContent('18.0.0');
+  });
+
+  it('always offers a Re-analyze action on a completed analysis', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    expect(screen.queryByTestId('review-obsolete')).not.toBeInTheDocument();
+    const action = screen.getByTestId('review-reanalyze-action');
+    expect(action).toBeInTheDocument();
+    expect(action).toHaveTextContent('Re-analyze');
+  });
+
+  it('shows each player’s accuracy with one decimal', async () => {
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const user = gameAccuracy(records, 'white').accuracy;
+    const opponent = gameAccuracy(records, 'black').accuracy;
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    expect(screen.getByTestId('summary-accuracy-user')).toHaveTextContent(`${user!.toFixed(1)}%`);
+    expect(screen.getByTestId('summary-accuracy-opponent')).toHaveTextContent(
+      `${opponent!.toFixed(1)}%`,
+    );
+    // The metric label sits in the middle column, centered with the columns.
+    expect(screen.getByText('Accuracy')).toBeInTheDocument();
+  });
+
+  it('renders the evaluation diagram and seeks a ply on click', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    // One column per analyzed ply, under the board.
+    expect(screen.getAllByTestId(/^evaluation-diagram-segment-/)).toHaveLength(4);
+
+    const user = userEvent.setup();
+    // Click the 3rd column (2.g4): the board + move list seek to that ply.
+    await user.click(screen.getByTestId('evaluation-diagram-segment-2'));
+    await waitFor(() =>
+      expect(
+        screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4'),
+      ).toHaveAttribute('aria-current', 'step'),
+    );
+  });
+
+  it('relocates the summary below the move list beside the evaluation diagram', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    // The summary now lives inside the side-panel column, after the move list,
+    // rather than in the page header above the board.
+    const summary = screen.getByTestId('review-summary');
+    const layout = screen.getByTestId('review-layout');
+    expect(layout).toContainElement(summary);
+    const movePane = screen.getByRole('region', { name: 'Moves' });
+    expect(movePane.compareDocumentPosition(summary)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.getByTestId('summary-user-head')).toHaveTextContent('chessremedy');
+    expect(screen.getByTestId('summary-opponent-head')).toHaveTextContent('bulletpete');
   });
 
   it('shows the no-analysis state and analyzes the game on demand', async () => {
@@ -506,7 +570,7 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     expect(screen.queryByTestId('review-missed-tactic-label')).not.toBeInTheDocument();
   });
 
-  it('shows the review-summary missed-tactic chip for the verified miss', async () => {
+  it('shows the review-summary missed-tactic value for the verified miss', async () => {
     await seedCompleted([
       undefined,
       undefined,
@@ -516,8 +580,45 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     renderReview(null);
     await screen.findByTestId('review-layout');
 
-    const chip = screen.getByTestId('summary-missed-tactics');
-    expect(chip).toHaveTextContent('1 missed tactic');
+    const value = screen.getByTestId('summary-missed-tactics-value');
+    expect(value).toHaveTextContent('1');
+  });
+
+  it('shows a detection-state note instead of a fake zero when the scan has not completed', async () => {
+    await seedCompleted();
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    // No verified-miss record and no summary row → the run is treated as never
+    // scanned; the Review says so instead of pretending the count is zero.
+    expect(screen.queryByTestId('summary-missed-tactics-value')).not.toBeInTheDocument();
+    const note = screen.getByTestId('review-detection-state');
+    expect(note).toHaveTextContent('not scanned');
+    expect(note).toHaveTextContent('Re-analyze');
+  });
+
+  it('shows a real zero missed-tactic value once a completed scan found nothing', async () => {
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const built = buildAnalysisSummary(records, 'white', {
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: 1,
+    });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...built,
+    });
+
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    // A completed scan that found nothing is a real zero, not an absent state.
+    expect(screen.getByTestId('summary-missed-tactics-value')).toHaveTextContent('0');
+    expect(screen.queryByTestId('review-detection-state')).not.toBeInTheDocument();
   });
 
   it('renders no marker for unverified records (null detectionVersion / missedTactic false)', async () => {

@@ -125,6 +125,17 @@ export class AnalysisService {
    */
   private readonly pendingCancels = new Set<GameId>();
 
+  /**
+   * Game ids whose Feature-010 detection pass is currently running **in this
+   * session** (in-memory). A persisted summary row with `detectionState:
+   * 'queued'/'inProgress'` only means a scan is genuinely running while its
+   * game id is in this set — a queued/in-progress summary whose game id is
+   * absent was scheduled by an earlier session (or an interrupted run) and is
+   * *not* actually scanning. The UI uses this to never show "scanning…" when
+   * no scan is running.
+   */
+  private readonly activeDetections = new Set<GameId>();
+
   constructor(options: AnalysisServiceOptions) {
     this.games = options.games;
     this.analyses = options.analyses;
@@ -544,7 +555,9 @@ export class AnalysisService {
    * Called detached (never awaited) from `runGameJob` after the run's job is
    * persisted `completed`, so detection never blocks the analysis queue; a
    * failure here never fails the completed job. The pass runs to completion
-   * with its own lifecycle (it is resumable and shares the engine FIFO).
+   * with its own lifecycle (it is resumable and shares the engine FIFO). The
+   * game id is registered as "actively detecting" for the whole pass so the
+   * UI can tell a genuinely-running scan from a persisted-but-interrupted one.
    */
   private async runDetection(
     job: AnalysisJob,
@@ -554,13 +567,28 @@ export class AnalysisService {
     if (!this.detection) {
       return;
     }
+    this.activeDetections.add(game.id);
     try {
       await this.detection.runPassForCompletedJob(
         job,
         { id: game.id, userColor: game.userColor },
         records,
       );
-    } catch {}
+    } catch {
+      // Detection is derived data: a failure never fails the completed job.
+    } finally {
+      this.activeDetections.delete(game.id);
+    }
+  }
+
+  /**
+   * Game ids whose Feature-010 detection pass is running right now in this
+   * session (the in-memory registry). The Library/Review read it to render an
+   * accurate scan state: a persisted `queued`/`inProgress` summary without a
+   * matching live id is an interrupted pass, not a running one.
+   */
+  async activeDetectionGames(): Promise<readonly GameId[]> {
+    return [...this.activeDetections];
   }
 
   /**

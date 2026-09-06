@@ -28,6 +28,14 @@ export interface AnalysisServiceLike {
    * Library insights without re-analysis). Optional — tests/fakes may omit it.
    */
   ensureSummariesForRows?(gameIds: readonly string[]): Promise<number>;
+  /**
+   * Game ids whose Feature-010 detection pass is running right now in this
+   * session. A persisted `queued`/`inProgress` summary whose game id is not
+   * returned here is an *interrupted* pass (from an earlier session), not a
+   * live scan — the UI must not say "scanning" for it. Optional: when absent
+   * the UI treats no scan as live.
+   */
+  activeDetectionGames?(): Promise<readonly string[]>;
 }
 
 export interface UseGameAnalysis {

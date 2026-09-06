@@ -153,9 +153,21 @@ describe('analysisInsightsForGame', () => {
       analysisStatus: 'completed',
       accuracy: 80,
       classificationCounts: { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+      detectionState: 'absent',
       hasCompletedDetection: false,
       missedTactics: null,
     });
+  });
+
+  it('reports the detection state verbatim while a pass is still running', () => {
+    const job = completedJob(G_BLUNDER, 10);
+    const insights = analysisInsightsForGame(
+      [job],
+      [summaryFor(job.id, G_BLUNDER, { detectionState: 'inProgress' })],
+    );
+    expect(insights.detectionState).toBe('inProgress');
+    expect(insights.hasCompletedDetection).toBe(false);
+    expect(insights.missedTactics).toBeNull();
   });
 
   it('surfaces a real zero only after the detection pass completed', () => {

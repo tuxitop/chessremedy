@@ -170,6 +170,64 @@ export function GameLibrary({
     };
   }, [analysisService, library, library.rows]);
 
+  // Live Feature-010 scan registry (P7): whether each row's detection pass is
+  // genuinely running in *this* session. A persisted `queued`/`inProgress`
+  // summary only reads "scanning…" while the shared service reports the game
+  // as live; otherwise the pass was interrupted (an earlier session or a
+  // cancelled run) and the strip says so instead of lying about a running scan.
+  const [activeDetectionIds, setActiveDetectionIds] = useState<Readonly<Set<string>>>(new Set());
+  const activeDetectionRef = useRef<ReadonlySet<string>>(new Set());
+  // Latest rows/reload for the always-on detection poll (kept out of its deps
+  // so a reload never restarts the loop into a busy cycle).
+  const libraryRef = useRef(library);
+  useEffect(() => {
+    libraryRef.current = library;
+  });
+
+  // Poll the in-memory detection registry every few seconds while the Library
+  // is open: the strip label for queued/in-progress rows follows the live set,
+  // and the instant a live scan ends the rows are reloaded once so the real
+  // missed-tactic count appears. Pure display work — never schedules scans.
+  useEffect(() => {
+    const service = analysisService;
+    if (!service || typeof service.activeDetectionGames !== 'function') {
+      return;
+    }
+    let disposed = false;
+    const tick = async (): Promise<void> => {
+      if (disposed) {
+        return;
+      }
+      let active = new Set<string>();
+      try {
+        active = new Set(await service.activeDetectionGames!());
+      } catch {
+        active = new Set();
+      }
+      if (disposed) {
+        return;
+      }
+      setActiveDetectionIds(active);
+      // A scan that was live and is no longer live just finished (or was
+      // interrupted mid-session): reload once so the strip shows its real
+      // settled state (count, or the interrupted note).
+      for (const id of activeDetectionRef.current) {
+        if (!active.has(id) && libraryRef.current.rows.some((row) => row.id === id)) {
+          libraryRef.current.reload();
+          break;
+        }
+      }
+      activeDetectionRef.current = active;
+    };
+    const timer = setInterval(() => void tick(), 2000);
+    void tick();
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      activeDetectionRef.current = new Set();
+    };
+  }, [analysisService]);
+
   const update = (next: GameLibraryFilters, replace?: boolean): void => {
     setPage(1);
     library.update(next, replace);
@@ -301,6 +359,7 @@ export function GameLibrary({
             onDeleteGame={(id) => setDeleteTarget([id])}
             analysis={analysis.enabled ? analysis : null}
             statuses={analysis.statuses}
+            activeDetectionIds={activeDetectionIds}
           />
           <Pagination
             totalCount={totalCount}
@@ -338,6 +397,7 @@ function GameRows({
   onToggle,
   analysis,
   statuses,
+  activeDetectionIds,
   onDeleteGame,
 }: {
   rows: readonly LibraryGameRow[];
@@ -345,6 +405,8 @@ function GameRows({
   onToggle: (id: string) => void;
   analysis: LibraryAnalysisApi | null;
   statuses: Readonly<Record<string, GameAnalysisStatus>>;
+  /** Game ids whose Feature-010 detection pass is live in this session. */
+  activeDetectionIds: ReadonlySet<string>;
   onDeleteGame: (id: string) => void;
 }): React.JSX.Element {
   return (
@@ -420,7 +482,7 @@ function GameRows({
               />
             </span>
           ) : null}
-          <GameRowInsights row={row} />
+          <GameRowInsights row={row} detectionRunning={activeDetectionIds.has(row.id)} />
           {analysis?.perGameProgress[row.id] ? (
             <RowProgressBar gameId={row.id} progress={analysis.perGameProgress[row.id]!} />
           ) : null}
@@ -547,6 +609,8 @@ interface RowInsightItem {
   readonly text: string;
   readonly spoken: string;
   readonly color?: string;
+  /** Hover/help text for state that needs an explanation (e.g. interrupted). */
+  readonly title?: string;
 }
 
 const ERROR_COUNT_ITEMS: ReadonlyArray<{
@@ -576,7 +640,10 @@ function spokenCount(count: number, singular: string, plural: string): string {
  * Accuracy is shown with one decimal; counts are tinted by classification
  * (zero → green for the negative classes, neutral for best/good).
  */
-function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
+function rowInsightItemsFor(
+  row: LibraryGameRow,
+  detectionRunning: boolean,
+): readonly RowInsightItem[] {
   if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
     return [];
   }
@@ -611,6 +678,50 @@ function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
       spoken: spokenCount(count, 'missed tactic', 'missed tactics'),
       color: missedTacticCountColor(count),
     });
+  } else {
+    // A completed analysis that has not finished a detection pass is never
+    // presented as a real zero: the strip says so explicitly. A queued or
+    // in-progress summary only reads "scanning…" when the game's pass is live
+    // in this session (`detectionRunning`); otherwise the pass was interrupted
+    // (an earlier session or a cancelled run) and the truthful state is shown.
+    const detection = row.detectionState;
+    const muted = 'var(--color-fg-muted, #6b7280)';
+    if (detection === 'queued' || detection === 'inProgress') {
+      if (detectionRunning) {
+        items.push({
+          key: 'detection',
+          testId: 'row-insights-detection-pending',
+          text: 'Tactics scan in progress…',
+          spoken: 'Tactics scan in progress',
+          color: muted,
+        });
+      } else {
+        items.push({
+          key: 'detection',
+          testId: 'row-insights-detection-interrupted',
+          text: 'Tactics scan interrupted',
+          spoken: 'Tactics scan interrupted',
+          title: 'A tactics scan was started but never finished. Re-analyze to retry it.',
+          color: 'var(--color-danger, #c4261c)',
+        });
+      }
+    } else if (detection === 'failed') {
+      items.push({
+        key: 'detection',
+        testId: 'row-insights-detection-failed',
+        text: 'Tactics scan failed',
+        spoken: 'Tactics scan failed',
+        color: 'var(--color-danger, #c4261c)',
+      });
+    } else if (detection === 'absent') {
+      items.push({
+        key: 'detection',
+        testId: 'row-insights-detection-absent',
+        text: 'Tactics not scanned',
+        spoken: 'Tactics not scanned',
+        color: muted,
+      });
+    }
   }
   return items;
 }
@@ -621,8 +732,14 @@ function rowInsightItemsFor(row: LibraryGameRow): readonly RowInsightItem[] {
  * analysis. One labelled region per row whose screen-reader text spells out
  * every value.
  */
-function GameRowInsights({ row }: { row: LibraryGameRow }): React.JSX.Element | null {
-  const items = rowInsightItemsFor(row);
+function GameRowInsights({
+  row,
+  detectionRunning,
+}: {
+  row: LibraryGameRow;
+  detectionRunning: boolean;
+}): React.JSX.Element | null {
+  const items = rowInsightItemsFor(row, detectionRunning);
   if (items.length === 0) {
     return null;
   }
@@ -642,7 +759,11 @@ function GameRowInsights({ row }: { row: LibraryGameRow }): React.JSX.Element | 
               ·{' '}
             </span>
           ) : null}
-          <span data-testid={item.testId} style={item.color ? { color: item.color } : undefined}>
+          <span
+            data-testid={item.testId}
+            style={item.color ? { color: item.color } : undefined}
+            {...(item.title !== undefined ? { title: item.title } : {})}
+          >
             {item.text}
           </span>
         </Fragment>

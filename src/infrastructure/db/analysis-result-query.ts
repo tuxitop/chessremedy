@@ -101,6 +101,7 @@ export function analysisInsightsForGame(
     analysisStatus: status,
     accuracy: summary.accuracy,
     classificationCounts: summary.classificationCounts,
+    detectionState: summary.detectionState,
     hasCompletedDetection: detectionCompleted,
     missedTactics: detectionCompleted ? summary.missedTacticCount : null,
   };

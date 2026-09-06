@@ -159,6 +159,10 @@ type LibraryGameView = GameSummary & {
       mistake: number;
       blunder: number;
     };
+    detectionState:                  // Feature-010 pass state of the latest completed analysis
+      | 'absent'                     //   never scanned (older run / not yet scheduled)
+      | 'queued' | 'inProgress'      //   scheduled; running only if the service says so
+      | 'completed' | 'failed';      //   completed ⇒ missedTactics is a real number
     missedTactics: number;            // user-side, only when a detection pass completed (010)
     puzzleCount: number;              // 011
     masteredPuzzleCount: number;      // 012/013/014
@@ -200,6 +204,15 @@ Strip semantics:
   completed pass that found nothing is the value `0`. Detection results
   are scoped to the analysis identity, so re-analysis starts absent again
   until its new pass completes.
+- **Detection state is surfaced, never silent**: a completed run whose
+  pass has not finished shows one of the Feature-010 state items instead
+  of a missing/zero missed-tactic value — `queued`/`inProgress` render
+  "scanning…" only while the analysis service reports the game as
+  actively detecting (in-memory session registry); otherwise such a
+  summary is an interrupted pass ("Tactics scan interrupted"), `failed`
+  is a failed attempt and `absent` is "Tactics not scanned". The Library
+  refreshes the strip while a scan is live and stops as soon as nothing
+  is running, so an interrupted pass never keeps polling.
 
 Row actions are registered by capability:
 

@@ -20,6 +20,7 @@
 
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { ClassificationCounts } from '@/domain/analysis/summary';
+import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
 
 export type GameActionCapability = 'liveAnalysis' | 'review' | 'puzzles' | 'delete';
 
@@ -38,6 +39,14 @@ export interface GameRowInsights {
   readonly analysisStatus?: GameAnalysisStatus;
   /** User-side ADR-023 counts of the latest completed analysis. */
   readonly classificationCounts?: Readonly<ClassificationCounts>;
+  /**
+   * Detection-pass state of the latest completed analysis (Feature 010):
+   * `'completed'` means `missedTactics` is a real number (zero included);
+   * `'absent'` = never scanned, `'queued'`/`'inProgress'` = scanning,
+   * `'failed'` = a scan attempt ended. Exposed so a row can say "not scanned"
+   * instead of silently showing nothing.
+   */
+  readonly detectionState?: SummaryDetectionState;
   /** True once a Feature-010 detection pass completed for the analysis. */
   readonly hasCompletedDetection?: boolean;
   /**

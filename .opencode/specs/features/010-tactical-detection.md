@@ -180,7 +180,7 @@ same card on mobile:
 
 ```text
 Sep 04 · Lichess · Rapid 10|5 · White · Win    vs. OpponentName · 38 moves
-Accuracy 78% · Blunders 2 · Mistakes 3 · Inaccuracies 4 · Missed tactics 1
+Accuracy 78.4% · Blunders 2 · Mistakes 3 · Inaccuracies 4 · Missed tactics 1
 ```
 
 Mapping to the current row: date, platform, time control (`M|I` +
@@ -193,10 +193,10 @@ For a game whose latest completed analysis exists, the strip shows
 
 * **Accuracy** — the canonical ADR-024 per-game accuracy produced by the
   Feature-009 accuracy function over the latest completed analysis's
-  persisted `MoveAnalysis`, displayed as a whole percentage. It is the
-  same number Game Review shows — never a second calculation. When the
-  function yields no value (no usable user moves) the item is omitted
-  (em-dash), never shown as `0`.
+  persisted `MoveAnalysis`, displayed with **one decimal** (the same figure
+  Game Review shows — never a second calculation). When the function yields
+  no value (no usable user moves) the item is omitted (em-dash), never
+  shown as `0`.
 * **Blunders / Mistakes / Inaccuracies** — user-side counts of the
   corresponding ADR-023 classifications from the canonical Feature-009
   per-game classification summary (`domain/classification.md`); one
@@ -225,6 +225,31 @@ Rules:
   that analysis (absent ≠ zero below).
 * Opponent-side counts remain Game Review context and are never row
   statistics.
+
+### Detection-state surfacing (never a silent absence)
+
+A completed analysis whose detection pass has not produced a real count is
+never shown as if it were zero — the row (and Game Review summary) say
+what is actually true:
+
+* **Scanning** — the pass is genuinely running **right now in this
+  session**. "In progress" is never read from the persisted summary alone:
+  a `queued`/`inProgress` summary only renders "scanning…" while the
+  shared analysis service reports the game as **actively detecting** (an
+  in-memory session registry). A pass scheduled by an earlier session (or
+  interrupted by a page close / cancelled run) reads **"Tactics scan
+  interrupted"** with a "re-analyze to retry" affordance instead.
+* **Failed** — a scan attempt ended in failure ("Tactics scan failed");
+  retry via re-analysis.
+* **Not scanned** — the run predates this feature (its summary was
+  backfilled with an `absent` state) or was never scanned ("Tactics not
+  scanned"); the user re-runs analysis to scan.
+
+The Library polls the live registry while a scan is active so the real
+count appears the moment the pass settles, and never keeps polling (or
+claiming "in progress") for an interrupted pass. Game Review mirrors this:
+its summary shows a real `Missed tactics` value once the pass completed,
+and otherwise the matching state note above.
 
 ### Missed tactics: absent vs zero
 

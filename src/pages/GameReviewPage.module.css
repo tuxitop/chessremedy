@@ -195,50 +195,71 @@
   padding: var(--space-3);
 }
 
-.summaryTitle {
-  font-size: var(--font-size-md);
-  font-weight: 700;
-  margin: 0 0 var(--space-2);
-}
-
-.summarySide {
-  padding: var(--space-2) 0;
-}
-
-.summarySide + .summarySide {
-  border-top: 1px solid var(--color-border);
-}
-
-.sideLabel {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  margin: 0 0 var(--space-1);
-  color: var(--color-fg);
-}
-
-.counts {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.summaryTable {
   display: grid;
-  grid-template-columns: repeat(5, auto);
-  gap: var(--space-2);
-  justify-content: start;
+  /* Three centered columns: user stats · metric labels · opponent stats. */
+  grid-template-columns: 1fr max-content 1fr;
+  gap: var(--space-1) var(--space-2);
+  align-items: baseline;
+  justify-items: center;
 }
 
-.countRow {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-1);
+.summaryHead {
+  display: contents;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: var(--space-1);
+}
+
+.summaryRow {
+  display: contents;
+}
+
+.summaryColHead {
+  display: block;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.summaryRowLabel {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.summaryValue {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  min-width: 2.2rem;
+}
+
+/* Accuracy is a stat like the rest, only a little larger — never a headline. */
+.summaryAccuracyValue {
+  font-size: var(--font-size-md, 1rem);
+  font-weight: 800;
+}
+
+.detectionNote {
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-fg-muted);
   font-size: var(--font-size-sm);
 }
 
-.countName {
-  color: var(--color-fg-muted);
-}
-
-.countValue {
-  font-weight: 700;
+.sidePanelBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
 }
 
 .missed {

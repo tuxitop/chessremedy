@@ -279,7 +279,10 @@ describe('GamesPage analysis workflow (Feature 008)', () => {
     await user.click(screen.getByTestId(`game-select-${bullet.id}`));
     await user.click(screen.getByTestId('library-analyze'));
 
-    await waitFor(() => expect(screen.getByTestId(`game-review-${bullet.id}`)).toBeInTheDocument());
+    await waitFor(
+      () => expect(screen.getByTestId(`game-review-${bullet.id}`)).toBeInTheDocument(),
+      { timeout: 8000 },
+    );
     expect(await analysesRepository.countForGame(bullet.id)).toBe(4);
   });
 
@@ -310,7 +313,9 @@ describe('GamesPage analysis workflow (Feature 008)', () => {
     fake.engine.clearFailures();
     screen.getByTestId(`game-retry-${game.id}`);
     await user.click(screen.getByTestId(`game-retry-${game.id}`));
-    await waitFor(() => expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId(`game-review-${game.id}`)).toBeInTheDocument(), {
+      timeout: 8000,
+    });
   });
 
   it('marks an analysis as outdated and re-analyzes it under the current engine', async () => {

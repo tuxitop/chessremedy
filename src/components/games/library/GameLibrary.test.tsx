@@ -234,6 +234,47 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
     );
   });
 
+  it('labels a completed run that was never scanned instead of hiding it', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 10, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+      accuracy: 91,
+      detectionState: 'absent',
+    });
+    renderLibrary();
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).queryByTestId('row-insights-missed-tactics')).not.toBeInTheDocument();
+    expect(within(strip).getByTestId('row-insights-detection-absent')).toHaveTextContent(
+      'Tactics not scanned',
+    );
+  });
+
+  it('labels interrupted and failed scans instead of a silent absence', async () => {
+    // A persisted queued/in-progress summary with no live scan in this session
+    // is an interrupted pass — never shown as if a scan were running.
+    const queued = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'queued',
+    });
+    const failed = await seedAnalyzedGame('li-blitz-blunder', {
+      classificationCounts: { best: 2, good: 1, inaccuracy: 0, mistake: 0, blunder: 0 },
+      accuracy: 64,
+      detectionState: 'failed',
+    });
+    renderLibrary();
+
+    const interruptedStrip = await screen.findByTestId(`row-insights-${queued.id}`);
+    expect(
+      within(interruptedStrip).getByTestId('row-insights-detection-interrupted'),
+    ).toHaveTextContent('Tactics scan interrupted');
+
+    const failedStrip = await screen.findByTestId(`row-insights-${failed.id}`);
+    expect(within(failedStrip).getByTestId('row-insights-detection-failed')).toHaveTextContent(
+      'Tactics scan failed',
+    );
+  });
+
   it('omits the Accuracy item when the completed analysis has no usable accuracy', async () => {
     const game = await seedAnalyzedGame('cc-bullet-blunder', {
       classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
@@ -322,9 +363,14 @@ describe('GameLibrary analysis-result filters (Feature 010)', () => {
     await user.selectOptions(blunders, 'all');
     await user.selectOptions(missed, 'all');
     await user.selectOptions(analysis, 'notAnalyzed');
-    await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(1));
-    expect(screen.getByTestId(`game-select-${bare.id}`)).toBeInTheDocument();
-    expect(screen.queryByTestId(`game-select-${analyzed.id}`)).not.toBeInTheDocument();
+    // Both the previous ("analyzed") and the next ("not analyzed") filters show
+    // one row, so wait on the actual row change — never just the count, which
+    // could pass on the stale row set before the reload lands.
+    await waitFor(() => {
+      expect(screen.queryByTestId(`game-select-${analyzed.id}`)).not.toBeInTheDocument();
+      expect(screen.queryByTestId(`game-select-${pending.id}`)).not.toBeInTheDocument();
+      expect(screen.getByTestId(`game-select-${bare.id}`)).toBeInTheDocument();
+    });
   });
 });
 
