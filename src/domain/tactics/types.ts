@@ -102,4 +102,24 @@ export interface VerifiedTacticalCandidate extends RawCandidate {
    * WDL guards that need a fresh search.
    */
   readonly verificationSource?: VerificationSource;
+  /**
+   * The persisted ADR-025 difficulty estimate of the verified solution
+   * (Feature-011 follow-up). Computed by the verification that produced this
+   * candidate: the tactical-profile run uses the tactical depth (22), the
+   * stored-mate fast path uses the stored line's depth. The ADR-025
+   * `depthBonus` never applies to engine-verified V1 puzzles (tactical depth
+   * < 26). Optional for backward compatibility — rows verified before this
+   * field existed carry no estimate.
+   */
+  readonly difficulty?: number;
+  /**
+   * Distinct first moves a solver may play and still reach a tactical
+   * objective: the verified best move plus every accepted (distinct-first-move)
+   * alternative whose own line reaches an objective. This is exactly the set
+   * ADR-025's candidate-first-move count (C) is measured on, so Feature
+   * 012/013 can accept any of them and the stored difficulty stays consistent.
+   * `forcing_mate` fast-path candidates carry only the best move. Optional for
+   * backward compatibility (absent on rows verified before this field).
+   */
+  readonly acceptedFirstMoves?: readonly string[];
 }

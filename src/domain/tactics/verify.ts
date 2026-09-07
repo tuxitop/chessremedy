@@ -496,6 +496,7 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
     seenFirstMoves.add(topFirstMove);
   }
   const alternatives: Array<{
+    readonly firstMove: string;
     readonly firstForcing: boolean;
     readonly scan: PrefixScanOutcome;
     readonly winChance: number;
@@ -513,6 +514,7 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
     const firstPly = firstWalk.plies[0];
     const firstForcing = firstPly !== undefined && (firstPly.isCheck || firstPly.isCapture);
     alternatives.push({
+      firstMove,
       firstForcing,
       scan: prefixScan(fen, line, startEvalCp),
       winChance: winChanceOfLine(line),
@@ -595,6 +597,17 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
     detectionVersion: DETECTION_VERSION,
     verificationSource: 'tactical-search',
     verificationStatus: 'verified',
+    // Feature-011 follow-up: persist the ADR-025 difficulty estimate and the
+    // accepted solving first moves (best + distinct alternatives reaching an
+    // objective) so the final puzzle needs no second engine run to carry
+    // them. `difficulty` is the same estimate the >= 15 floor used.
+    difficulty,
+    acceptedFirstMoves: [
+      topLine.uci[0] ?? candidate.bestMove,
+      ...alternatives
+        .filter((alternative) => alternative.scan.objective !== null)
+        .map((alternative) => alternative.firstMove),
+    ],
   };
   return { ok: true, candidate: verified };
 }

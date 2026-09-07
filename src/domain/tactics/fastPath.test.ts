@@ -57,6 +57,12 @@ describe('tactical detection fast path (plan 012, WP-C)', () => {
     expect(verified!.bestPv).toEqual(['h5f7']);
     expect(verified!.verificationSource).toBe('stored-analysis');
     expect(verified!.detectionVersion).toBe(DETECTION_VERSION);
+    // Feature-011 follow-up: the mate fast path persists a difficulty estimate
+    // (computed at the stored line's depth) and the mating move as the only
+    // accepted solving move.
+    expect(typeof verified!.difficulty).toBe('number');
+    expect(verified!.difficulty).toBeGreaterThanOrEqual(15);
+    expect(verified!.acceptedFirstMoves).toEqual(['h5f7']);
     expect(verified!.verificationMetadata).toMatchObject({
       engineName: 'stockfish',
       engineVersion: '18.0.8',

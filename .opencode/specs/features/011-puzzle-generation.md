@@ -566,18 +566,20 @@ Feature 010 (verified candidates); output consumed by Features 012/013.
 Recorded here for the owner; none block this spec's structure but each needs a
 decision before implementation:
 
-1. **Feature-010 output extension.** The verified-candidate row currently does
-   not persist the numeric ADR-025 difficulty estimate or the accepted
-   alternative first moves (both exist only transiently during Feature-010
-   Stage-2 verification). Persisting them additively on the verified candidate
-   row is the clean way to satisfy decisions 1 and 7 engine-free; otherwise
-   Feature-011 would need cache reads that are unavailable for
-   `'stored-analysis'` fast-path candidates.
+1. **Feature-010 output extension — resolved.** Verified candidates now persist
+   the numeric ADR-025 difficulty estimate (`difficulty`, engine-verified at
+   the tactical depth 22, stored-mate fast path at the stored line's depth)
+   and the accepted solving first moves (`acceptedFirstMoves`: the best move
+   plus every distinct-first-move alternative whose own line reached an
+   objective and survived the guards). Puzzle assembly reads these straight
+   off the verified candidate row — no cache reads and no second engine run
+   are needed. (Rows verified before this change carry neither field.)
 2. **ADR-025 depth wording.** ADR-025's input table says the difficulty `depth`
    input is the `deep` profile, default 30. This V1 decision fixes difficulty
-   at the tactical verification depth (22, bonus never applies). If ADR-025
-   should state that its depth default applies only when a deep confirmation
-   exists, that clarification belongs in a follow-up ADR-025 note/new ADR.
+   at the tactical verification depth (22, bonus never applies for
+   engine-verified puzzles). If ADR-025 should state that its depth default
+   applies only when a deep confirmation exists, that clarification belongs in
+   a follow-up ADR-025 note/new ADR.
 3. **Stale research.** `research/puzzle-generation.md` §1 (opponent side to
    move), §6 (deep verification), §7 (FEN-keyed "update existing" dedup) and
    the §11 pipeline (Feature-011 doing candidate/MultiPV work) predate ADR-026

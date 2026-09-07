@@ -34,6 +34,8 @@
  */
 
 import { walkLine } from './line';
+import { forcingness, materialDelta } from './line';
+import { estimateDifficulty } from './difficulty';
 import { MAX_TACTIC_PLIES } from './verify';
 import type { RawCandidate, VerifiedTacticalCandidate } from './types';
 import { DETECTION_VERSION } from './types';
@@ -106,6 +108,18 @@ export function fastPathVerifiedCandidate(
   }
 
   const bestMove = pv[0] ?? candidate.bestMove;
+  // ADR-025 difficulty for the stored-mate line, at the depth the mate was
+  // actually verified (the stored line's depth). The solver wins by mate, so
+  // the eval swing is at its maximum; no MultiPV alternatives exist on this
+  // path, so the solving-move count is 1.
+  const difficulty = estimateDifficulty({
+    lineLength: pv.length,
+    candidateFirstMoves: 1,
+    forcingness: forcingness(walk.walk) * 100,
+    evalSwing: Math.abs(10_000 - (candidate.evalCpBefore ?? 0)),
+    material: materialDelta(walk.walk),
+    depth: source.depth,
+  });
   return {
     ...candidate,
     bestMove,
@@ -127,5 +141,9 @@ export function fastPathVerifiedCandidate(
     detectionVersion: DETECTION_VERSION,
     verificationSource: 'stored-analysis',
     verificationStatus: 'verified',
+    // Feature-011 follow-up: a forced mate has no alternative solving move on
+    // the stored line, so only the mating move is accepted.
+    difficulty,
+    acceptedFirstMoves: [bestMove],
   };
 }

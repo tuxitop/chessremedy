@@ -266,6 +266,11 @@ describe('TacticalDetectionService — pass orchestration', () => {
       wdlAfterBestLine: { w: 1000, d: 0, l: 0 },
     });
     expect(verified.detectionVersion).toBe(DETECTION_VERSION);
+    // Feature-011 follow-up: the verified candidate persists the ADR-025
+    // difficulty and the accepted solving move(s) for puzzle assembly.
+    expect(typeof verified.difficulty).toBe('number');
+    expect(verified.difficulty).toBeGreaterThanOrEqual(15);
+    expect(verified.acceptedFirstMoves).toContain('h5f7');
     expect(await puzzleCandidatesRepository.listVerifiedForGame(game.id)).toEqual([verified]);
 
     // The owning ply is annotated; every other record is left intact.
@@ -323,6 +328,10 @@ describe('TacticalDetectionService — pass orchestration', () => {
       verificationDepth: 20,
       wdlAfterBestLine: null,
     });
+    // Feature-011 follow-up: the stored-mate fast path also persists a
+    // difficulty estimate and the mating move as the accepted solving move.
+    expect(typeof verified.difficulty).toBe('number');
+    expect(verified.acceptedFirstMoves).toEqual(['h5f7']);
 
     const summary = await summariesRepository.getForAnalysis(job.id);
     expect(summary?.detectionState).toBe('completed');

@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { ANALYSIS_VERSION } from '@/domain/chess';
 import { estimateDifficulty } from './difficulty';
+import { forcingness, materialDelta, walkLine } from './line';
 import {
   VERIFICATION_MIN_DIFFICULTY,
   verifyCandidate,
@@ -137,6 +138,20 @@ describe('verifyCandidate — verified fork (happy path)', () => {
     const result = verifyCandidate(verifyInput({ candidate: raw, lines: [topLine] }));
     const verified = asVerified(result);
 
+    // The stored difficulty is the ADR-025 estimate at the verification depth
+    // (same inputs verifyCandidate fed the floor), replicated here so the test
+    // does not hard-code the rounded value.
+    const solutionWalk = walkLine(raw.startingFen, [...FORK_LINE]);
+    if (!solutionWalk.ok) throw new Error('unreachable');
+    const expectedDifficulty = estimateDifficulty({
+      lineLength: 3,
+      candidateFirstMoves: 1,
+      forcingness: forcingness(solutionWalk.walk) * 100,
+      evalSwing: Math.abs((topLine.evalCp ?? 0) - (raw.evalCpBefore ?? 0)),
+      material: materialDelta(solutionWalk.walk),
+      depth: DEPTH,
+    });
+
     expect(verified).toEqual<VerifiedTacticalCandidate>({
       ...raw,
       tacticalObjective: 'winning_material',
@@ -153,6 +168,8 @@ describe('verifyCandidate — verified fork (happy path)', () => {
       detectionVersion: DETECTION_VERSION,
       verificationSource: 'tactical-search',
       verificationStatus: 'verified',
+      difficulty: expectedDifficulty,
+      acceptedFirstMoves: ['g5f7'],
     });
   });
 });
@@ -435,5 +452,49 @@ describe('verifyCandidate — determinism', () => {
       expect(again.ok).toBe(true);
       if (again.ok) expect(again.candidate).toEqual(first.candidate);
     }
+  });
+});
+
+describe('verifyCandidate — persisted difficulty and accepted moves (Feature-011 follow-up)', () => {
+  it('stores the difficulty and the best move as the only accepted move', () => {
+    const raw = makeCandidate();
+    const input = verifyInput({ candidate: raw, lines: [makeLine()] });
+    const verified = asVerified(verifyCandidate(input));
+
+    expect(typeof verified.difficulty).toBe('number');
+    expect(verified.difficulty).toBeGreaterThanOrEqual(VERIFICATION_MIN_DIFFICULTY);
+    expect(verified.acceptedFirstMoves).toEqual(['g5f7']);
+  });
+
+  it('stores only moves whose own line reaches an objective (best always)', () => {
+    // A clearly-worse forcing alternative (Nxf7 at +100) does not reach an
+    // objective, so it is NOT an accepted solving move — the stored set stays
+    // exactly the best move, matching the difficulty input's candidate count.
+    const input = verifyInput({
+      candidate: makeCandidate({ evalCpBefore: 0 }),
+      lines: [
+        makeLine({ multipv: 1, uci: ['h2h3'], evalCp: 900 }),
+        makeLine({ multipv: 2, uci: ['g5f7'], evalCp: 100 }),
+      ],
+    });
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.acceptedFirstMoves).toEqual(['h2h3']);
+  });
+
+  it('persists objective-reaching accepted moves that survive the unicity gate', () => {
+    // A far-worse forcing alternative that still neutralizes the same threat
+    // (start already forced-lost at -800; both ends are fine) is far enough
+    // below the best line in winning chance to survive the unicity gate, so
+    // it is accepted alongside the best move.
+    const input = verifyInput({
+      candidate: makeCandidate({ evalCpBefore: -800 }),
+      lines: [
+        makeLine({ multipv: 1, uci: ['h2h3'], evalCp: 300 }),
+        makeLine({ multipv: 2, uci: ['g5f7'], evalCp: -100 }),
+      ],
+    });
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.acceptedFirstMoves).toEqual(['h2h3', 'g5f7']);
+    expect(verified.acceptedFirstMoves![0]).toBe('h2h3');
   });
 });
