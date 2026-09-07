@@ -37,6 +37,9 @@ export function GamesPage({
       .then((built) => {
         if (active) {
           setDefaultAnalysisService(built);
+          if (import.meta.env.DEV) {
+            (globalThis as { __chessremedy?: unknown }).__chessremedy = built;
+          }
         }
       })
       .catch(() => {

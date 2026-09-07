@@ -57,6 +57,8 @@ export interface AnalysisSummariesRepository {
   listForAnalysisIds(analysisIds: readonly string[]): Promise<readonly AnalysisSummaryRow[]>;
   /** Every summary owned by the given games (game-scoped reads/deletion). */
   listForGames(gameIds: readonly GameId[]): Promise<readonly AnalysisSummaryRow[]>;
+  /** Every persisted summary row (session orphan reconciliation; bounded use). */
+  listAll(): Promise<readonly AnalysisSummaryRow[]>;
   /** Remove one analysis identity's summary (forced re-analysis cleanup). */
   deleteForAnalysis(analysisId: string): Promise<void>;
   /** Remove every summary of the given games (game deletion cascade). */
@@ -96,6 +98,10 @@ export class DexieAnalysisSummariesRepository implements AnalysisSummariesReposi
       .where('gameId')
       .anyOf([...gameIds])
       .toArray();
+  }
+
+  async listAll(): Promise<readonly AnalysisSummaryRow[]> {
+    return this.database.analysisSummaries.toArray();
   }
 
   async deleteForAnalysis(analysisId: string): Promise<void> {

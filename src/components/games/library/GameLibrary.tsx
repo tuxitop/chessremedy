@@ -12,6 +12,7 @@ import {
 import { dateIsoOf } from '@/domain/gameLibrary/timeframe';
 import { terminationLabel, fallbackTermination } from '@/domain/chess/gameEnd';
 import { useGameLibrary } from '@/hooks/useGameLibrary';
+import { useCloseInterruptGuard } from '@/hooks/useCloseInterruptGuard';
 import {
   useLibraryAnalysis,
   type AnalysisQueuePositions,
@@ -176,7 +177,11 @@ export function GameLibrary({
   // as live; otherwise the pass was interrupted (an earlier session or a
   // cancelled run) and the strip says so instead of lying about a running scan.
   const [activeDetectionIds, setActiveDetectionIds] = useState<Readonly<Set<string>>>(new Set());
+  const [liveAnalysisIds, setLiveAnalysisIds] = useState<Readonly<Set<string>>>(new Set());
   const activeDetectionRef = useRef<ReadonlySet<string>>(new Set());
+  /** Game ids whose scan was started from this page but may finish before the
+   *  poll observes them live (short passes): their settle still reloads rows. */
+  const justStartedScans = useRef<ReadonlySet<string>>(new Set());
   // Latest rows/reload for the always-on detection poll (kept out of its deps
   // so a reload never restarts the loop into a busy cycle).
   const libraryRef = useRef(library);
@@ -184,13 +189,17 @@ export function GameLibrary({
     libraryRef.current = library;
   });
 
-  // Poll the in-memory detection registry every few seconds while the Library
-  // is open: the strip label for queued/in-progress rows follows the live set,
-  // and the instant a live scan ends the rows are reloaded once so the real
-  // missed-tactic count appears. Pure display work — never schedules scans.
+  // Poll the in-memory session registries every few seconds while the Library
+  // is open: which scans are genuinely running (strip label + settle reload)
+  // and which analysis jobs are genuinely live this session (paused rows must
+  // never read as "analyzing"). Pure display work — never schedules engine work.
   useEffect(() => {
     const service = analysisService;
-    if (!service || typeof service.activeDetectionGames !== 'function') {
+    const canPoll =
+      service &&
+      (typeof service.activeDetectionGames === 'function' ||
+        typeof service.liveAnalysisGames === 'function');
+    if (!service || !canPoll) {
       return;
     }
     let disposed = false;
@@ -199,15 +208,37 @@ export function GameLibrary({
         return;
       }
       let active = new Set<string>();
-      try {
-        active = new Set(await service.activeDetectionGames!());
-      } catch {
-        active = new Set();
+      if (typeof service.activeDetectionGames === 'function') {
+        try {
+          active = new Set(await service.activeDetectionGames!());
+        } catch {
+          active = new Set();
+        }
+      }
+      let live = new Set<string>();
+      if (typeof service.liveAnalysisGames === 'function') {
+        try {
+          live = new Set(await service.liveAnalysisGames!());
+        } catch {
+          live = new Set();
+        }
       }
       if (disposed) {
         return;
       }
+      // A scan started on this page that already finished (never seen live by
+      // the poll) still reloads its row so the real state/count appears.
+      const justFinished = [...justStartedScans.current].filter((id) => !active.has(id));
+      if (justFinished.length > 0) {
+        justStartedScans.current = new Set(
+          [...justStartedScans.current].filter((id) => active.has(id)),
+        );
+        if (libraryRef.current.rows.some((row) => row.id === justFinished[0])) {
+          libraryRef.current.reload();
+        }
+      }
       setActiveDetectionIds(active);
+      setLiveAnalysisIds(live);
       // A scan that was live and is no longer live just finished (or was
       // interrupted mid-session): reload once so the strip shows its real
       // settled state (count, or the interrupted note).
@@ -225,8 +256,135 @@ export function GameLibrary({
       disposed = true;
       clearInterval(timer);
       activeDetectionRef.current = new Set();
+      justStartedScans.current = new Set();
     };
   }, [analysisService]);
+
+  // Orphan reconciliation (WP-A): a cheap, engine-free pass — owner-less
+  // in-progress detection summaries are paused (never silently "in progress").
+  // Analysis jobs left by an earlier session stay paused too: they are resumed
+  // only by an explicit Analyze/Retry so a user action never waits behind
+  // invisible background work.
+  useEffect(() => {
+    if (!analysisService || typeof analysisService.reconcileOrphans !== 'function') {
+      return;
+    }
+    void analysisService.reconcileOrphans!();
+  }, [analysisService]);
+
+  /** Run/resume/retry the tactics scan of one game (WP-A on-demand scan). */
+  const runScan = useCallback(
+    (gameId: string) => {
+      const service = analysisService;
+      if (!service || typeof service.scanGame !== 'function') {
+        return;
+      }
+      void (async () => {
+        try {
+          const outcome = await service.scanGame!(gameId);
+          if (outcome === 'started') {
+            setActiveDetectionIds((previous) => {
+              if (previous.has(gameId)) {
+                return previous;
+              }
+              const next = new Set(previous);
+              next.add(gameId);
+              return next;
+            });
+            justStartedScans.current = new Set(justStartedScans.current).add(gameId);
+          } else {
+            // Not (or no longer) running: drop the optimistic state; when the
+            // pass already completed the next rows reload shows its real count.
+            setActiveDetectionIds((previous) => {
+              if (!previous.has(gameId)) {
+                return previous;
+              }
+              const next = new Set(previous);
+              next.delete(gameId);
+              return next;
+            });
+            justStartedScans.current = new Set(
+              [...justStartedScans.current].filter((id) => id !== gameId),
+            );
+            if (outcome === 'already-completed') {
+              library.reload();
+            }
+          }
+        } catch {
+          // The next poll reconciles the real registry state.
+        }
+      })();
+    },
+    [analysisService, library],
+  );
+
+  const canScan = analysisService !== null && typeof analysisService.scanGame === 'function';
+  const canCancelScan =
+    analysisService !== null && typeof analysisService.cancelScan === 'function';
+
+  /** Whole-library engine activity that survives navigation: live analysis
+   *  jobs (this session) plus live tactics scans. Paused jobs (earlier
+   *  session) are never shown as busy. */
+  const busyAnalysisRows = shownRows.filter((row) => {
+    const status = analysis.statuses[row.id];
+    return (status === 'queued' || status === 'inProgress') && liveAnalysisIds.has(row.id);
+  });
+  const busyScanIds = [...activeDetectionIds].filter((id) =>
+    library.rows.some((row) => row.id === id),
+  );
+  const engineBusy = analysis.running || busyAnalysisRows.length > 0 || busyScanIds.length > 0;
+
+  /** Persistent engine-activity line (non-running branch): resumed analysis
+   *  jobs + live tactics scans, so a queued/scanning game is never silent. */
+  let busyDone = 0;
+  let busyTotal = 0;
+  for (const row of busyAnalysisRows) {
+    const progress = analysis.perGameProgress[row.id];
+    if (progress && progress.totalPositions > 0) {
+      busyDone += progress.completedPositions;
+      busyTotal += progress.totalPositions;
+    }
+  }
+  const busyParts: string[] = [];
+  if (busyAnalysisRows.length > 0) {
+    const label =
+      busyAnalysisRows.length === 1
+        ? '1 game is analyzing'
+        : `${busyAnalysisRows.length} games are analyzing`;
+    busyParts.push(label);
+    if (busyTotal > 0) {
+      busyParts.push(`${busyDone}/${busyTotal} positions`);
+    }
+  }
+  if (busyScanIds.length > 0) {
+    busyParts.push(
+      busyScanIds.length === 1
+        ? '1 tactics scan running'
+        : `${busyScanIds.length} tactics scans running`,
+    );
+  }
+  const busyLine = busyParts.length > 0 ? busyParts.join(' · ') : 'Engine work is running…';
+
+  // Warn before the tab closes while engine work is live (analysis jobs / scan
+  // passes are resumable — the user can keep them or resume them later).
+  useCloseInterruptGuard(
+    engineBusy,
+    'Engine analysis or a tactics scan is running. Leaving now pauses it for later (resumable).',
+  );
+
+  /** Cancel every visible piece of engine work: persisted analysis jobs of the
+   *  displayed rows and any live tactics scans. */
+  const cancelBusyWork = useCallback(() => {
+    for (const row of busyAnalysisRows) {
+      analysis.cancelGame(row.id);
+    }
+    if (canCancelScan) {
+      for (const id of busyScanIds) {
+        void analysisService!.cancelScan!(id);
+      }
+    }
+    library.reload();
+  }, [busyAnalysisRows, busyScanIds, canCancelScan, analysisService, analysis, library]);
 
   const update = (next: GameLibraryFilters, replace?: boolean): void => {
     setPage(1);
@@ -350,6 +508,23 @@ export function GameLibrary({
         </div>
       ) : null}
 
+      {engineBusy && !analysis.running ? (
+        <div className={styles.progress} data-testid="library-engine-busy" aria-live="polite">
+          <span className={styles.progressText} data-testid="library-engine-busy-line">
+            {busyLine}
+          </span>
+          <Button
+            variant="ghost"
+            className={styles.cancelInline!}
+            data-testid="library-engine-busy-cancel"
+            onClick={cancelBusyWork}
+            title="Cancel the resumed analysis jobs and any running tactics scans"
+          >
+            Cancel work
+          </Button>
+        </div>
+      ) : null}
+
       {shownRows.length > 0 ? (
         <>
           <GameRows
@@ -360,6 +535,9 @@ export function GameLibrary({
             analysis={analysis.enabled ? analysis : null}
             statuses={analysis.statuses}
             activeDetectionIds={activeDetectionIds}
+            liveAnalysisIds={liveAnalysisIds}
+            scanEnabled={canScan && analysis.enabled}
+            onScan={runScan}
           />
           <Pagination
             totalCount={totalCount}
@@ -398,6 +576,9 @@ function GameRows({
   analysis,
   statuses,
   activeDetectionIds,
+  liveAnalysisIds,
+  scanEnabled,
+  onScan,
   onDeleteGame,
 }: {
   rows: readonly LibraryGameRow[];
@@ -407,6 +588,11 @@ function GameRows({
   statuses: Readonly<Record<string, GameAnalysisStatus>>;
   /** Game ids whose Feature-010 detection pass is live in this session. */
   activeDetectionIds: ReadonlySet<string>;
+  /** Game ids whose analysis job is live in this session (not paused). */
+  liveAnalysisIds: ReadonlySet<string>;
+  /** Whether the shared service exposes the on-demand scan entry point. */
+  scanEnabled: boolean;
+  onScan: (gameId: string) => void;
   onDeleteGame: (id: string) => void;
 }): React.JSX.Element {
   return (
@@ -472,6 +658,12 @@ function GameRows({
               <AnalysisCell
                 gameId={row.id}
                 status={statuses[row.id] ?? 'unanalyzed'}
+                paused={
+                  ((statuses[row.id] ?? 'unanalyzed') === 'queued' ||
+                    (statuses[row.id] ?? 'unanalyzed') === 'inProgress') &&
+                  !liveAnalysisIds.has(row.id) &&
+                  !analysis.inQueue.has(row.id)
+                }
                 onRun={analysis.retry}
                 onReanalyze={analysis.reanalyze}
                 onCancelGame={analysis.cancelGame}
@@ -483,6 +675,12 @@ function GameRows({
             </span>
           ) : null}
           <GameRowInsights row={row} detectionRunning={activeDetectionIds.has(row.id)} />
+          <DetectionScanAction
+            row={row}
+            live={activeDetectionIds.has(row.id)}
+            enabled={scanEnabled}
+            onScan={onScan}
+          />
           {analysis?.perGameProgress[row.id] ? (
             <RowProgressBar gameId={row.id} progress={analysis.perGameProgress[row.id]!} />
           ) : null}
@@ -701,7 +899,8 @@ function rowInsightItemsFor(
           testId: 'row-insights-detection-interrupted',
           text: 'Tactics scan interrupted',
           spoken: 'Tactics scan interrupted',
-          title: 'A tactics scan was started but never finished. Re-analyze to retry it.',
+          title:
+            'A tactics scan was started but never finished. Use Resume tactics scan below to continue it.',
           color: 'var(--color-danger, #c4261c)',
         });
       }
@@ -772,6 +971,60 @@ function GameRowInsights({
   );
 }
 
+/**
+ * On-demand scan affordance under a row (WP-A): resume an interrupted/paused
+ * pass, retry a failed pass, or run the first scan of an analysis that predates
+ * detection. Absent (never "scanning" twice) while the pass is live.
+ */
+function DetectionScanAction({
+  row,
+  live,
+  enabled,
+  onScan,
+}: {
+  row: LibraryGameRow;
+  live: boolean;
+  enabled: boolean;
+  onScan: (gameId: string) => void;
+}): React.JSX.Element | null {
+  if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
+    return null;
+  }
+  const detection = row.detectionState;
+  let kind: 'resume' | 'retry' | 'run' | null = null;
+  let label = '';
+  if (detection === 'queued' || detection === 'inProgress') {
+    if (live) {
+      return null; // The strip already shows "Tactics scan in progress…".
+    }
+    kind = 'resume';
+    label = 'Resume tactics scan';
+  } else if (detection === 'failed') {
+    kind = 'retry';
+    label = 'Retry tactics scan';
+  } else if (detection === 'absent') {
+    kind = 'run';
+    label = 'Run tactics scan';
+  } else {
+    return null;
+  }
+  if (!enabled || !kind) {
+    return null;
+  }
+  return (
+    <span className={styles.detectionScan}>
+      <button
+        type="button"
+        className={styles.detectionScanButton}
+        data-testid={`row-scan-${kind}-${row.id}`}
+        onClick={() => onScan(row.id)}
+      >
+        {label}
+      </button>
+    </span>
+  );
+}
+
 const STATUS_LABELS: Readonly<Record<GameAnalysisStatus, string>> = {
   unanalyzed: 'Not analyzed',
   queued: 'Queued',
@@ -827,10 +1080,13 @@ function RowStatusBadge({
   gameId,
   status,
   progress,
+  paused,
 }: {
   gameId: string;
   status: GameAnalysisStatus;
   progress?: GameAnalysisProgress;
+  /** True when the job was left paused by an earlier session (not live). */
+  paused?: boolean;
 }): React.JSX.Element | null {
   const [hover, setHover] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -839,10 +1095,14 @@ function RowStatusBadge({
     return null;
   }
   const open = hover || pinned;
-  const detail =
-    status === 'inProgress' && progress && progress.totalPositions > 0
+  const pausedInfo =
+    'Paused — this analysis was left by an earlier session. Resume it or cancel it.';
+  const detail = paused
+    ? pausedInfo
+    : status === 'inProgress' && progress && progress.totalPositions > 0
       ? `${meta.info} ${progress.completedPositions}/${progress.totalPositions} positions.`
       : meta.info;
+  const label = paused ? 'Paused' : STATUS_LABELS[status];
   return (
     <span className={styles.statusBadgeWrap}>
       <button
@@ -850,7 +1110,7 @@ function RowStatusBadge({
         className={`${styles.statusBadge} ${styles[`statusBadge${meta.tone}`]}`}
         data-testid={`game-status-${gameId}`}
         aria-expanded={open}
-        aria-label={`${STATUS_LABELS[status]}: ${detail}`}
+        aria-label={`${label}: ${detail}`}
         title={detail}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
@@ -896,6 +1156,7 @@ function AnalysisCell({
   gameId,
   status,
   progress,
+  paused,
   onRun,
   onReanalyze,
   onCancelGame,
@@ -905,7 +1166,9 @@ function AnalysisCell({
   status: GameAnalysisStatus;
   /** Live per-game progress for a queued/in-progress job, when available. */
   progress?: GameAnalysisProgress;
-  /** Run an analysis for this game (Analyze / Retry / Re-analyze). */
+  /** True when this queued/in-progress job was left by an earlier session. */
+  paused?: boolean;
+  /** Run an analysis for this game (Analyze / Retry / Resume). */
   onRun: (gameId: string) => void;
   /** Force a re-analysis of a completed game (engine/settings change). */
   onReanalyze: (gameId: string) => void;
@@ -966,6 +1229,17 @@ function AnalysisCell({
         </IconButton>
       ) : null}
 
+      {showActive && paused ? (
+        <IconButton
+          label="Resume analysis"
+          dataTestId={`game-resume-${gameId}`}
+          className={styles.rowAction!}
+          onClick={() => onRun(gameId)}
+        >
+          <RefreshIcon />
+        </IconButton>
+      ) : null}
+
       {showActive ? (
         <IconButton
           label="Cancel analysis"
@@ -978,7 +1252,12 @@ function AnalysisCell({
       ) : null}
 
       <DeleteRowButton gameId={gameId} status={status} onDelete={onDelete} />
-      <RowStatusBadge gameId={gameId} status={status} {...(progress ? { progress } : {})} />
+      <RowStatusBadge
+        gameId={gameId}
+        status={status}
+        {...(paused !== undefined ? { paused } : {})}
+        {...(progress ? { progress } : {})}
+      />
     </span>
   );
 }

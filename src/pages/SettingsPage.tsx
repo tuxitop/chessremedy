@@ -1,11 +1,16 @@
 import type * as React from 'react';
+import { useEffect, useState } from 'react';
 import { ThemePicker } from '@/components/ui/ThemePicker';
+import { Button } from '@/components/ui/Button';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
+import { getBrowserAnalysisService } from '@/infrastructure/analysis';
+import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import {
   clampGameAnalysisDepth,
   clampGameAnalysisSearchSeconds,
+  clampGameAnalysisThreads,
   gameAnalysisProfileDepth,
   GAME_ANALYSIS_PROFILE_ORDER,
   type GameAnalysisProfile,
@@ -51,6 +56,8 @@ const SETTINGS_PLACEHOLDERS: SettingPlaceholder[] = [
 
 interface GameAnalysisDefaultsProps {
   settings: GameAnalysisSettings;
+  /** Engine capability thread cap (1 on the single-threaded build). */
+  maxThreads: number;
   onSave(next: GameAnalysisSettings): void;
 }
 
@@ -60,6 +67,8 @@ function OptionalNumberField({
   value,
   placeholder,
   min,
+  max,
+  disabled,
   testId,
   onChange,
 }: {
@@ -67,6 +76,8 @@ function OptionalNumberField({
   value: number | null;
   placeholder: string;
   min: number;
+  max?: number;
+  disabled?: boolean;
   testId: string;
   onChange(value: number | null): void;
 }): React.JSX.Element {
@@ -76,6 +87,8 @@ function OptionalNumberField({
       <input
         type="number"
         min={min}
+        {...(max !== undefined ? { max } : {})}
+        disabled={disabled}
         placeholder={placeholder}
         value={value ?? ''}
         onChange={(e) => {
@@ -88,12 +101,23 @@ function OptionalNumberField({
   );
 }
 
-function GameAnalysisDefaults({ settings, onSave }: GameAnalysisDefaultsProps): React.JSX.Element {
+function GameAnalysisDefaults({
+  settings,
+  maxThreads,
+  onSave,
+}: GameAnalysisDefaultsProps): React.JSX.Element {
   const saveProfile = (profile: GameAnalysisProfile): void => onSave({ ...settings, profile });
   const saveDepth = (v: number | null): void =>
     onSave({ ...settings, depthOverride: v === null ? null : clampGameAnalysisDepth(v) });
   const saveSearch = (v: number | null): void =>
     onSave({ ...settings, searchSeconds: v === null ? null : clampGameAnalysisSearchSeconds(v) });
+  const saveThreads = (v: number | null): void =>
+    onSave({
+      ...settings,
+      // 1 is the single-threaded default, not an override: a blank field or a
+      // value of 1 both mean "use the engine default".
+      threadsOverride: v === null || v <= 1 ? null : clampGameAnalysisThreads(v, maxThreads),
+    });
 
   return (
     <div className={styles.engineDefaults}>
@@ -127,11 +151,78 @@ function GameAnalysisDefaults({ settings, onSave }: GameAnalysisDefaultsProps): 
         testId="setting-game-analysis-search-seconds"
         onChange={saveSearch}
       />
+      <OptionalNumberField
+        label="Threads"
+        value={settings.threadsOverride}
+        placeholder={`Auto (${maxThreads})`}
+        min={1}
+        max={maxThreads}
+        disabled={maxThreads <= 1}
+        testId="setting-game-analysis-threads"
+        onChange={saveThreads}
+      />
     </div>
   );
 }
 
-export function SettingsPage(): React.JSX.Element {
+/** Clears interrupted (stuck) analysis runs from earlier sessions. */
+function AnalysisMaintenance({
+  service,
+}: {
+  service: AnalysisServiceLike | null;
+}): React.JSX.Element {
+  const [clearing, setClearing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const canClear = service !== null && typeof service.clearPausedAnalysisJobs === 'function';
+
+  const clear = async (): Promise<void> => {
+    if (!service || !canClear) {
+      return;
+    }
+    setClearing(true);
+    setMessage(null);
+    try {
+      const count = await service.clearPausedAnalysisJobs!();
+      setMessage(
+        count === 0
+          ? 'No interrupted analysis jobs to clear.'
+          : `Removed ${count} interrupted analysis ${count === 1 ? 'job' : 'jobs'}. Games and completed analyses were kept.`,
+      );
+    } catch {
+      setMessage('Could not clear interrupted jobs. Please try again.');
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <div className={styles.engineDefaults}>
+      <Button
+        disabled={clearing || !canClear}
+        data-testid="settings-clear-orphan-jobs"
+        onClick={() => void clear()}
+      >
+        {clearing ? 'Clearing…' : 'Clear interrupted jobs'}
+      </Button>
+      {message ? (
+        <p
+          role="status"
+          className={styles.rowDescription}
+          data-testid="settings-clear-orphan-result"
+        >
+          {message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function SettingsPage({
+  analysisService,
+}: {
+  /** Injectable for tests; when omitted the page lazily builds the shared service. */
+  readonly analysisService?: AnalysisServiceLike | null;
+} = {}): React.JSX.Element {
   const { defaults, isReady, save } = useEngineDefaults();
   const {
     defaults: appearance,
@@ -143,7 +234,29 @@ export function SettingsPage(): React.JSX.Element {
     isReady: gameAnalysisReady,
     save: saveGameAnalysis,
   } = useGameAnalysisSettings();
+  const [builtService, setBuiltService] = useState<AnalysisServiceLike | null>(null);
   const capabilities = readBrowserCapabilities();
+
+  useEffect(() => {
+    if (analysisService !== undefined) {
+      return;
+    }
+    let active = true;
+    getBrowserAnalysisService()
+      .then((service) => {
+        if (active) {
+          setBuiltService(service);
+        }
+      })
+      .catch(() => {
+        // Analysis stays unavailable; the maintenance action stays disabled.
+      });
+    return () => {
+      active = false;
+    };
+  }, [analysisService]);
+
+  const resolvedAnalysis = analysisService !== undefined ? analysisService : builtService;
 
   return (
     <div className={styles.page} data-testid="settings-page">
@@ -207,11 +320,24 @@ export function SettingsPage(): React.JSX.Element {
           {gameAnalysisReady && gameAnalysis ? (
             <GameAnalysisDefaults
               settings={gameAnalysis}
+              maxThreads={Math.max(1, capabilities.threads)}
               onSave={(next) => void saveGameAnalysis(next)}
             />
           ) : (
             <p className={styles.engineLoading}>Loading game-analysis settings…</p>
           )}
+        </li>
+
+        <li className={styles.row} data-testid="settings-row-maintenance">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Analysis maintenance</h2>
+            <p className={styles.rowDescription}>
+              Remove interrupted analysis runs — queued/in-progress jobs left behind by an earlier
+              session or a crash — that may make new work appear stuck as &quot;queued&quot;. Your
+              games and completed analyses are kept; re-run analysis to regenerate what is removed.
+            </p>
+          </div>
+          <AnalysisMaintenance service={resolvedAnalysis} />
         </li>
 
         <li className={styles.row} data-testid="settings-row-board">

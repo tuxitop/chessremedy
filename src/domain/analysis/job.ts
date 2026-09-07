@@ -30,6 +30,12 @@ export interface GameAnalysisConfig {
   readonly maxDepth?: number;
   /** Per-position search time in milliseconds. */
   readonly movetimeMs?: number;
+  /**
+   * Optional engine thread-count override for a run. Absent = the engine's
+   * capability-derived default (ADR-012: `min(2, hardwareConcurrency)` under
+   * cross-origin isolation). Only meaningful on the multi-threaded build.
+   */
+  readonly threads?: number;
 }
 
 export interface AnalysisJob {
@@ -86,6 +92,9 @@ export function gameAnalysisConfigFingerprint(
   if (config.movetimeMs !== undefined) {
     parts.push(`t${config.movetimeMs}`);
   }
+  if (config.threads !== undefined) {
+    parts.push(`n${config.threads}`);
+  }
   return parts.length > 0 ? parts.join(',') : undefined;
 }
 
@@ -93,7 +102,9 @@ function hasOverrides(config?: GameAnalysisConfig | null): config is GameAnalysi
   return (
     config !== undefined &&
     config !== null &&
-    (config.maxDepth !== undefined || config.movetimeMs !== undefined)
+    (config.maxDepth !== undefined ||
+      config.movetimeMs !== undefined ||
+      config.threads !== undefined)
   );
 }
 
@@ -102,7 +113,8 @@ function hasOverrides(config?: GameAnalysisConfig | null): config is GameAnalysi
  * analyses of the same game that use materially different configurations are
  * distinguishable (Feature 008 §4, ADR-020). Includes the pipeline/classification/
  * phase versions, the engine identity (name/version/build/profile) and a
- * fingerprint of the Game-analysis depth/search-time overrides (when present).
+ * fingerprint of the Game-analysis depth/search-time/threads overrides (when
+ * present).
  */
 export function analysisJobId(
   gameId: string,

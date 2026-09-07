@@ -65,6 +65,7 @@ import type {
 import {
   annotateVerifiedMisses,
   DETECTION_VERSION,
+  fastPathVerifiedCandidate,
   generateCandidates,
   verifyCandidate,
 } from '@/domain/tactics';
@@ -197,8 +198,17 @@ export class TacticalDetectionService {
     await this.writeSummary(job, game, records, 'inProgress');
 
     const engineIdentity = this.resolveEngineIdentity(job);
+    // A completed run's Game-analysis settings (job.config) may carry a threads
+    // override; the scan's tactical searches belong to that run's identity, so
+    // they apply the same override (and cache scope). Dropped when 1 (default).
+    const threads =
+      job.config?.threads !== undefined && job.config.threads > 1 ? job.config.threads : undefined;
     const verified: VerifiedTacticalCandidate[] = [];
     let retryableFailures = 0;
+    const recordsByPly = new Map<number, MoveAnalysis>();
+    for (const record of records) {
+      recordsByPly.set(record.ply, record);
+    }
 
     for (const candidate of candidates) {
       if (signal?.aborted) {
@@ -212,7 +222,26 @@ export class TacticalDetectionService {
         continue;
       }
 
-      const outcome = await this.verifyCandidateWithEngine(candidate, engineIdentity, signal);
+      // WP-C fast path: when the run's own stored analysis of this position is
+      // a decisive complete mate line (same engine, deep enough), the mate is a
+      // deterministic board fact — verify without a fresh tactical engine run.
+      const stored = recordsByPly.get(candidate.sourcePly);
+      if (stored) {
+        const fast = this.fastPathCandidate(candidate, engineIdentity, stored);
+        if (fast) {
+          await this.candidates.bulkPutForAnalysis([fast]);
+          verified.push(fast);
+          await this.persistAnnotatedRecords(records, verified);
+          continue;
+        }
+      }
+
+      const outcome = await this.verifyCandidateWithEngine(
+        candidate,
+        engineIdentity,
+        signal,
+        threads,
+      );
       if (outcome.kind === 'aborted') {
         await this.writeSummary(job, game, records, 'queued');
         return;
@@ -348,18 +377,72 @@ export class TacticalDetectionService {
   }
 
   /**
+   * WP-C fast-path: verify one candidate from its position's stored analysis
+   * when the stored record is a complete, decisive mate line produced by the
+   * same engine (name/version/build) — the candidate records that engine's
+   * provenance. Returns `null` (engine fallback) otherwise.
+   */
+  private fastPathCandidate(
+    candidate: RawCandidate,
+    engineIdentity: EngineIdentity,
+    record: MoveAnalysis | undefined,
+  ): VerifiedTacticalCandidate | null {
+    if (!record) {
+      return null;
+    }
+    const engine = record.engine;
+    if (!engine) {
+      return null;
+    }
+    // Self-guard: the stored row must be the analysis of exactly the position
+    // the candidate wants to verify (the ply-keyed lookup implies it today).
+    if (record.positionFen !== candidate.startingFen) {
+      return null;
+    }
+    if (
+      engine.engineName !== engineIdentity.engineName ||
+      engine.engineVersion !== engineIdentity.engineVersion ||
+      engine.engineBuild !== engineIdentity.engineBuild
+    ) {
+      return null;
+    }
+    return fastPathVerifiedCandidate(
+      candidate,
+      {
+        engine: {
+          engineName: engine.engineName,
+          engineVersion: engine.engineVersion,
+          engineBuild: engine.engineBuild,
+        },
+        depth: record.depth ?? 0,
+        evalMate: 'mate' in record.evalBefore ? record.evalBefore.mate : null,
+        bestPv: record.bestPv,
+        analysisVersion: record.analysisVersion,
+      },
+      this.now(),
+    );
+  }
+
+  /**
    * One candidate's Stage-2 verification: ADR-018 cache lookup first, else a
    * `tactical`-profile engine run (off the UI thread), then the pure
    * `verifyCandidate` verdict. An aborted signal during the engine search
    * cancels the job and reports `aborted`; a failed/cancelled/throw engine job
-   * reports `engine-failed` (retryable) without failing the pass.
+   * reports `engine-failed` (retryable) without failing the pass. `threads` is
+   * the run's optional threads override (dropped when undefined/1), applied to
+   * both the engine job and the cache scope so results stay distinguishable.
    */
   private async verifyCandidateWithEngine(
     candidate: RawCandidate,
     engineIdentity: EngineIdentity,
     signal?: AbortSignal,
+    threads?: number,
   ): Promise<VerificationOutcome> {
-    const key = analysisCacheKey(candidate.startingFen, { profile: 'tactical' }, engineIdentity);
+    const scope = {
+      profile: 'tactical' as const,
+      ...(threads !== undefined && threads > 1 ? { threads } : {}),
+    };
+    const key = analysisCacheKey(candidate.startingFen, scope, engineIdentity);
     if (this.engineCache) {
       const cached = await this.engineCache.get(key);
       if (cached) {
@@ -372,7 +455,10 @@ export class TacticalDetectionService {
 
     let result: EngineAnalysisResult;
     try {
-      const handle = this.engine.analyze(candidate.startingFen, { profile: 'tactical' });
+      const handle = this.engine.analyze(candidate.startingFen, {
+        profile: 'tactical',
+        ...(threads !== undefined && threads > 1 ? { threads } : {}),
+      });
       const settled = await Promise.race([handle.outcome, abortSignal(signal)]);
       if (settled === 'aborted') {
         handle.cancel();
@@ -395,7 +481,7 @@ export class TacticalDetectionService {
     if (this.engineCache) {
       const putKey = analysisCacheKey(
         candidate.startingFen,
-        { profile: result.profile },
+        { profile: result.profile, ...(threads !== undefined && threads > 1 ? { threads } : {}) },
         result.engine,
       );
       try {

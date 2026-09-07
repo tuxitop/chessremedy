@@ -49,32 +49,51 @@ describe('analysis job identity', () => {
     );
   });
 
-  it('appends a deterministic fingerprint when depth/time overrides apply', () => {
+  it('appends a deterministic fingerprint when depth/time/threads overrides apply', () => {
     const base = analysisJobId('lichess:abc', ENGINE);
     const depth = analysisJobId('lichess:abc', ENGINE, undefined, { maxDepth: 25 });
     const time = analysisJobId('lichess:abc', ENGINE, undefined, { movetimeMs: 5000 });
+    const threads = analysisJobId('lichess:abc', ENGINE, undefined, { threads: 2 });
     const both = analysisJobId('lichess:abc', ENGINE, undefined, {
       maxDepth: 25,
       movetimeMs: 5000,
+      threads: 2,
     });
     expect(depth).not.toBe(base);
     expect(time).not.toBe(base);
+    expect(threads).not.toBe(base);
     expect(both).not.toBe(base);
     expect(both).not.toBe(depth);
     expect(both).not.toBe(time);
     // Order-stable: identical overrides produce identical ids regardless of
     // insertion order in the config object.
     expect(
-      analysisJobId('lichess:abc', ENGINE, undefined, { maxDepth: 25, movetimeMs: 5000 }),
+      analysisJobId('lichess:abc', ENGINE, undefined, {
+        threads: 2,
+        maxDepth: 25,
+        movetimeMs: 5000,
+      }),
     ).toBe(both);
+    expect(
+      analysisJobId('lichess:abc', ENGINE, undefined, { maxDepth: 25, movetimeMs: 5000 }),
+    ).toBe(
+      analysisJobId('lichess:abc', ENGINE, undefined, {
+        movetimeMs: 5000,
+        maxDepth: 25,
+      }),
+    );
   });
 
-  it('fingerprints depth/time only, in a stable order', () => {
+  it('fingerprints depth/time/threads only, in a stable order', () => {
     expect(gameAnalysisConfigFingerprint(undefined)).toBeUndefined();
     expect(gameAnalysisConfigFingerprint({})).toBeUndefined();
     expect(gameAnalysisConfigFingerprint({ maxDepth: 25 })).toBe('d25');
     expect(gameAnalysisConfigFingerprint({ movetimeMs: 5000 })).toBe('t5000');
+    expect(gameAnalysisConfigFingerprint({ threads: 2 })).toBe('n2');
     expect(gameAnalysisConfigFingerprint({ maxDepth: 25, movetimeMs: 5000 })).toBe('d25,t5000');
+    expect(gameAnalysisConfigFingerprint({ maxDepth: 25, movetimeMs: 5000, threads: 2 })).toBe(
+      'd25,t5000,n2',
+    );
   });
 });
 

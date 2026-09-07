@@ -64,7 +64,14 @@ import {
 } from '@/components/analysis/classificationColors';
 import type { AnalysisJob, GameAnalysisStatus } from '@/domain/analysis';
 import { useGameReview } from '@/hooks/useGameReview';
+import { useCloseInterruptGuard } from '@/hooks/useCloseInterruptGuard';
 import { useGameAnalysis, type AnalysisServiceLike } from '@/hooks/useGameAnalysis';
+import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
+import {
+  defaultGameAnalysisSettings,
+  expectedGameAnalysisConfig,
+  gameAnalysisRunOf,
+} from '@/components/analysis/gameAnalysisSettings';
 import { getBrowserAnalysisService } from '@/infrastructure/analysis';
 import { Button } from '@/components/ui/Button';
 import styles from './GameReviewPage.module.css';
@@ -108,6 +115,14 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
   const [running, setRunning] = useState(false);
   const [serviceOutdated, setServiceOutdated] = useState(false);
   const effectiveService = analysisService !== undefined ? analysisService : builtService;
+  // The current Game-analysis settings (profile + depth/search-time overrides).
+  // Review (re-)analysis honours them exactly like Library bulk/per-row runs,
+  // so a run started here is indistinguishable from one started there.
+  const analysisSettings = useGameAnalysisSettings();
+  const runOptions = useMemo(() => {
+    const settings = analysisSettings.settings ?? defaultGameAnalysisSettings();
+    return gameAnalysisRunOf(settings);
+  }, [analysisSettings.settings]);
 
   useEffect(() => {
     if (analysisService !== undefined) {
@@ -126,16 +141,20 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
     };
   }, [analysisService]);
 
-  // The engine-aware "outdated" flag (ADR-020 / §22) mirrors the Game
-  // Library: a completed analysis produced before the current engine is
-  // offered an opt-in re-analysis. Re-fetched whenever the shown job changes.
+  // The engine/settings-aware "outdated" flag (ADR-020 / §22) mirrors the Game
+  // Library: a completed analysis produced before the current engine or under
+  // an older Game-analysis configuration is offered an opt-in re-analysis.
+  // Re-fetched whenever the shown job or the settings change.
   useEffect(() => {
     if (!effectiveService || !id) {
       return;
     }
     let active = true;
+    const expected = analysisSettings.settings
+      ? expectedGameAnalysisConfig(analysisSettings.settings)
+      : undefined;
     effectiveService
-      .statusesOf([id])
+      .statusesOf([id], expected)
       .then((statuses) => {
         if (active) {
           setServiceOutdated(statuses[id] === 'outdated');
@@ -145,15 +164,18 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
     return () => {
       active = false;
     };
-  }, [effectiveService, id, data.job?.id]);
+  }, [effectiveService, id, data.job?.id, analysisSettings.settings]);
 
   const runAnalysis = (): void => {
     if (running || !id) {
       return;
     }
     setRunning(true);
+    // The always-available Re-analyze is a forced re-run under the current
+    // Game-analysis settings (Feature 008 §21); analyzing an unanalyzed game
+    // is unaffected by `force`.
     void actions
-      .analyze([id])
+      .analyze([id], runOptions.profile, true, runOptions.config)
       .catch(() => undefined)
       .finally(() => {
         setRunning(false);
@@ -224,6 +246,13 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
     };
   }, [data.detectionState, effectiveService, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Warn before the tab closes while the shown game is being analyzed or
+  // scanned (engine work is resumable — leaving pauses it for later).
+  useCloseInterruptGuard(
+    data.status === 'queued' || data.status === 'inProgress' || running || detectionRunning,
+    'Game analysis or a tactics scan is running for this game. Leaving now pauses it for later (resumable).',
+  );
+
   if (data.loading) {
     return (
       <StatePanel title="Loading analysis…" description="Reading the stored game and analysis." />
@@ -234,6 +263,19 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
   }
 
   if (data.status === 'completed' && data.job && data.records.length > 0) {
+    const detectionLive =
+      (data.detectionState === 'queued' || data.detectionState === 'inProgress') &&
+      detectionRunning;
+    const scanActionKind =
+      data.detectionState === 'queued' || data.detectionState === 'inProgress'
+        ? detectionLive
+          ? null
+          : 'resume'
+        : data.detectionState === 'failed'
+          ? 'retry'
+          : data.detectionState === 'absent'
+            ? 'run'
+            : null;
     return (
       <GameReview
         pgn={data.game.pgn}
@@ -243,6 +285,20 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         obsolete={data.obsolete || serviceOutdated}
         detectionState={data.detectionState}
         detectionRunning={detectionRunning}
+        scanActionKind={scanActionKind}
+        scanAvailable={Boolean(effectiveService?.scanGame)}
+        onScanAction={() => {
+          if (!effectiveService?.scanGame || !id) {
+            return;
+          }
+          void effectiveService.scanGame(id).then(() => data.reload());
+        }}
+        onCancelScan={() => {
+          if (!effectiveService?.cancelScan || !id) {
+            return;
+          }
+          void effectiveService.cancelScan(id).then(() => data.reload());
+        }}
         onReanalyze={runAnalysis}
         reanalyzing={running}
       />
@@ -263,6 +319,17 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
       actionDisabled={running}
       onAction={runAnalysis}
       {...(actionLabel !== null ? { actionLabel } : {})}
+      {...(data.status === 'queued' || data.status === 'inProgress'
+        ? {
+            cancelLabel: 'Cancel analysis',
+            onCancel: () => {
+              if (!effectiveService) {
+                return;
+              }
+              void effectiveService.cancelGame(id).then(() => data.reload());
+            },
+          }
+        : {})}
     />
   );
 }
@@ -275,6 +342,10 @@ function GameReview({
   obsolete,
   detectionState,
   detectionRunning,
+  scanActionKind,
+  scanAvailable,
+  onScanAction,
+  onCancelScan,
   onReanalyze,
   reanalyzing,
 }: {
@@ -286,6 +357,12 @@ function GameReview({
   detectionState: SummaryDetectionState | null;
   /** True while this analysis's detection pass is live in this session. */
   detectionRunning: boolean;
+  /** Which scan affordance applies for a non-live pass (`null` = none). */
+  scanActionKind: 'resume' | 'retry' | 'run' | null;
+  /** Whether the shared service exposes the on-demand scan entry point. */
+  scanAvailable: boolean;
+  onScanAction: () => void;
+  onCancelScan: () => void;
   onReanalyze: () => void;
   reanalyzing: boolean;
 }): React.JSX.Element {
@@ -790,12 +867,43 @@ function GameReview({
     : detectionState === 'queued' || detectionState === 'inProgress'
       ? detectionRunning
         ? 'Tactics scan in progress…'
-        : 'Tactics scan interrupted. Re-analyze to retry.'
+        : 'Tactics scan interrupted. Resume the scan to continue.'
       : detectionState === 'failed'
-        ? 'Tactics scan failed.'
+        ? 'Tactics scan failed. Retry the scan.'
         : detectionState === 'absent'
-          ? 'Tactics not scanned. Re-analyze to scan.'
+          ? 'Tactics not scanned. Run the tactics scan.'
           : null;
+
+  // A scan banner under the Review header (WP-B): a running scan is visible and
+  // cancellable; an interrupted/failed/never-scanned analysis offers its
+  // on-demand scan action. Absent once a detection pass completed.
+  const scanScanning =
+    (detectionState === 'queued' || detectionState === 'inProgress') && detectionRunning;
+  const scanBar = detectionCompleted
+    ? null
+    : scanScanning
+      ? ({ kind: 'scanning' } as const)
+      : scanActionKind !== null && scanAvailable
+        ? ({ kind: scanActionKind } as const)
+        : null;
+  const SCAN_BAR_COPY: Readonly<Record<string, { text: string; label: string }>> = {
+    scanning: {
+      text: 'Tactics scan in progress — analysing missed opportunities in this game.',
+      label: 'Cancel scan',
+    },
+    resume: {
+      text: 'Tactics scan interrupted. Continue it without re-analyzing the game.',
+      label: 'Resume tactics scan',
+    },
+    retry: {
+      text: 'The tactics scan failed. Retry just the scan.',
+      label: 'Retry tactics scan',
+    },
+    run: {
+      text: 'This analysis was never scanned for missed tactics.',
+      label: 'Run tactics scan',
+    },
+  };
 
   // The move list / side-panel chrome spans the board column (board + its two
   // clock bars) so it keeps a stable, comparable height; the relocated Summary
@@ -843,6 +951,25 @@ function GameReview({
           </Button>
         )}
       </header>
+
+      {scanBar ? (
+        <div className={styles.scanBar} data-testid="review-scan-bar" role="status">
+          <span data-testid="review-scan-text">{SCAN_BAR_COPY[scanBar.kind]!.text}</span>
+          {scanBar.kind === 'scanning' ? (
+            <Button variant="secondary" data-testid="review-scan-cancel" onClick={onCancelScan}>
+              {SCAN_BAR_COPY.scanning!.label}
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              data-testid={`review-scan-${scanBar.kind}`}
+              onClick={onScanAction}
+            >
+              {SCAN_BAR_COPY[scanBar.kind]!.label}
+            </Button>
+          )}
+        </div>
+      ) : null}
 
       <AnalysisBoard
         boardSize={boardSize}
@@ -1181,12 +1308,16 @@ function StatePanel({
   actionLabel,
   actionDisabled,
   onAction,
+  cancelLabel,
+  onCancel,
 }: {
   title: string;
   description: string;
   actionLabel?: string;
   actionDisabled?: boolean;
   onAction?: () => void;
+  cancelLabel?: string;
+  onCancel?: () => void;
 }): React.JSX.Element {
   return (
     <div className={styles.page} data-testid="review-state">
@@ -1199,6 +1330,16 @@ function StatePanel({
         {actionLabel ? (
           <Button data-testid="review-action" disabled={actionDisabled} onClick={onAction}>
             {actionLabel}
+          </Button>
+        ) : null}
+        {cancelLabel && onCancel ? (
+          <Button
+            variant="secondary"
+            data-testid="review-cancel-action"
+            disabled={actionDisabled}
+            onClick={onCancel}
+          >
+            {cancelLabel}
           </Button>
         ) : null}
       </section>

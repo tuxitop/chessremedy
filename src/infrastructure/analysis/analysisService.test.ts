@@ -7,9 +7,16 @@ import { DexieEngineAnalysisCache } from '@/infrastructure/db/engine-cache-repos
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
-import { analysisJobId, createAnalysisJob, planGameAnalysis } from '@/domain/analysis';
+import {
+  analysisJobId,
+  createAnalysisJob,
+  planGameAnalysis,
+  type AnalysisJob,
+} from '@/domain/analysis';
 import { DETECTION_VERSION } from '@/domain/tactics';
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
+import type { Color } from 'chessops/types';
+import type { MoveAnalysis } from '@/domain/chess';
 import { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
 import { AnalysisService } from './analysisService';
 import {
@@ -741,5 +748,279 @@ describe('AnalysisService — Feature-010 completion hooks', () => {
     expect(await analysesRepository.countForGame(a)).toBe(4);
     expect(await analysesRepository.countForGame(b)).toBe(14);
     releaseDetection();
+  });
+});
+
+describe('AnalysisService — resumable scans & orphan reconciliation (plan 012, WP-A)', () => {
+  const MISSED_MATE_ID = 'li-bullet-missed-mate';
+  const MISSED_PLY = 6;
+
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.puzzleCandidates.clear();
+    await db.positionAnalysisCache.clear();
+    sequence = 0;
+  });
+
+  /** An engine result that verifies the 4.Qxf7# mate White missed at `fen`. */
+  function mateResult(fen: string): EngineAnalysisResult {
+    return {
+      jobId: 'job-tactical',
+      position: fen,
+      profile: 'tactical',
+      lines: [
+        {
+          multipv: 1,
+          evaluation: { mate: 1 },
+          principalVariation: [{ uci: 'h5f7' }],
+          wdl: { w: 1000, d: 0, l: 0 },
+        },
+      ],
+      engine: { ...FAKE_ENGINE_META, profile: 'tactical' },
+      timeMs: 5,
+    };
+  }
+
+  function serviceWithDetectionOf(
+    rig: FakeEngineRig,
+    detectionOverride?: TacticalDetectionService,
+  ): AnalysisService {
+    const engineCache = new DexieEngineAnalysisCache();
+    const detection =
+      detectionOverride ??
+      new TacticalDetectionService({
+        engine: rig.service,
+        engineCache,
+        analyses: analysesRepository,
+        candidates: puzzleCandidatesRepository,
+        summaries: summariesRepository,
+        now,
+      });
+    return new AnalysisService({
+      games: gamesRepository,
+      analyses: analysesRepository,
+      jobs: analysisJobsRepository,
+      engine: rig.service,
+      engineCache,
+      engineMetadata: (profile: AnalysisProfile): EngineMetadata => ({
+        ...FAKE_ENGINE_META,
+        profile,
+      }),
+      now,
+      summaries: summariesRepository,
+      candidates: puzzleCandidatesRepository,
+      detection,
+    });
+  }
+
+  const noopDetection = {
+    runPassForCompletedJob: async (): Promise<void> => undefined,
+  } as unknown as TacticalDetectionService;
+
+  it('scanGame resumes an interrupted tactics scan without re-analyzing positions', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));
+    if (!plan.ok) throw new Error(plan.message);
+    const mateFen = plan.plan.moves[MISSED_PLY]!.positionFen;
+
+    // First analysis completes but its detection pass never ran (an earlier
+    // session scheduled the pass and vanished) → summary stuck `queued`.
+    const firstRig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    const first = await serviceWithDetectionOf(firstRig, noopDetection).analyzeGames([gameId]);
+    const job = first[0]!;
+    expect(job.state).toBe('completed');
+    expect((await summariesRepository.getForAnalysis(job.id))?.detectionState).toBe('queued');
+    expect(await puzzleCandidatesRepository.listForGameAndAnalysis(gameId, job.id)).toEqual([]);
+    expect(await serviceWithDetectionOf(createFakeEngine()).activeDetectionGames()).toEqual([]);
+
+    // The scan-only entry resumes just the detection pass for the latest
+    // completed analysis — no new analysis job, no position re-searches.
+    const scanRig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    const service = serviceWithDetectionOf(scanRig);
+    expect(await service.scanGame(gameId)).toBe('started');
+
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(job.id);
+      return summary?.detectionState === 'completed';
+    });
+    const summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('completed');
+    expect(summary?.missedTacticCount).toBe(1);
+    expect(summary?.detectionVersion).toBe(DETECTION_VERSION);
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(gameId, job.id);
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as VerifiedTacticalCandidate).sourcePly).toBe(MISSED_PLY);
+    // Only the tactical verification search ran — the game was not re-analyzed.
+    expect(scanRig.requests).toEqual([mateFen]);
+    expect(await analysisJobsRepository.listByGame(gameId)).toHaveLength(1);
+    expect(await analysesRepository.countForGame(gameId)).toBe(plan.plan.moves.length);
+  });
+
+  it('scanGame is a no-op once the detection pass already completed', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));
+    if (!plan.ok) throw new Error(plan.message);
+    const mateFen = plan.plan.moves[MISSED_PLY]!.positionFen;
+
+    const rig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    const service = serviceWithDetectionOf(rig);
+    const jobs = await service.analyzeGames([gameId]);
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(jobs[0]!.id);
+      return summary?.detectionState === 'completed';
+    });
+    const requestsBefore = rig.requests.length;
+
+    expect(await service.scanGame(gameId)).toBe('already-completed');
+    expect(rig.requests.length).toBe(requestsBefore);
+    expect(await service.activeDetectionGames()).toEqual([]);
+  });
+
+  it('scanGame refuses when there is no completed analysis or a live analysis', async () => {
+    const clean = await seedFixture('cc-blitz-clean');
+    const service = serviceWithDetectionOf(createFakeEngine());
+    expect(await service.scanGame(clean)).toBe('no-completed-analysis');
+
+    // A queued/in-progress analysis job supersedes a scan of an older run.
+    const busy = await seedFixture('cc-bullet-blunder');
+    const job = createAnalysisJob(busy, { ...FAKE_ENGINE_META, profile: 'normal' }, 4, now());
+    await analysisJobsRepository.putJob(job);
+    expect(await service.scanGame(busy)).toBe('analysis-in-progress');
+  });
+
+  it('reconcileOrphans pauses owner-less detection without auto-resuming analysis jobs', async () => {
+    // An owner-less in-progress analysis job (earlier session vanished). It
+    // must NOT be silently re-run: reconcile is engine-free and leaves it
+    // paused for an explicit Analyze/Retry (which resumes it in place).
+    const a = await seedFixture('cc-bullet-blunder');
+    const orphan = {
+      ...createAnalysisJob(a, { ...FAKE_ENGINE_META, profile: 'normal' }, 4, now()),
+      state: 'inProgress' as const,
+      completedPositions: 2,
+      startedAt: now(),
+    };
+    await analysisJobsRepository.putJob(orphan);
+
+    // An owner-less in-progress detection summary for a second completed game.
+    const b = await seedFixture('cc-blitz-clean');
+    const analysisRig = createFakeEngine();
+    await serviceWithDetectionOf(analysisRig, noopDetection).analyzeGames([b]);
+    const bJobs = await analysisJobsRepository.listByGame(b);
+    const bLatest = [...bJobs].sort((x, y) => y.updatedAt - x.updatedAt)[0]!;
+    const stuck = (await summariesRepository.getForAnalysis(bLatest.id))!;
+    await summariesRepository.putForAnalysis({ ...stuck, detectionState: 'inProgress' });
+
+    const service = serviceWithDetectionOf(createFakeEngine(), noopDetection);
+    const result = await service.reconcileOrphans();
+    expect(result.resumedAnalysisJobs).toBe(0);
+    expect(result.pausedDetections).toBe(1);
+
+    // No engine work happened: the orphan analysis job is untouched (paused).
+    const [stored] = await analysisJobsRepository.listByGame(a);
+    expect(stored?.state).toBe('inProgress');
+    expect((await summariesRepository.getForAnalysis(bLatest.id))?.detectionState).toBe('queued');
+    // A second reconcile is a no-op (guarded once per service instance).
+    expect(await service.reconcileOrphans()).toEqual(result);
+  });
+
+  it('clearPausedAnalysisJobs removes stuck runs without touching games or completed analyses', async () => {
+    // A healthy completed run that must survive.
+    const done = await seedFixture(MISSED_MATE_ID);
+    const completedRig = createFakeEngine();
+    const completed = await serviceWithDetectionOf(completedRig, noopDetection).analyzeGames([
+      done,
+    ]);
+    const completedId = completed[0]!.id;
+
+    // A stuck paused run from an earlier session.
+    const stuckGame = await seedFixture('cc-bullet-blunder');
+    const orphan = {
+      ...createAnalysisJob(stuckGame, { ...FAKE_ENGINE_META, profile: 'normal' }, 4, now()),
+      state: 'inProgress' as const,
+      completedPositions: 2,
+      startedAt: now(),
+    };
+    await analysisJobsRepository.putJob(orphan);
+    await summariesRepository.putForAnalysis({
+      analysisId: orphan.id,
+      gameId: stuckGame,
+      userColor: 'white',
+      classificationCounts: { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+      userMoves: 0,
+      totalMoves: 0,
+      accuracy: null,
+      accuracyMoves: 0,
+      detectionState: 'queued',
+      missedTacticCount: null,
+      detectionVersion: null,
+      updatedAt: now(),
+    });
+
+    const service = serviceWithDetectionOf(createFakeEngine(), noopDetection);
+    const cleared = await service.clearPausedAnalysisJobs();
+
+    expect(cleared).toBe(1);
+    expect(await analysisJobsRepository.listByGame(stuckGame)).toEqual([]);
+    expect(await analysesRepository.countForGame(done)).toBeGreaterThan(0);
+    const [kept] = await analysisJobsRepository.listByGame(done);
+    expect(kept?.state).toBe('completed');
+    expect(kept?.id).toBe(completedId);
+    expect(await summariesRepository.getForAnalysis(completedId)).toBeDefined();
+  });
+
+  it('a forced re-analysis cancels the live scan of the superseded run (no ghost pass)', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    let invocations = 0;
+    const aborted = vi.fn();
+    const gatedDetection = {
+      runPassForCompletedJob: (
+        _job: AnalysisJob,
+        _game: { id: string; userColor: Color },
+        _records: MoveAnalysis[],
+        signal?: AbortSignal,
+      ): Promise<void> =>
+        new Promise((resolve) => {
+          invocations += 1;
+          if (!signal) {
+            resolve();
+            return;
+          }
+          const onAbort = (): void => {
+            signal?.removeEventListener('abort', onAbort);
+            aborted();
+            resolve();
+          };
+          if (signal.aborted) {
+            aborted();
+            resolve();
+          } else {
+            signal.addEventListener('abort', onAbort);
+          }
+        }),
+    } as unknown as TacticalDetectionService;
+
+    const service = serviceWithDetectionOf(createFakeEngine(), gatedDetection);
+    const jobs = await service.analyzeGames([gameId]);
+    const job = jobs[0]!;
+    await waitFor(() => invocations === 1);
+    expect(await service.activeDetectionGames()).toEqual([gameId]);
+
+    const before = (await analysisJobsRepository.listByGame(gameId)).length;
+    const forced = await service.analyzeGames([gameId], 'normal', { force: true });
+    expect(forced[0]!.state).toBe('completed');
+    // The live scan was aborted (its engine work cancelled) ahead of the cleanup.
+    expect(aborted).toHaveBeenCalledTimes(1);
+    // The superseded run's Feature-010 rows are gone: the forced run restarts
+    // the same analysis identity, so only its fresh queued summary exists —
+    // never a stale completed state or verified rows, and no duplicate job.
+    const refreshed = await summariesRepository.getForAnalysis(job.id);
+    expect(refreshed?.detectionState).toBe('queued');
+    expect(refreshed?.missedTacticCount).toBeNull();
+    expect(refreshed?.detectionVersion).toBeNull();
+    expect(await puzzleCandidatesRepository.listForGameAndAnalysis(gameId, job.id)).toEqual([]);
+    expect(await analysisJobsRepository.listByGame(gameId)).toHaveLength(before);
   });
 });

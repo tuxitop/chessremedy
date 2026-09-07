@@ -34,6 +34,7 @@ import { gameClocks } from '@/domain/chess';
 import type { EngineMetadata, AnalysisProfile, EvalCpMate, MoveAnalysis } from '@/domain/chess';
 import type { Game, GameId } from '@/domain/chess/game';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
+import { latestCompletedJob } from '@/domain/analysis';
 import type { AnalysisSummariesRepository } from '@/infrastructure/db/summaries-repository';
 import type { PuzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
 import type { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
@@ -58,6 +59,27 @@ import {
 import type { GamesRepository } from '@/infrastructure/db/games-repository';
 import type { AnalysisRepository } from '@/infrastructure/db/analysis-repository';
 import type { AnalysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
+
+export type ScanGameOutcome =
+  | 'started'
+  | 'already-running'
+  | 'already-completed'
+  | 'analysis-in-progress'
+  | 'no-completed-analysis'
+  | 'no-records'
+  | 'game-missing'
+  | 'unavailable';
+
+export interface ReconcileResult {
+  /**
+   * Owner-less `queued`/`inProgress` analysis jobs auto-resumed. Always `0`:
+   * analysis orphans are **paused**, not re-run in the background (they are
+   * resumed only by an explicit Analyze/Retry). Kept for API stability.
+   */
+  readonly resumedAnalysisJobs: number;
+  /** Owner-less `inProgress` detection summaries relabelled `queued` (paused). */
+  readonly pausedDetections: number;
+}
 
 export interface AnalysisRunOptions {
   readonly signal?: AbortSignal;
@@ -95,6 +117,12 @@ type PositionOutcome =
   | { readonly kind: 'result'; readonly result: EngineAnalysisResult }
   | { readonly kind: 'failed'; readonly message: string };
 
+/** One live detection pass: its cancellation handle + settled promise. */
+interface ScanEntry {
+  readonly controller: AbortController;
+  readonly done: Promise<void>;
+}
+
 export interface GameAnalysisProgress {
   readonly state: 'queued' | 'inProgress';
   readonly completedPositions: number;
@@ -126,15 +154,30 @@ export class AnalysisService {
   private readonly pendingCancels = new Set<GameId>();
 
   /**
-   * Game ids whose Feature-010 detection pass is currently running **in this
-   * session** (in-memory). A persisted summary row with `detectionState:
-   * 'queued'/'inProgress'` only means a scan is genuinely running while its
-   * game id is in this set — a queued/in-progress summary whose game id is
-   * absent was scheduled by an earlier session (or an interrupted run) and is
-   * *not* actually scanning. The UI uses this to never show "scanning…" when
-   * no scan is running.
+   * Game ids whose analysis job is being processed right now **in this
+   * session** (an in-flight `runGameJob`). Persisted `queued`/`inProgress`
+   * analysis jobs whose game id is absent were scheduled by an earlier session
+   * (or an interrupted run) and have no live owner — they are the orphans that
+   * `reconcileOrphans()` auto-resumes once.
    */
-  private readonly activeDetections = new Set<GameId>();
+  private readonly activeRuns = new Set<GameId>();
+
+  /**
+   * Live Feature-010 detection passes **in this session**, keyed by game id:
+   * the pass's `AbortSignal` (so a scan can be cancelled / dropped by a forced
+   * re-analysis) and its settled promise. A persisted summary row with
+   * `detectionState: 'queued'/'inProgress'` only means a scan is genuinely
+   * running while its game id is in this registry — a queued/in-progress
+   * summary whose game id is absent was scheduled by an earlier session (or an
+   * interrupted run) and is *not* actually scanning. The UI uses this to never
+   * show "scanning…" when no scan is running, and the entry is removed by the
+   * pass itself when it settles.
+   */
+  private readonly scans = new Map<GameId, ScanEntry>();
+
+  /** Session guard: orphan analysis jobs are auto-resumed at most once. */
+  private reconciledOnce = false;
+  private reconcileRun: Promise<ReconcileResult> | null = null;
 
   constructor(options: AnalysisServiceOptions) {
     this.games = options.games;
@@ -224,6 +267,26 @@ export class AnalysisService {
     return [...inProgress, ...queued];
   }
 
+  /** Live engine + service state for diagnosing "queued, no progress". */
+  engineDebugStatus(): {
+    readonly lifecycle: ReturnType<EngineService['getStatus']>['lifecycle'];
+    readonly engineBuild: ReturnType<EngineService['getStatus']>['build'];
+    readonly activeJobId: ReturnType<EngineService['getStatus']>['activeJobId'];
+    readonly queuedEngineJobs: number;
+    readonly activeAnalysisGames: readonly GameId[];
+    readonly liveScanGames: readonly GameId[];
+  } {
+    const status = this.engine.getStatus();
+    return {
+      lifecycle: status.lifecycle,
+      engineBuild: status.build,
+      activeJobId: status.activeJobId,
+      queuedEngineJobs: status.queued,
+      activeAnalysisGames: [...this.activeRuns],
+      liveScanGames: [...this.scans.keys()],
+    };
+  }
+
   /**
    * Feature-010 lazy backfill: for games whose latest completed analysis has no
    * per-analysis summary yet, derive and store one (`detectionState: 'absent'`)
@@ -260,6 +323,176 @@ export class AnalysisService {
     if (cancelledAny) {
       this.pendingCancels.add(gameId);
     }
+  }
+
+  /**
+   * Run the Feature-010 tactics scan for a game's latest completed analysis
+   * (standalone "Resume / Run tactics scan"). The scan-only entry point is
+   * on-demand: it runs only the detection pass for the latest completed job
+   * (ADR-018-cache aware, resumable, idempotent per analysis identity) and
+   * never re-analyzes positions. The pass runs detached through the shared
+   * engine FIFO and is registered as live so the UI can cancel it / show it.
+   */
+  async scanGame(gameId: GameId): Promise<ScanGameOutcome> {
+    if (!this.detection) {
+      return 'unavailable';
+    }
+    if (this.scans.has(gameId)) {
+      return 'already-running';
+    }
+    const jobs = await this.jobs.listByGame(gameId);
+    // A live analysis supersedes any scan of an older completed run.
+    if (jobs.some((job) => job.state === 'queued' || job.state === 'inProgress')) {
+      return 'analysis-in-progress';
+    }
+    const latest = latestCompletedJob(jobs);
+    if (!latest) {
+      return 'no-completed-analysis';
+    }
+    const game = await this.games.getGame(gameId);
+    if (!game) {
+      return 'game-missing';
+    }
+    if (this.summaries) {
+      const existing = await this.summaries.getForAnalysis(latest.id);
+      if (existing?.detectionState === 'completed') {
+        return 'already-completed';
+      }
+    }
+    const records = await this.analyses.listForGameAndAnalysis(gameId, latest.id);
+    if (records.length === 0) {
+      return 'no-records';
+    }
+    this.startScan(latest, game, records);
+    return 'started';
+  }
+
+  /**
+   * Cancel a game's live tactics scan (Review/Library Cancel). The pass stops at
+   * the next candidate boundary and leaves the summary resumable (`queued`).
+   * The in-flight engine job is cancelled through the pass's `AbortSignal`.
+   */
+  async cancelScan(gameId: GameId): Promise<void> {
+    this.scans.get(gameId)?.controller.abort();
+  }
+
+  /**
+   * Game ids whose Feature-010 detection pass is running right now in this
+   * session (the in-memory registry). The Library/Review read it to render an
+   * accurate scan state: a persisted `queued`/`inProgress` summary without a
+   * matching live id is an interrupted pass, not a running one.
+   */
+  async activeDetectionGames(): Promise<readonly GameId[]> {
+    return [...this.scans.keys()];
+  }
+
+  /**
+   * Game ids whose analysis job is being processed right now in this session
+   * (the in-memory live-run registry). A persisted `queued`/`inProgress` job
+   * whose game id is absent was left by an earlier session and is **paused** —
+   * it is never silently re-run in the background and never reads as live.
+   */
+  async liveAnalysisGames(): Promise<readonly GameId[]> {
+    return [...this.activeRuns];
+  }
+
+  /**
+   * Reconcile orphaned work once per session. This is a **cheap, engine-free**
+   * pass: owner-less `inProgress` detection summaries are relabelled `queued`
+   * (resumable-paused) so nothing is ever silently "in progress" without a
+   * live pass. Owner-less `queued`/`inProgress` **analysis** jobs are left
+   * paused (never auto-resumed): silently replaying them on the shared,
+   * serialized run queue made every later user action wait behind invisible
+   * background work with no progress (they are resumed only by an explicit
+   * Analyze/Retry action, which resumes them in place). Idempotent per
+   * service instance; later calls return the first run's result.
+   */
+  reconcileOrphans(): Promise<ReconcileResult> {
+    if (this.reconciledOnce && this.reconcileRun) {
+      return this.reconcileRun;
+    }
+    this.reconciledOnce = true;
+    const run = (async (): Promise<ReconcileResult> => {
+      let pausedDetections = 0;
+      try {
+        pausedDetections = await this.pauseOrphanedDetections();
+      } catch {
+        // Best-effort; the next session re-runs the relabel.
+      }
+      return { resumedAnalysisJobs: 0, pausedDetections };
+    })();
+    this.reconcileRun = run;
+    return run;
+  }
+
+  /** Relabel owner-less `inProgress` detection summaries to resumable `queued`. */
+  private async pauseOrphanedDetections(): Promise<number> {
+    if (!this.summaries) {
+      return 0;
+    }
+    let paused = 0;
+    const all = await this.summaries.listAll();
+    for (const summary of all) {
+      const orphaned =
+        summary.detectionState === 'inProgress' &&
+        !this.scans.has(summary.gameId) &&
+        !this.activeRuns.has(summary.gameId);
+      if (!orphaned) {
+        continue;
+      }
+      await this.summaries.putForAnalysis({
+        ...summary,
+        detectionState: 'queued',
+        updatedAt: this.now(),
+      });
+      paused += 1;
+    }
+    return paused;
+  }
+
+  /**
+   * Safe cleanup of stuck engine work (dev recovery helper): delete every
+   * owner-less `queued`/`inProgress` analysis job and its incomplete derived
+   * rows (partial `MoveAnalysis`, its summary, its puzzle candidates). Games
+   * and **completed** analyses are untouched — the game library is never
+   * modified. Interrupted runs simply vanish and can be re-run. Returns how
+   * many stuck jobs were cleared.
+   */
+  async clearPausedAnalysisJobs(): Promise<number> {
+    const stuck = await this.listActiveJobs();
+    let cleared = 0;
+    for (const job of stuck) {
+      if (this.activeRuns.has(job.gameId) || this.scans.has(job.gameId)) {
+        // Live this session: never delete work that is actually running.
+        continue;
+      }
+      try {
+        await this.analyses.deleteForAnalysis(job.id);
+      } catch {
+        // Best-effort per-row cleanup.
+      }
+      if (this.summaries) {
+        try {
+          await this.summaries.deleteForAnalysis(job.id);
+        } catch {
+          // Best-effort per-row cleanup.
+        }
+      }
+      if (this.candidates) {
+        try {
+          await this.candidates.deleteForAnalysis(job.id);
+        } catch {
+          // Best-effort per-row cleanup.
+        }
+      }
+      try {
+        await this.jobs.deleteJob(job.id);
+        cleared += 1;
+      } catch {
+        // Best-effort per-row cleanup.
+      }
+    }
+    return cleared;
   }
 
   /**
@@ -353,7 +586,11 @@ export class AnalysisService {
       let stored = await this.jobs.getJob(analysisJobId(gameId, engine, undefined, config));
       if (stored?.state === 'completed' && run?.force === true) {
         // A forced re-analysis clears the completed run's records and restarts
-        // the same analysis identity under the current engine configuration.
+        // the same analysis identity under the current engine configuration. A
+        // live/queued scan of that run is dropped first (its engine jobs
+        // cancelled) so no ghost pass is left ahead in the engine FIFO, and its
+        // abort path cannot resurrect the rows this cleanup deletes.
+        await this.cancelScanAndSettle(gameId);
         await this.analyses.deleteForAnalysis(stored.id);
         await this.clearDetectionState(stored.id);
         stored = undefined;
@@ -413,7 +650,22 @@ export class AnalysisService {
     return { ...status.engine, profile };
   }
 
+  /**
+   * Run one game job to a terminal state, registering the game as "actively
+   * analysed in this session" for the whole run so orphan reconciliation and
+   * the live/queued UI never confuse a genuinely-running job with an
+   * owner-less one left behind by an earlier session.
+   */
   private async runGameJob(job: AnalysisJob, run?: AnalysisRunOptions): Promise<AnalysisJob> {
+    this.activeRuns.add(job.gameId);
+    try {
+      return await this.runGameJobInner(job, run);
+    } finally {
+      this.activeRuns.delete(job.gameId);
+    }
+  }
+
+  private async runGameJobInner(job: AnalysisJob, run?: AnalysisRunOptions): Promise<AnalysisJob> {
     const perRowCancel = await this.maybeCancel(job, run);
     if (perRowCancel) {
       return perRowCancel;
@@ -520,7 +772,7 @@ export class AnalysisService {
     // game of the batch / next queued batch starts as soon as this persist
     // lands, while the detection pass runs detached in the background (it is
     // abort-aware, idempotent and resumable, and shares the single engine FIFO).
-    void this.runDetection(current, game, records);
+    void this.startScan(current, game, records);
     return current;
   }
 
@@ -550,45 +802,67 @@ export class AnalysisService {
   }
 
   /**
-   * Trigger the Feature-010 two-stage detection pass for a completed run
+   * Start the Feature-010 two-stage detection pass for a completed run
    * (Stage 1 + Stage 2, cache-aware and idempotent per analysis identity).
    * Called detached (never awaited) from `runGameJob` after the run's job is
-   * persisted `completed`, so detection never blocks the analysis queue; a
-   * failure here never fails the completed job. The pass runs to completion
-   * with its own lifecycle (it is resumable and shares the engine FIFO). The
-   * game id is registered as "actively detecting" for the whole pass so the
-   * UI can tell a genuinely-running scan from a persisted-but-interrupted one.
+   * persisted `completed` (and by the on-demand `scanGame` entry point), so
+   * detection never blocks the analysis queue. The pass runs through the
+   * shared engine FIFO under its own `AbortSignal`; it is registered live for
+   * its whole duration so the UI can tell a genuinely-running scan from a
+   * persisted-but-interrupted one and can cancel it.
    */
-  private async runDetection(
+  private startScan(
     job: AnalysisJob,
     game: Game,
     records: readonly MoveAnalysis[],
-  ): Promise<void> {
+  ): ScanEntry | null {
     if (!this.detection) {
-      return;
+      return null;
     }
-    this.activeDetections.add(game.id);
-    try {
-      await this.detection.runPassForCompletedJob(
-        job,
-        { id: game.id, userColor: game.userColor },
-        records,
-      );
-    } catch {
-      // Detection is derived data: a failure never fails the completed job.
-    } finally {
-      this.activeDetections.delete(game.id);
+    const existing = this.scans.get(game.id);
+    if (existing) {
+      return existing;
     }
+    const controller = new AbortController();
+    const done = (async () => {
+      try {
+        await this.detection!.runPassForCompletedJob(
+          job,
+          { id: game.id, userColor: game.userColor },
+          records,
+          controller.signal,
+        );
+      } catch {
+        // Detection is derived data: a failure never fails the completed job.
+      } finally {
+        // Drop only our own pass: a newer scan may have replaced it.
+        if (this.scans.get(game.id)?.controller === controller) {
+          this.scans.delete(game.id);
+        }
+      }
+    })();
+    const entry: ScanEntry = { controller, done };
+    this.scans.set(game.id, entry);
+    return entry;
   }
 
   /**
-   * Game ids whose Feature-010 detection pass is running right now in this
-   * session (the in-memory registry). The Library/Review read it to render an
-   * accurate scan state: a persisted `queued`/`inProgress` summary without a
-   * matching live id is an interrupted pass, not a running one.
+   * Abort a game's live scan and await its settlement (used ahead of a forced
+   * re-analysis so the superseded pass cannot resurrect its summary/candidates
+   * after the cleanup below deletes them).
    */
-  async activeDetectionGames(): Promise<readonly GameId[]> {
-    return [...this.activeDetections];
+  private async cancelScanAndSettle(gameId: GameId): Promise<void> {
+    const entry = this.scans.get(gameId);
+    if (!entry) {
+      return;
+    }
+    entry.controller.abort();
+    this.scans.delete(gameId);
+    try {
+      await entry.done;
+    } catch {
+      // The pass is abort-aware; a failure here is already contained.
+    }
   }
 
   /**
@@ -642,10 +916,15 @@ export class AnalysisService {
     run: AnalysisRunOptions | undefined,
   ): Promise<PositionOutcome> {
     const config = run?.config;
+    // A threads override of 1 is the single-threaded default, never an override:
+    // drop it so a default run keeps the historical cache scope/identity.
+    const threads =
+      config?.threads !== undefined && config.threads > 1 ? config.threads : undefined;
     const scope = {
       profile: engine.profile,
       ...(config?.maxDepth !== undefined ? { maxDepth: config.maxDepth } : {}),
       ...(config?.movetimeMs !== undefined ? { movetimeMs: config.movetimeMs } : {}),
+      ...(threads !== undefined ? { threads } : {}),
     };
     const key = analysisCacheKey(fen, scope, engine);
     // A forced run bypasses the cache so "Re-analyze" always contacts the

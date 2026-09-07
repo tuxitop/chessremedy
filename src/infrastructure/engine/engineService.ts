@@ -61,11 +61,20 @@ export interface EngineServiceOptions {
   readonly stallTimeoutMs?: number;
   /** How long an active `stop` may take before the Worker is recreated. */
   readonly cancelTimeoutMs?: number;
+  /**
+   * Max lifetime of a *queued* engine job (WP-D watchdog). A job that sits in
+   * the FIFO this long — e.g. because the pump stalled or a ghost pass holds
+   * the queue — is failed as a timeout so its caller can resume/fail rather
+   * than leaving "queued" permanent.
+   */
+  readonly queuedTimeoutMs?: number;
 }
 
 const DEFAULT_INIT_TIMEOUT_MS = 30_000;
 const DEFAULT_STALL_TIMEOUT_MS = 60_000;
 const DEFAULT_CANCEL_TIMEOUT_MS = 5_000;
+const DEFAULT_QUEUED_TIMEOUT_MS = 15 * 60_000;
+const MAX_QUEUED_SWEEP_MS = 5_000;
 const DEFAULT_PROFILE = 'normal' as const;
 
 /** Feature 006 MultiPV cap (spec: default 3, max 5). */
@@ -152,6 +161,8 @@ export class AnalysisJobHandle implements AnalysisJob {
   readonly profile: AnalysisJob['profile'];
   readonly options: JobOptions;
   status: AnalysisJobStatus = 'queued';
+  /** Unix epoch millis the job entered the engine queue (queue watchdog). */
+  readonly enqueuedAt: number = Date.now();
 
   private readonly listeners = new Set<(event: AnalysisJobEvent) => void>();
   private outcomeResolve!: (outcome: AnalysisJobOutcome) => void;
@@ -232,6 +243,7 @@ export class EngineServiceImpl implements EngineService {
   private readonly initTimeoutMs: number;
   private readonly stallTimeoutMs: number;
   private readonly cancelTimeoutMs: number;
+  private readonly queuedTimeoutMs: number;
 
   private transport: EngineTransport | null = null;
   private readonly queue: AnalysisJobHandle[] = [];
@@ -246,6 +258,7 @@ export class EngineServiceImpl implements EngineService {
   private searchStartTime = 0;
   private lastEngineActivityAt = 0;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private queueWatchdogTimer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
   private drainRunning = false;
 
@@ -256,6 +269,7 @@ export class EngineServiceImpl implements EngineService {
     this.initTimeoutMs = options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS;
     this.stallTimeoutMs = options.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
     this.cancelTimeoutMs = options.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS;
+    this.queuedTimeoutMs = options.queuedTimeoutMs ?? DEFAULT_QUEUED_TIMEOUT_MS;
     this.engineIdentity = {
       engineName: this.assets.engineName,
       engineVersion: this.assets.npmVersion,
@@ -301,6 +315,7 @@ export class EngineServiceImpl implements EngineService {
     }
     this.queue.push(job);
     this.notifyStatus();
+    this.startQueueWatchdog();
     this.drain();
     return job;
   }
@@ -374,6 +389,7 @@ export class EngineServiceImpl implements EngineService {
     this.active = null;
     active?.fail({ reason: 'disposed', message: 'Engine service was disposed.' });
     this.clearWatchdog();
+    this.clearQueueWatchdog();
     this.initExpectations = [];
     const search = this.searchSettle;
     this.searchSettle = null;
@@ -383,6 +399,56 @@ export class EngineServiceImpl implements EngineService {
   }
 
   // --- internal -----------------------------------------------------------------
+
+  /**
+   * Queue watchdog (WP-D): fail a *queued* engine job that has waited longer
+   * than `queuedTimeoutMs` so its caller can fail/resume instead of leaving
+   * "queued" permanent (e.g. a stalled pump or a ghost pass holding the FIFO).
+   * Only the oldest queued job can age out; the active job is governed by the
+   * stall watchdog. The sweep restarts the drain in case it went idle.
+   */
+  private startQueueWatchdog(): void {
+    if (this.disposed || this.queueWatchdogTimer !== null) {
+      return;
+    }
+    const sweepMs = Math.min(
+      MAX_QUEUED_SWEEP_MS,
+      Math.max(50, Math.floor(this.queuedTimeoutMs / 4)),
+    );
+    this.queueWatchdogTimer = setInterval(() => {
+      if (this.disposed) {
+        this.clearQueueWatchdog();
+        return;
+      }
+      const now = Date.now();
+      let failedAny = false;
+      while (this.queue.length > 0 && now - this.queue[0]!.enqueuedAt >= this.queuedTimeoutMs) {
+        const job = this.queue.shift()!;
+        const waitedSeconds = Math.round((now - job.enqueuedAt) / 1000);
+        job.fail({
+          reason: 'timeout',
+          message: `Job ${job.id} waited ${waitedSeconds}s in the engine queue; failing it so it can be resumed.`,
+        });
+        failedAny = true;
+      }
+      if (failedAny) {
+        this.notifyStatus();
+      }
+      if (this.queue.length === 0) {
+        this.clearQueueWatchdog();
+      } else {
+        this.drain();
+      }
+    }, sweepMs);
+    this.queueWatchdogTimer.unref?.();
+  }
+
+  private clearQueueWatchdog(): void {
+    if (this.queueWatchdogTimer !== null) {
+      clearInterval(this.queueWatchdogTimer);
+      this.queueWatchdogTimer = null;
+    }
+  }
 
   private notifyStatus(): void {
     const status = this.getStatus();

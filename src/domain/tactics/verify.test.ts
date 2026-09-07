@@ -151,6 +151,7 @@ describe('verifyCandidate — verified fork (happy path)', () => {
         wdlAfterBestLine: topLine.wdl,
       },
       detectionVersion: DETECTION_VERSION,
+      verificationSource: 'tactical-search',
       verificationStatus: 'verified',
     });
   });

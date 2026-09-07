@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnalysisJob, ExpectedAnalysisConfig, GameAnalysisConfig } from '@/domain/analysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { AnalysisProfile } from '@/domain/chess';
-import type { AnalysisRunOptions, GameAnalysisProgress } from '@/infrastructure/analysis';
+import type {
+  AnalysisRunOptions,
+  GameAnalysisProgress,
+  ReconcileResult,
+  ScanGameOutcome,
+} from '@/infrastructure/analysis';
 
 /** UI-facing surface of the game-analysis service (injectable fake in tests). */
 export interface AnalysisServiceLike {
@@ -36,6 +41,32 @@ export interface AnalysisServiceLike {
    * the UI treats no scan as live.
    */
   activeDetectionGames?(): Promise<readonly string[]>;
+  /**
+   * Game ids whose analysis job is running right now in this session. A
+   * persisted `queued`/`inProgress` job whose game id is absent is *paused*
+   * (left by an earlier session) — it is never auto-run and never reads as
+   * live. Optional: when absent the UI treats no analysis as live.
+   */
+  liveAnalysisGames?(): Promise<readonly string[]>;
+  /**
+   * Run only the Feature-010 tactics scan for a game's latest completed
+   * analysis (no re-analysis). Optional — tests/fakes may omit it.
+   */
+  scanGame?(gameId: string): Promise<ScanGameOutcome>;
+  /** Cancel a game's live tactics scan. Optional — fakes may omit it. */
+  cancelScan?(gameId: string): Promise<void>;
+  /**
+   * Reconcile orphaned work once per session (pause owner-less in-progress
+   * detection summaries; analysis orphans are left paused, never auto-run).
+   * Optional — fakes may omit it.
+   */
+  reconcileOrphans?(): Promise<ReconcileResult>;
+  /**
+   * Remove every owner-less `queued`/`inProgress` analysis job and its
+   * incomplete derived rows (Settings "Analysis maintenance"). Games and
+   * completed analyses are untouched. Optional — fakes may omit it.
+   */
+  clearPausedAnalysisJobs?(): Promise<number>;
 }
 
 export interface UseGameAnalysis {

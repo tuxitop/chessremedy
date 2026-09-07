@@ -7,6 +7,8 @@ import { settingsRepository } from '@/infrastructure/db/settings-repository';
 import {
   clampGameAnalysisDepth,
   clampGameAnalysisSearchSeconds,
+  expectedGameAnalysisConfig,
+  gameAnalysisRunOf,
   type GameAnalysisProfile,
   type GameAnalysisSettings,
 } from '@/components/analysis/gameAnalysisSettings';
@@ -21,6 +23,12 @@ export interface AnalysisQueuePositions {
 export interface LibraryAnalysisApi {
   /** Per-game analysis status for the currently displayed rows. */
   readonly statuses: Readonly<Record<string, GameAnalysisStatus>>;
+  /**
+   * Game ids this hook's own queue is driving right now (a running batch's
+   * members or games still waiting in its local queue). Used to tell live /
+   * about-to-run jobs from persisted-but-paused ones.
+   */
+  readonly inQueue: ReadonlySet<string>;
   /** Per-game live progress for rows with an active queued/in-progress job. */
   readonly perGameProgress: Readonly<Record<string, GameAnalysisProgress>>;
   /**
@@ -73,9 +81,19 @@ async function storedGameAnalysisSettings(): Promise<GameAnalysisSettings> {
         stored?.searchSeconds !== null && stored?.searchSeconds !== undefined
           ? clampGameAnalysisSearchSeconds(stored.searchSeconds)
           : null,
+      threadsOverride:
+        stored?.threadsOverride !== null && stored?.threadsOverride !== undefined
+          ? stored.threadsOverride
+          : null,
     };
   } catch {
-    return { engine: 'stockfish', profile: 'normal', depthOverride: null, searchSeconds: null };
+    return {
+      engine: 'stockfish',
+      profile: 'normal',
+      depthOverride: null,
+      searchSeconds: null,
+      threadsOverride: null,
+    };
   }
 }
 
@@ -84,17 +102,7 @@ async function resolvedGameAnalysis(): Promise<{
   profile: GameAnalysisProfile;
   config?: GameAnalysisConfig;
 }> {
-  const settings = await storedGameAnalysisSettings();
-  const overrides: Array<[keyof GameAnalysisConfig, number]> = [];
-  if (settings.depthOverride !== null) {
-    overrides.push(['maxDepth', settings.depthOverride]);
-  }
-  if (settings.searchSeconds !== null) {
-    overrides.push(['movetimeMs', settings.searchSeconds * 1000]);
-  }
-  const config: GameAnalysisConfig = Object.fromEntries(overrides);
-  const hasOverrides = overrides.length > 0;
-  return hasOverrides ? { profile: settings.profile, config } : { profile: settings.profile };
+  return gameAnalysisRunOf(await storedGameAnalysisSettings());
 }
 
 /**
@@ -103,11 +111,7 @@ async function resolvedGameAnalysis(): Promise<{
  * outdated → opt-in re-analysis).
  */
 async function expectedAnalysisConfig(): Promise<ExpectedAnalysisConfig | undefined> {
-  const resolved = await resolvedGameAnalysis();
-  return {
-    profile: resolved.profile,
-    ...(resolved.config !== undefined ? { config: resolved.config } : {}),
-  };
+  return expectedGameAnalysisConfig(await storedGameAnalysisSettings());
 }
 
 function countBy(
@@ -283,6 +287,11 @@ export function useLibraryAnalysis(
     [statuses],
   );
 
+  const inQueue = useMemo(
+    () => new Set<string>([...activeIds, ...queuedIds]),
+    [activeIds, queuedIds],
+  );
+
   /** True while there is any work queued or running (drives the top banner). */
   const running = activeIds.length > 0 || queuedIds.length > 0;
 
@@ -393,8 +402,12 @@ export function useLibraryAnalysis(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, hasActiveRows, key, service]);
 
-  // On unmount stop the active run and never start queued batches.
+  // On unmount stop the active run and never start queued batches. The flag is
+  // reset on every (re)mount: React StrictMode double-invokes mount effects in
+  // dev (mount → cleanup → mount), so without the reset the component would
+  // permanently look unmounted and never hand a batch to the engine.
   useEffect(() => {
+    unmountedRef.current = false;
     return () => {
       unmountedRef.current = true;
       pendingRef.current = [];
@@ -405,6 +418,7 @@ export function useLibraryAnalysis(
   return useMemo<LibraryAnalysisApi>(() => {
     const api: LibraryAnalysisApi = {
       statuses,
+      inQueue,
       perGameProgress,
       running,
       progressLine,
@@ -468,6 +482,7 @@ export function useLibraryAnalysis(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     statuses,
+    inQueue,
     perGameProgress,
     running,
     progressLine,

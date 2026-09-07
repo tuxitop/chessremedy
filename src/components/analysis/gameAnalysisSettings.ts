@@ -14,6 +14,7 @@
  */
 
 import type { AnalysisProfile } from '@/domain/chess';
+import type { ExpectedAnalysisConfig, GameAnalysisConfig } from '@/domain/analysis';
 import { profileConfig } from '@/infrastructure/engine/engineProfiles';
 import { AVAILABLE_ENGINES, DEFAULT_ENGINE_ID, type EngineId } from './engineSettings';
 
@@ -32,6 +33,9 @@ export const GAME_ANALYSIS_DEPTH_MAX = 128;
 /** Per-position search-time bounds in seconds (no upper clamp; ≥ 1). */
 export const GAME_ANALYSIS_SEARCH_MIN = 1;
 
+/** Engine thread-count override bounds (≥ 1; upper bound is the capability cap). */
+export const GAME_ANALYSIS_THREADS_MIN = 1;
+
 export interface GameAnalysisSettings {
   /** Engine seam (Stockfish only today). */
   readonly engine: EngineId;
@@ -45,6 +49,13 @@ export interface GameAnalysisSettings {
    * engine searches to the depth limit).
    */
   readonly searchSeconds: number | null;
+  /**
+   * Optional engine thread-count override. `null` = the engine's
+   * capability-derived default (ADR-012). Only meaningful on the
+   * multi-threaded build, so the Settings control is disabled when the
+   * capability cap is 1.
+   */
+  readonly threadsOverride: number | null;
 }
 
 export function defaultGameAnalysisSettings(): GameAnalysisSettings {
@@ -53,6 +64,7 @@ export function defaultGameAnalysisSettings(): GameAnalysisSettings {
     profile: GAME_ANALYSIS_PROFILE_DEFAULT,
     depthOverride: null,
     searchSeconds: null,
+    threadsOverride: null,
   };
 }
 
@@ -64,6 +76,15 @@ export function clampGameAnalysisDepth(depth: number): number {
 /** Clamp a per-position search time (seconds) to an integer ≥ 1. */
 export function clampGameAnalysisSearchSeconds(seconds: number): number {
   return Math.max(GAME_ANALYSIS_SEARCH_MIN, Math.round(seconds));
+}
+
+/**
+ * Clamp a thread-count override into `[MIN, maxThreads]`. `maxThreads` is the
+ * engine's capability cap (1 on the single-threaded build); a result of 1 is
+ * not an override (the default is already 1), which is why resolution drops it.
+ */
+export function clampGameAnalysisThreads(threads: number, maxThreads: number): number {
+  return Math.min(Math.max(GAME_ANALYSIS_THREADS_MIN, Math.round(threads)), maxThreads);
 }
 
 export { AVAILABLE_ENGINES, DEFAULT_ENGINE_ID };
@@ -98,4 +119,54 @@ export function resolvedGameAnalysisConfig(
 /** The profile's own depth (used by the Settings copy / placeholder text). */
 export function gameAnalysisProfileDepth(profile: GameAnalysisProfile): number {
   return profileConfig(profile).depth;
+}
+
+/**
+ * The per-position overrides a run carries under `settings`, or `undefined`
+ * when the user overrode nothing. A threads override of 1 is the single-thread
+ * default and is dropped (it is not an override); the engine clamps higher
+ * stored values to the current capability cap.
+ */
+export function gameAnalysisOverrides(
+  settings: GameAnalysisSettings,
+): GameAnalysisConfig | undefined {
+  const overrides: Array<[keyof GameAnalysisConfig, number]> = [];
+  if (settings.depthOverride !== null) {
+    overrides.push(['maxDepth', clampGameAnalysisDepth(settings.depthOverride)]);
+  }
+  if (settings.searchSeconds !== null) {
+    overrides.push(['movetimeMs', clampGameAnalysisSearchSeconds(settings.searchSeconds) * 1000]);
+  }
+  if (settings.threadsOverride !== null && settings.threadsOverride > 1) {
+    overrides.push(['threads', settings.threadsOverride]);
+  }
+  return overrides.length > 0 ? Object.fromEntries(overrides) : undefined;
+}
+
+/**
+ * What a *fresh* run under `settings` feeds to `analyzeGames`: the engine
+ * profile plus the resolved overrides (identity `AnalysisJob.config`). A
+ * default run carries no override so it keeps the historical identity and
+ * ADR-018 cache key.
+ */
+export function gameAnalysisRunOf(settings: GameAnalysisSettings): {
+  readonly profile: GameAnalysisProfile;
+  readonly config?: GameAnalysisConfig;
+} {
+  const config = gameAnalysisOverrides(settings);
+  return config !== undefined
+    ? { profile: settings.profile, config }
+    : { profile: settings.profile };
+}
+
+/**
+ * The expected run configuration under `settings` for the `outdated`
+ * derivation (Feature 008 §16): a completed run under a different profile or
+ * different overrides reads `outdated`, offering an opt-in re-analysis.
+ */
+export function expectedGameAnalysisConfig(settings: GameAnalysisSettings): ExpectedAnalysisConfig {
+  const config = gameAnalysisOverrides(settings);
+  return config !== undefined
+    ? { profile: settings.profile, config }
+    : { profile: settings.profile };
 }

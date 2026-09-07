@@ -15,9 +15,18 @@ export type CandidateVerificationStatus = 'raw' | 'verified' | 'failed';
 
 export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed';
 
-export const DETECTION_VERSION = 1;
+/**
+ * Detection-pipeline version. Incremented when verification thresholds,
+ * guards or verification sources change (ADR-026). Version 2 added the
+ * stored-analysis fast path (WP-C): candidates verified from a decisive
+ * stored mate line without a fresh tactical-profile engine run.
+ */
+export const DETECTION_VERSION = 2;
 
 export const CANDIDATE_GENERATION_VERSION = 1;
+
+/** How a verified candidate's solution was established (ADR-026). */
+export type VerificationSource = 'tactical-search' | 'stored-analysis';
 
 /** Stage-1 output for a single user ply that crossed the mistake band. */
 export interface RawCandidate {
@@ -69,4 +78,12 @@ export interface VerifiedTacticalCandidate extends RawCandidate {
   readonly verificationMetadata: VerificationMetadata;
   readonly detectionVersion: number;
   readonly verificationStatus: 'verified';
+  /**
+   * How this candidate was verified. `'tactical-search'` (the default when
+   * absent) is a fresh tactical-profile run through every guard (ADR-026);
+   * `'stored-analysis'` is the deterministic mate fast path (WP-C), which
+   * reuses the game's own decisive stored analysis and skips the MultiPV /
+   * WDL guards that need a fresh search.
+   */
+  readonly verificationSource?: VerificationSource;
 }

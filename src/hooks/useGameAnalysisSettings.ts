@@ -20,6 +20,7 @@ function clampStored(stored: GameAnalysisSettings): GameAnalysisSettings {
     profile: stored.profile ?? fallback.profile,
     depthOverride: stored.depthOverride ?? null,
     searchSeconds: stored.searchSeconds ?? null,
+    threadsOverride: stored.threadsOverride ?? null,
   };
 }
 

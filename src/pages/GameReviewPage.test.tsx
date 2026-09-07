@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { db } from '@/infrastructure/db/database';
@@ -7,6 +7,9 @@ import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
+import { settingsRepository } from '@/infrastructure/db/settings-repository';
+import { SETTINGS_KEYS } from '@/config/app-config';
+import { defaultGameAnalysisSettings } from '@/components/analysis/gameAnalysisSettings';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { createAnalysisJob, markCompleted, markFailed } from '@/domain/analysis';
 import { gameAccuracy } from '@/domain/analysis/accuracy';
@@ -83,6 +86,7 @@ describe('Game Review page (Feature 008)', () => {
     await db.analyses.clear();
     await db.analysisJobs.clear();
     await db.positionAnalysisCache.clear();
+    await settingsRepository.remove(SETTINGS_KEYS.analysisGame);
   });
 
   it('renders a completed game with the move list, glyphs, summary and board sync', async () => {
@@ -233,6 +237,39 @@ describe('Game Review page (Feature 008)', () => {
     const action = screen.getByTestId('review-reanalyze-action');
     expect(action).toBeInTheDocument();
     expect(action).toHaveTextContent('Re-analyze');
+  });
+
+  it('re-analyzing honours the current Game-analysis settings and forces a re-run', async () => {
+    // Change the Game-analysis settings to a depth override BEFORE analyzing:
+    // the seeded completed run (profile default, no override) must read as
+    // "outdated" against the current configuration.
+    await settingsRepository.set(SETTINGS_KEYS.analysisGame, {
+      ...defaultGameAnalysisSettings(),
+      depthOverride: 25,
+    });
+    await seedCompleted();
+    const fake = createFakeAnalysisService();
+    renderReview(fake.service);
+
+    // Settings change → the completed run is offered an opt-in re-analysis.
+    await screen.findByTestId('review-obsolete');
+    const action = screen.getByTestId('review-reanalyze');
+    await userEvent.setup().click(action);
+
+    // The forced re-run applies the depth override: a completed job now exists
+    // under the new deterministic identity (`maxDepth: 25` in its config).
+    await waitFor(async () => {
+      const jobs = await analysisJobsRepository.listByGame(GAME.id);
+      const configured = jobs.find(
+        (job) => job.state === 'completed' && job.config?.maxDepth === 25,
+      );
+      expect(configured).toBeDefined();
+    });
+
+    // The re-run matches the current configuration, so the obsolete banner
+    // clears and the completed Review renders again.
+    await screen.findByTestId('review-layout');
+    await waitFor(() => expect(screen.queryByTestId('review-obsolete')).not.toBeInTheDocument());
   });
 
   it('shows each player’s accuracy with one decimal', async () => {
@@ -594,7 +631,7 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     expect(screen.queryByTestId('summary-missed-tactics-value')).not.toBeInTheDocument();
     const note = screen.getByTestId('review-detection-state');
     expect(note).toHaveTextContent('not scanned');
-    expect(note).toHaveTextContent('Re-analyze');
+    expect(note).toHaveTextContent('Run the tactics scan');
   });
 
   it('shows a real zero missed-tactic value once a completed scan found nothing', async () => {
@@ -680,5 +717,77 @@ describe('plyDestSquare (badge lands on the king square for castling)', () => {
   it('keeps the plain destination for ordinary moves and returns undefined without a ply', () => {
     expect(plyDestSquare({ san: 'Nf3', color: 'white', to: 'f3' })).toBe('f3');
     expect(plyDestSquare(undefined)).toBeUndefined();
+  });
+});
+
+describe('Game Review scan activity bar (plan 012, WP-B)', () => {
+  beforeEach(async () => {
+    chessboardProps.length = 0;
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.positionAnalysisCache.clear();
+  });
+
+  it('offers Run tactics scan for a completed analysis that was never scanned', async () => {
+    await seedCompleted();
+    const { service } = createFakeAnalysisService();
+    renderReview(service);
+    await screen.findByTestId('review-layout');
+
+    const bar = await screen.findByTestId('review-scan-bar');
+    expect(bar).toHaveTextContent('never scanned');
+    expect(within(bar).getByTestId('review-scan-run')).toHaveTextContent('Run tactics scan');
+  });
+
+  it('shows a live scan with Cancel while the shown analysis is being scanned', async () => {
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const built = buildAnalysisSummary(records, 'white', { detectionState: 'inProgress' });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...built,
+    });
+
+    const base = createFakeAnalysisService().service;
+    const cancelScan = vi.fn(async (_id: string): Promise<void> => undefined);
+    const service: AnalysisServiceLike = {
+      analyzeGames: (ids, profile, run) => base.analyzeGames(ids, profile, run),
+      statusesOf: (ids, expected) => base.statusesOf(ids, expected),
+      listActiveJobs: () => base.listActiveJobs(),
+      cancelGame: (id) => base.cancelGame(id),
+      activeDetectionGames: async (): Promise<string[]> => [GAME.id],
+      cancelScan,
+    };
+    renderReview(service);
+    await screen.findByTestId('review-layout');
+
+    const bar = await screen.findByTestId('review-scan-bar');
+    expect(bar).toHaveTextContent('Tactics scan in progress');
+    fireEvent.click(within(bar).getByTestId('review-scan-cancel'));
+    await waitFor(() => expect(cancelScan).toHaveBeenCalledWith(GAME.id));
+  });
+
+  it('offers Cancel analysis while a job is queued/in progress', async () => {
+    await gamesRepository.saveGame(GAME);
+    const job = createAnalysisJob(GAME.id, TEST_ENGINE, 4, 1);
+    await analysisJobsRepository.putJob(job);
+    const service = createFakeAnalysisService().service;
+    renderReview(service);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('review-state')).toHaveTextContent('Analysis queued'),
+    );
+    const cancel = await screen.findByTestId('review-cancel-action');
+    fireEvent.click(cancel);
+
+    await waitFor(async () => {
+      const stored = await analysisJobsRepository.listByGame(GAME.id);
+      return stored.every((storedJob) => storedJob.state === 'cancelled');
+    });
   });
 });

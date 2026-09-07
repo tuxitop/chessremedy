@@ -238,18 +238,51 @@ what is actually true:
   shared analysis service reports the game as **actively detecting** (an
   in-memory session registry). A pass scheduled by an earlier session (or
   interrupted by a page close / cancelled run) reads **"Tactics scan
-  interrupted"** with a "re-analyze to retry" affordance instead.
+  interrupted"** with a "Resume tactics scan" affordance instead — the
+  scan-only entry point continues it without re-analysing the game.
 * **Failed** — a scan attempt ended in failure ("Tactics scan failed");
-  retry via re-analysis.
+  retried via the scan action.
 * **Not scanned** — the run predates this feature (its summary was
   backfilled with an `absent` state) or was never scanned ("Tactics not
-  scanned"); the user re-runs analysis to scan.
+  scanned"); the user runs the scan for that analysis.
 
 The Library polls the live registry while a scan is active so the real
 count appears the moment the pass settles, and never keeps polling (or
 claiming "in progress") for an interrupted pass. Game Review mirrors this:
 its summary shows a real `Missed tactics` value once the pass completed,
 and otherwise the matching state note above.
+
+### Resumable scans & engine-activity surfacing (plan 012, WP-A/WP-B)
+
+A scan is resumable derived work, never something that requires a full
+re-analysis:
+
+- **On-demand scan action.** An interrupted/paused, failed, or never-scanned
+  analysis offers a dedicated **Resume / Retry / Run tactics scan** affordance
+  (Library row and Game Review). It runs only the detection pass for the
+  game's latest completed analysis — no positions are re-analysed (ADR-018
+  cache and already-verified candidates are reused) — and a live scan is
+  cancellable in place. Detection passes are never auto-started by these
+  actions.
+- **Orphan reconciliation.** At Library load the shared analysis service
+  reconciles owner-less persisted work once per session: `queued`/`inProgress`
+  analysis jobs with no live owner in this session are auto-resumed, and
+  owner-less `inProgress` detection summaries are relabelled resumable-paused
+  (`queued`) — nothing is ever silently "in progress" without a live pass.
+- **Ghost-pass cancellation.** A forced re-analysis of a game whose scan is
+  still live/queued cancels the superseded pass (its engine jobs) and drops
+  its summary/candidates cleanly, so no ghost pass is left ahead in the
+  engine FIFO.
+- **Persistent engine activity.** Engine work that survives a page change is
+  visible when you return: the Library shows a whole-queue banner over
+  resumed analysis jobs and running tactics scans (with a Cancel that stops
+  both), per-row progress bars come from persisted jobs, and Game Review shows
+  an in-progress banner (analysis **and** scan) with a Cancel.
+- **Lifecycle guards (plan 012, WP-D).** A queued engine job that waits too
+  long is failed by the engine-queue watchdog so "queued" is never permanent
+  (its caller fails/resumes the owning work), and closing/reloading the tab
+  while analysis or a scan is live raises the browser's native confirmation —
+  the work is resumable, so the user can keep it or pause it for later.
 
 ### Missed tactics: absent vs zero
 
@@ -419,6 +452,26 @@ Feature 011 can consume the verified candidate and transform it into a training 
 * End-to-end: analyze a fixture game → the row shows the canonical
   stats → filter by Has blunders → the visible set and cleared selection
   are verified.
+
+## Missed-tactic verification commitment (end-to-end fixture proof)
+
+Detection surfacing is not assumed — it is **verified end-to-end by a
+deterministic engine fixture e2e**: a fixture game engineered to contain a
+real missed tactic (White misses the one-move mate `4.Qxf7#` after
+`3...Nf6` and mates later) is analysed and scanned, and the test asserts
+that the genuine missed tactic actually surfaces in **both** consumers:
+
+- the **Library row insights strip** shows a real `Missed tactics` count
+  for the game, and
+- **Game Review** shows the owning ply's marker (the Summary
+  missed-tactics value and the missed-tactic marker/NAG on the ply that
+  missed the tactic).
+
+This proves the whole pipeline (analysis → detection pass → per-analysis
+summary → Library/Review read path) with a real engine. Detection-state
+surfacing is never a silent absence: queued / in-progress / failed /
+absent detection is always shown as the corresponding state note (above),
+never as a missing zero.
 
 ## V1 Boundary
 

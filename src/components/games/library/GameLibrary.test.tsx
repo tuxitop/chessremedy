@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
@@ -377,6 +377,172 @@ describe('GameLibrary analysis-result filters (Feature 010)', () => {
 function optionLabels(select: Element): readonly string[] {
   return [...select.querySelectorAll('option')].map((option) => option.textContent?.trim() ?? '');
 }
+
+/** Scriptable fake with the WP-A on-demand scan surface + live detection set. */
+function serviceWithScan(): AnalysisServiceLike & {
+  scanCalls: string[];
+  scanCancels: string[];
+  scanning: Set<string>;
+} {
+  const scanCalls: string[] = [];
+  const scanCancels: string[] = [];
+  const scanning = new Set<string>();
+  return {
+    scanCalls,
+    scanCancels,
+    scanning,
+    async statusesOf(gameIds): Promise<Readonly<Record<string, GameAnalysisStatus>>> {
+      const out: Record<string, GameAnalysisStatus> = {};
+      for (const id of gameIds) {
+        const jobs = await analysisJobsRepository.listByGame(id);
+        const state = jobs.map((job) => job.state);
+        out[id] = state.includes('completed')
+          ? 'completed'
+          : state.includes('queued')
+            ? 'queued'
+            : state.includes('inProgress')
+              ? 'inProgress'
+              : 'unanalyzed';
+      }
+      return out;
+    },
+    async listActiveJobs() {
+      return [];
+    },
+    async analyzeGames(gameIds) {
+      return gameIds.map((gameId) =>
+        markCompleted(createAnalysisJob(gameId, TEST_ENGINE, 0, 1), 2),
+      );
+    },
+    async jobProgress(gameIds) {
+      const out: Record<string, undefined> = {};
+      for (const id of gameIds) out[id] = undefined;
+      return out;
+    },
+    async cancelGame() {},
+    async activeDetectionGames() {
+      return [...scanning];
+    },
+    async liveAnalysisGames() {
+      return [];
+    },
+    async scanGame(gameId) {
+      scanCalls.push(gameId);
+      scanning.add(gameId);
+      return 'started';
+    },
+    async cancelScan(gameId) {
+      scanCancels.push(gameId);
+      scanning.delete(gameId);
+    },
+  };
+}
+
+describe('GameLibrary resumable scans + persistent engine activity (plan 012, WP-B)', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+  });
+
+  it('offers a Resume action for an interrupted scan and flips it to scanning', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'queued',
+    });
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-detection-interrupted')).toHaveTextContent(
+      'Tactics scan interrupted',
+    );
+    const resume = await screen.findByTestId(`row-scan-resume-${game.id}`);
+    fireEvent.click(resume);
+
+    await waitFor(() => expect(service.scanCalls).toEqual([game.id]));
+    // The scan is registered live: the strip now reads "in progress" and the
+    // Resume affordance is gone (no double-scan affordance while scanning).
+    await waitFor(() =>
+      expect(within(strip).getByTestId('row-insights-detection-pending')).toHaveTextContent(
+        'Tactics scan in progress…',
+      ),
+    );
+    expect(screen.queryByTestId(`row-scan-resume-${game.id}`)).not.toBeInTheDocument();
+  });
+
+  it('offers Run/Retry actions for absent/failed detection and hides them while live', async () => {
+    const absent = await seedAnalyzedGame('cc-blitz-clean', {
+      classificationCounts: { best: 4, good: 2, inaccuracy: 1, mistake: 1, blunder: 1 },
+      accuracy: 80,
+      detectionState: 'absent',
+    });
+    const failed = await seedAnalyzedGame('li-blitz-blunder', {
+      classificationCounts: { best: 2, good: 1, inaccuracy: 0, mistake: 0, blunder: 0 },
+      accuracy: 64,
+      detectionState: 'failed',
+    });
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    expect(await screen.findByTestId(`row-scan-run-${absent.id}`)).toBeInTheDocument();
+    expect(await screen.findByTestId(`row-scan-retry-${failed.id}`)).toBeInTheDocument();
+  });
+
+  it('marks a persisted queued analysis job from an earlier session as paused (no auto-run)', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(game);
+    await seedJob(game.id, 'queued');
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    // Not live this session and not driven by the hook's own queue → paused:
+    // an explicit Resume affordance is shown, never silent background work.
+    expect(await screen.findByTestId(`game-resume-${game.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`game-cancel-${game.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`game-status-${game.id}`)).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('Paused'),
+    );
+    // A paused row is never shown as busy engine work.
+    expect(screen.queryByTestId('library-engine-busy')).not.toBeInTheDocument();
+  });
+
+  it('shows a persistent engine-activity banner while a tactics scan is running', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'queued',
+    });
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const resume = await screen.findByTestId(`row-scan-resume-${game.id}`);
+    fireEvent.click(resume);
+
+    const banner = await screen.findByTestId('library-engine-busy');
+    expect(banner).toHaveTextContent('1 tactics scan running');
+
+    // Cancel work aborts the scan and the banner clears once the poll observes
+    // the (now empty) live registry (the detection poll ticks every 2 s).
+    fireEvent.click(screen.getByTestId('library-engine-busy-cancel'));
+    await waitFor(() => expect(service.scanCancels).toEqual([game.id]));
+    await waitFor(
+      () => expect(screen.queryByTestId('library-engine-busy')).not.toBeInTheDocument(),
+      { timeout: 5000 },
+    );
+  });
+});
 
 describe('GameLibrary summary backfill (Feature 010 polish)', () => {
   beforeEach(async () => {

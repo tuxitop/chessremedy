@@ -493,6 +493,33 @@ describe('engine service — lifecycle', () => {
     await dispose();
   });
 
+  it('fails a queued engine job that waited too long (queue watchdog, WP-D)', async () => {
+    const { service, transports, dispose } = createService({
+      configureTransport: (t) => {
+        t.autoSearch = false; // j1 stays active forever; j2 waits queued behind it.
+      },
+      serviceOverrides: {
+        queuedTimeoutMs: 80,
+        stallTimeoutMs: 60_000,
+        initTimeoutMs: 5_000,
+      },
+    });
+    const j1 = service.analyze(START_FEN, { profile: 'fast' });
+    await waitForGo({ service, transports, dispose }, j1.id, 0);
+    const j2 = service.analyze(START_FEN, { profile: 'fast' });
+    expect(service.getStatus().queued).toBe(1);
+
+    const outcome = await j2.outcome;
+    expect(outcome.kind).toBe('failed');
+    if (outcome.kind === 'failed') {
+      expect(outcome.error.reason).toBe('timeout');
+      expect(outcome.error.message).toContain('engine queue');
+    }
+    // The active job is untouched (the stall watchdog governs it).
+    expect(j1.status).toBe('running');
+    await dispose();
+  });
+
   it('does not start analysis after dispose', async () => {
     const { service, dispose } = createService();
     await service.dispose();

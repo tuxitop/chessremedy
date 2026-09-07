@@ -540,6 +540,7 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
       wdlAfterBestLine: topLine.wdl,
     },
     detectionVersion: DETECTION_VERSION,
+    verificationSource: 'tactical-search',
     verificationStatus: 'verified',
   };
   return { ok: true, candidate: verified };

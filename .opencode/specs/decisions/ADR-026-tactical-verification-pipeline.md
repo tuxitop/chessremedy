@@ -51,6 +51,30 @@ For each raw candidate:
    - Reject if the line requires > 8 plies.
    - Reject if the difficulty estimate (ADR-025) is below 15.
 
+### Stage 2 fast path — verification from stored decisive analysis
+
+A candidate whose position the game's **own stored analysis** already shows
+as a decisive **forcing mate** is verified without a fresh tactical-profile
+run. Because checkmate is a deterministic board-state fact, the stored best
+line is authoritative when **all** of these hold (`detectionVersion` 2):
+
+- the stored record was produced by the same engine
+  (name/version/build) that would run the tactical search, at a depth
+  at least `FAST_PATH_MIN_STORED_DEPTH`;
+- the stored root evaluation is a mate for the mover, whose UCI mate
+  value `m` implies a complete mate PV of exactly `2m − 1` plies that
+  the stored best PV matches, is within the ≤ 8-ply tactic window, and
+  legally walks from the candidate's starting position to checkmate
+  delivered by the starting mover.
+
+This path deliberately does **not** apply the MultiPV-dependent guards
+(alternative-move reachability, difficulty floor) or the end-line WDL guard:
+a full-PV board checkmate is a stronger and complete verdict, and those
+guards need a fresh MultiPV/WDL search. Verification provenance records the
+stored line's engine, the stored analysis's own `analysisVersion` and its
+depth (never a fabricated tactical depth). Any candidate that does not meet
+every condition falls back to the tactical-profile run above unchanged.
+
 A candidate that survives all guards becomes a `puzzleCandidate`
 passed to Feature 011. Unverified raw candidates are discarded
 after the run.
@@ -101,8 +125,11 @@ Full evaluation: `specs/research/tactical-detection.md`.
   (game analysis), and ADR-018 (cache). It cannot run before those
   exist.
 - The `detectionVersion` field is incremented whenever the pipeline
-  thresholds or guards change. Existing candidates retain their
-  original detection version.
+  thresholds, guards or verification sources change. Existing candidates
+  retain their original detection version. Version 2 introduced the
+  stored-analysis fast path above; candidates verified from stored
+  analysis carry `verificationSource: 'stored-analysis'` (fresh tactical
+  runs carry `'tactical-search'`).
 
 ## Sources
 

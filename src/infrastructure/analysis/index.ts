@@ -7,5 +7,7 @@ export type {
   AnalysisRunOptions,
   AnalysisServiceOptions,
   GameAnalysisProgress,
+  ReconcileResult,
+  ScanGameOutcome,
 } from './analysisService';
 export { createBrowserAnalysisService, getBrowserAnalysisService } from './browser';

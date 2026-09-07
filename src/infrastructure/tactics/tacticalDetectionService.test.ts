@@ -287,6 +287,49 @@ describe('TacticalDetectionService — pass orchestration', () => {
     expect(summary?.detectionVersion).toBe(DETECTION_VERSION);
   });
 
+  it('fast-paths a decisive stored mate with no tactical engine run (WP-C)', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    // The run's stored analysis is a deep, decisive mate line (same engine).
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, { ...missedMateOverride(startingFen), depth: 20, profile: 'normal' }]]),
+    );
+    // No tactical results at all: the fast path must never touch the engine.
+    const rig = createFakeEngine();
+    const service = serviceOf(rig.service);
+
+    await service.runPassForCompletedJob(job, game, records);
+
+    expect(rig.requests).toEqual([]);
+
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
+    expect(rows).toHaveLength(1);
+    const verified = rows[0] as VerifiedTacticalCandidate;
+    expect(verified.verificationStatus).toBe('verified');
+    expect(verified.tacticalObjective).toBe('forcing_mate');
+    expect(verified.verificationSource).toBe('stored-analysis');
+    expect(verified.bestPv).toEqual(['h5f7']);
+    expect(verified.candidateSolutionLength).toBe(1);
+    // Honest provenance: verified at the stored line's depth, never the
+    // tactical profile's depth (which would fabricate a deeper search).
+    expect(verified.verificationMetadata).toMatchObject({
+      engineName: FAKE_ENGINE_META.engineName,
+      engineVersion: FAKE_ENGINE_META.engineVersion,
+      engineBuild: FAKE_ENGINE_META.engineBuild,
+      verificationDepth: 20,
+      wdlAfterBestLine: null,
+    });
+
+    const summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('completed');
+    expect(summary?.missedTacticCount).toBe(1);
+    expect(summary?.detectionVersion).toBe(DETECTION_VERSION);
+  });
+
   it('marks an engine-failed candidate `failed` and lets the rest of the pass continue', async () => {
     const game = fixtureGame(BULLET_ID);
     const job = completedJobFor(game);

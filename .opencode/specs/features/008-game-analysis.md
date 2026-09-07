@@ -130,6 +130,30 @@ Feature 008 must record the profile used for each analysis.
 
 Feature 008 must not redefine engine profile behavior.
 
+The Settings "Game analysis" group may additionally carry an optional
+**threads override** for a run (default: the engine's capability-derived
+threads, `min(2, hardwareConcurrency)` under cross-origin isolation, ADR-012).
+A threads override applies to the game-analysis engine jobs and to the
+Feature-010 tactical scans of the completed run, and is part of the run's
+identity (`AnalysisJob.config`), of the `outdated` derivation and of the
+ADR-018 cache scope — a value of 1 (the single-thread default) is never an
+override and keeps the historical identity/cache key.
+
+Game analysis is driven by a dedicated Settings **Game analysis** group
+(keyed `analysis.game` on the Settings surface, the Feature 001/006 seam).
+It exposes the **engine profile** (`fast`/`normal`/`deep`), an optional
+**depth override** and an optional **per-position search time**, together
+with the optional threads override above. The **resolved** configuration —
+the profile plus whichever depth/search-time/threads overrides are set —
+is what a run actually executes: it lives on `AnalysisJob.config`, feeds
+the deterministic job identity (§4), drives the `outdated` derivation (a
+completed run produced under an older resolved Game-analysis configuration
+reads `outdated`) and scopes the ADR-018 cache/session key. Library bulk /
+per-row analysis and Game Review re-analysis all honour the current
+Game-analysis settings. Changing the settings never silently re-runs a
+completed analysis — it marks the prior run `outdated` for opt-in
+re-analysis (§22).
+
 ---
 
 # 4. Analysis Identity and Versioning
@@ -151,6 +175,16 @@ At minimum, analysis metadata must contain:
 Two analyses of the same game produced using materially different configurations must be distinguishable.
 
 An existing analysis must not silently be treated as equivalent to a newly requested analysis with a different analysis identity.
+
+The **resolved Game-analysis configuration** (profile plus any effective
+depth / per-position search-time / threads overrides from §3) is part of
+this deterministic identity: `AnalysisJob.config` carries the resolved
+values, the job id fingerprints them, and two runs of the same game that
+differ only in their resolved Game-analysis settings are distinguishable
+and never silently treated as equivalent. A run under a different resolved
+configuration than the current settings therefore derives a different
+identity (`outdated`, §22), and a forced re-analysis produces a genuinely
+new run.
 
 The canonical representation belongs in `domain/analysis-model.md`.
 
@@ -190,23 +224,54 @@ If the application closes while analysis is running:
 - the user can resume incomplete analysis;
 - already-persisted completed work should not unnecessarily be repeated.
 
+Owner-less active jobs (a run whose session ended mid-flight) are left
+**paused** — a cheap, engine-free reconcile on Game Library open relabels
+owner-less in-progress detection summaries to resumable-paused, and analysis
+jobs stay paused until an explicit Analyze/Retry resumes them in place.
+Background work is never silently re-run on the shared engine queue (that
+made later user actions wait behind invisible work with no progress), and
+nothing claims to be analyzing without a live owner. Detection passes stay
+on-demand (see Feature 010) and are never auto-resumed by this step.
+
+## Queueing (a new request queues; it never cancels the running run)
+
+Analysis requests are **serialized on the shared analysis service** (one
+singleton, so Game Library batch/per-row requests and Game Review requests
+all share it). A second `analyzeGames` request issued while a run is
+in progress is **queued and started only after the running run finishes**;
+it **never aborts** the running request. The hooks therefore never
+auto-abort a run on a new `analyze` call, and an in-flight run keeps its
+rows/status until it completes. Queueing is visible (§8/§23): a waiting
+request's jobs/rows read `queued`, the batch banner counts the whole queue
+("Analyzing N of M", "N more queued") and per-row **Cancel** can pull a
+waiting game out of the queue or cancel its persisted job. Persisted
+`queued` jobs survive a page change and stay resumable (Restart behavior
+above). An explicit **Cancel** (§6) stops the current run and drops queued
+requests.
+
 The persistence mechanism must be compatible with the project's local-first IndexedDB/Dexie architecture.
 
 ---
 
 # 6. Cancellation
 
-Users can cancel:
+Cancellation is **explicit and user-initiated** — starting a new analysis
+while one is running queues the new request (§5) and never cancels the
+running run. Users can cancel:
 
-- queued jobs;
+- queued jobs (a per-row Cancel pulls a waiting game out of the queue);
 - active jobs;
 - batches of queued/in-progress jobs.
 
-Cancellation should propagate to the underlying Stockfish request where possible.
+**Cancel** stops the current run and **drops queued requests**: the hook
+skips queued not-yet-started runs and the service cancels the active one.
+Cancellation should propagate to the underlying Stockfish request where
+possible.
 
 Already-persisted completed analysis must not be deleted merely because remaining analysis is cancelled.
 
-A cancelled job must have an explicit `cancelled` state.
+A cancelled job must have an explicit `cancelled` state. A cancelled or
+partial run is never reported or kept as `completed` (§24).
 
 ---
 
@@ -395,7 +460,13 @@ Feature-009 palette (zeros of the negative classes read green; colour is
 never the only signal). A completed analysis always offers an explicit
 **Re-analyze** action; the summary also surfaces the Feature-010 detection
 state (scanning / interrupted / failed / not scanned) instead of silently
-omitting missed tactics (§ Feature 010).
+omitting missed tactics (§ Feature 010). While the viewed game is being
+analyzed **or** scanned, Review shows an in-progress indicator with a
+**Cancel** (the scan runs detached after a completed analysis; a queued /
+in-progress analysis shows its progress and Cancel instead of a bare state
+panel). A completed analysis that is interrupted/failed/never-scanned offers
+the Feature-010 on-demand scan action (Resume / Retry / Run) without a full
+re-analysis.
 
 The Review board is a **fully interactive analysis board** (mouse and
 touch), identical to the Live Analysis board: the user can play any legal
@@ -470,19 +541,22 @@ continuation to the move list; the stored game/PGN and its persisted
 
 # 17. Move Classification & Mistake Review
 
-- Each analyzed move that carries a visually emphasized classification
-  displays its canonical glyph (`best`→`!!`, `inaccuracy`→`?!`,
-  `mistake`→`?`, `blunder`→`??`); ordinary `good` moves are rendered
-  without a classification glyph. Glyphs are read-only and come from the
-  persisted `MoveAnalysis` via the Feature-009 presentation mapping;
-  classifications are never recomputed in the view.
-- The classification glyph of the selected move also renders as a small
-  board chip anchored to the move's destination square, using the same
-  SquareBadges style/formatting as the Playground's NAG badges. Ordinary
-  (`good`) moves render no chip.
-- An emphasized classification also tints the move's **start and end
-  squares** with the classification colour (replacing the plain last-move
-  highlight); ordinary (`good`) moves keep the default last-move
+- The move list annotates **only the negative classifications**
+  (`inaccuracy`→`?!`, `mistake`→`?`, `blunder`→`??`) plus the Feature-010
+  missed-tactic marker; `best` and ordinary `good` moves render **quiet**
+  (no glyph, no colour) — the engine-best glyph (`!!`, NAG 3) stays
+  reserved for a future brilliant-move detector and remains the canonical
+  NAG only for PGN/export (Feature 009 presentation default). Glyphs are
+  read-only and come from the persisted `MoveAnalysis` via the Feature-009
+  presentation mapping; classifications are never recomputed in the view.
+- The best move of the selected position may render as a small **quiet `★`
+  star** board chip anchored to the destination square (never `!!`); a
+  negative classification renders its glyph chip the same way, using the
+  same SquareBadges style/formatting as the Playground's NAG badges.
+  Ordinary (`good`) moves render no chip.
+- An emphasized (negative) classification also tints the move's **start and
+  end squares** with the classification colour (replacing the plain
+  last-move highlight); ordinary (`good`) moves keep the default last-move
   highlight. Colour never carries information alone — glyphs, labels and
   the move-list text use the same classification colour/tone.
 - For the user's inaccuracy/mistake/blunder (and later missed tactics),
@@ -544,6 +618,12 @@ continuation to the move list; the stored game/PGN and its persisted
   evaluation visibility, analysis/re-analysis and cancel-analysis where
   appropriate. Low-level engine settings belong in Settings, not the main
   Review interface.
+- **Re-analyze** (Review): an analyzed game always offers a **single,
+  always-available Re-analyze** action in the Review actions area. It
+  force re-runs the game under the **current Game-analysis settings**
+  (§3/§4) — there is **no "only your side" scope choice** (analysis always
+  classifies both sides and the Summary always shows the Your/Op columns).
+  The obsolete-analysis banner's single Re-analyze uses the same path.
 
 # 22. Game Library Integration & Analysis Status
 
@@ -577,6 +657,14 @@ The Review route handles: game missing; game present without analysis;
 analysis queued/in-progress; analysis failed; analysis cancelled; and an
 obsolete-analysis version. These are never rendered as a completed
 analysis, and an appropriate action is offered where possible.
+
+The invariant behind these states is **enforced at persist time by the
+analysis service**, not only in the view: a job is persisted as
+`completed` only when **every required position** has a persisted
+`MoveAnalysis` record for that job's analysis identity and the build over
+all planned plies succeeded. A cancelled or partial run is therefore never
+kept, shown or presented as `completed` (see §5/§6 and the same invariant
+in `domain/analysis-model.md`).
 
 # 25. Testing
 

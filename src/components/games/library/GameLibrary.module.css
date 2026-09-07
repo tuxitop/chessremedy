@@ -278,6 +278,31 @@
   color: var(--color-fg-muted);
 }
 
+/* On-demand scan action under a row (WP-A): resume/retry/run the tactics
+   scan without a full re-analysis. */
+.detectionScan {
+  grid-column: 1 / -1;
+  padding-top: var(--space-2);
+}
+
+.detectionScanButton {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent, #1570ef);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.detectionScanButton:hover,
+.detectionScanButton:focus-visible {
+  color: var(--color-accent-strong, #0b5ed7);
+}
+
 .cellCheck {
   display: flex;
   padding-top: 2px;

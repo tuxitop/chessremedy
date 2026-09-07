@@ -12,6 +12,7 @@ export type {
   RawCandidate,
   TacticalObjective,
   VerificationMetadata,
+  VerificationSource,
   VerifiedTacticalCandidate,
 } from './types';
 export { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from './types';
@@ -38,3 +39,5 @@ export type {
   VerificationRejectionReason,
   VerifyResult,
 } from './verify';
+export { FAST_PATH_MIN_STORED_DEPTH, fastPathVerifiedCandidate } from './fastPath';
+export type { StoredLineSource } from './fastPath';
