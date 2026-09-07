@@ -104,6 +104,10 @@ Use the candidate-generation rules defined in:
 * `domain/tactics.md`
 
 The Stage 1 result is a raw candidate, not a verified missed tactic.
+Candidate rules are versioned (`CANDIDATE_GENERATION_VERSION`, currently
+2 — the position-centric plan-013 rules in ADR-026/research) and the
+emitted set is capped per game (`MAX_CANDIDATES_PER_GAME`, swing-ordered)
+so the Stage-2 engine load stays bounded.
 
 ### Stage 2 — Tactical Verification
 
@@ -251,6 +255,20 @@ count appears the moment the pass settles, and never keeps polling (or
 claiming "in progress") for an interrupted pass. Game Review mirrors this:
 its summary shows a real `Missed tactics` value once the pass completed,
 and otherwise the matching state note above.
+
+### Numeric scan progress (plan 013, W3)
+
+While a pass is genuinely running, the row/banner (Library) and the
+Review scan bar show a **numeric progress bar** in a **distinct colour**
+(the canonical missed-tactic magenta, not the blue analysis progress):
+"Verifying tactic 3 of 7…", with the numbers spelled out for assistive
+tech. The `done`/`total` values come from the additive `scanProgress`
+field on the per-analysis summary (`done` = candidates that have reached
+a definitive verdict — verified, or rejected by a Stage-2 guard — out of
+the Stage-1 `total`). An interrupted pass never claims progress: the bar
+appears only while the shared service reports the game as actively
+detecting, and a resumed pass restores its real `done` from the already
+verified rows before continuing.
 
 ### Resumable scans & engine-activity surfacing (plan 012, WP-A/WP-B)
 
@@ -481,7 +499,11 @@ V1 intentionally does not include:
 * a separate tactical visualization system;
 * a second chessboard implementation;
 * a separate engine-analysis representation;
-* detection of quiet/non-forcing tactical themes outside the research-defined pipeline;
+* detection of quiet/non-forcing tactical themes outside the
+  research-defined pipeline — plan 013's quiet/small-loss rule only
+  fires when the engine's best first move is forcing (a check or a
+  capture), so purely non-forcing themes (zugzwang, positional
+  sacrifices) remain out of scope;
 * automatic natural-language explanations of why the tactic works;
 * per-row game-phase breakdown of the statistics (errors/accuracy by
   opening/middlegame/endgame in the Library row) — phase is stored per

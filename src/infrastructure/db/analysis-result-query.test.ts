@@ -156,6 +156,7 @@ describe('analysisInsightsForGame', () => {
       detectionState: 'absent',
       hasCompletedDetection: false,
       missedTactics: null,
+      scanProgress: null,
     });
   });
 
@@ -199,6 +200,22 @@ describe('analysisInsightsForGame', () => {
       ],
     );
     expect(insights.missedTactics).toBe(1);
+  });
+
+  it('surfaces the live scan progress while a pass is running (plan 013 W3)', () => {
+    const job = completedJob(G_BLUNDER, 10);
+    const insights = analysisInsightsForGame(
+      [job],
+      [
+        summaryFor(job.id, G_BLUNDER, {
+          detectionState: 'inProgress',
+          scanProgress: { done: 2, total: 4 },
+        }),
+      ],
+    );
+    expect(insights.detectionState).toBe('inProgress');
+    expect(insights.scanProgress).toEqual({ done: 2, total: 4 });
+    expect(insights.missedTactics).toBeNull();
   });
 });
 

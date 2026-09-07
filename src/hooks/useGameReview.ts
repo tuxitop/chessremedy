@@ -31,6 +31,12 @@ export interface ReviewData {
    * was never scanned; only `'completed'` carries a real missed-tactic count.
    */
   readonly detectionState: SummaryDetectionState | null;
+  /**
+   * Live Stage-2 scan progress (`done`/`total` settled candidates) of the shown
+   * analysis's detection pass (plan 013 W3); `null` when the pass has not
+   * recorded progress. Rendered as a progress bar only while the pass is live.
+   */
+  readonly scanProgress: { readonly done: number; readonly total: number } | null;
   reload(): void;
 }
 
@@ -48,6 +54,7 @@ export function useGameReview(gameId: string): ReviewData {
     obsolete: false,
     progress: null,
     detectionState: null,
+    scanProgress: null,
   });
 
   const load = useCallback(() => {
@@ -59,6 +66,7 @@ export function useGameReview(gameId: string): ReviewData {
       const completed = latestCompletedJob(jobs);
       let records: readonly MoveAnalysis[] = [];
       let detectionState: SummaryDetectionState | null = null;
+      let scanProgress: { readonly done: number; readonly total: number } | null = null;
       if (game && completed) {
         records = await analysesRepository.listForGameAndAnalysis(gameId, completed.id);
         const summary = await summariesRepository.getForAnalysis(completed.id);
@@ -66,6 +74,7 @@ export function useGameReview(gameId: string): ReviewData {
         // real state so the Review can say "not scanned" instead of staying
         // silent about missed tactics.
         detectionState = summary ? summary.detectionState : 'absent';
+        scanProgress = summary?.scanProgress ?? null;
       }
       if (cancelled) {
         return;
@@ -84,6 +93,7 @@ export function useGameReview(gameId: string): ReviewData {
             ? { done: active.completedPositions, total: active.totalPositions }
             : null,
         detectionState,
+        scanProgress,
       });
     })().catch(() => {
       if (!cancelled) {

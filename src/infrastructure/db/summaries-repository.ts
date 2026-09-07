@@ -16,9 +16,11 @@
 
 import type { Color } from 'chessops/types';
 import type { ClassificationCounts } from '@/domain/analysis/summary';
-import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
+import type { ScanProgress, SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
 import type { GameId } from '@/domain/chess/game';
 import { db, type ChessRemedyDatabase } from './database';
+
+export type { ScanProgress } from '@/domain/analysis/summaryDerivation';
 
 /** Persisted per-analysis summary row (schema v7 `analysisSummaries`). */
 export interface AnalysisSummaryRow {
@@ -44,6 +46,12 @@ export interface AnalysisSummaryRow {
   readonly missedTacticCount: number | null;
   /** Detection version of the completed pass; `null` until one completes. */
   readonly detectionVersion: number | null;
+  /**
+   * Live Stage-2 progress of the pass (plan 013 W3); absent on older rows (the
+   * field is additive — no schema bump) or before Stage 2 starts. Readers must
+   * treat `undefined` as "no progress recorded".
+   */
+  readonly scanProgress?: ScanProgress | null;
   /** Unix epoch millis of the last write. */
   readonly updatedAt: number;
 }

@@ -19,11 +19,23 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  * Detection-pipeline version. Incremented when verification thresholds,
  * guards or verification sources change (ADR-026). Version 2 added the
  * stored-analysis fast path (WP-C): candidates verified from a decisive
- * stored mate line without a fresh tactical-profile engine run.
+ * stored mate line without a fresh tactical-profile engine run. Version 3
+ * adds the Stage-2 unicity gate (plan 013, W2): for non-mate objectives the
+ * best line must beat the best alternative by a large winning-chance margin,
+ * so ambiguous near-tie solutions no longer verify.
  */
-export const DETECTION_VERSION = 2;
+export const DETECTION_VERSION = 3;
 
-export const CANDIDATE_GENERATION_VERSION = 1;
+/**
+ * Candidate-generation version. Incremented when the Stage-1 candidate rules
+ * change (plan 013, W1). Version 1 emitted a candidate only when the user's
+ * played move crossed the >= 5 win-% mistake band; version 2 is the
+ * position-centric lichess-puzzler model: it additionally emits candidates
+ * when the opponent's last move conceded a big swing to the user, when the
+ * user's position was already decisive (missed mate/forced win), and when a
+ * small-loss quiet miss had a forcing best first move.
+ */
+export const CANDIDATE_GENERATION_VERSION = 2;
 
 /** How a verified candidate's solution was established (ADR-026). */
 export type VerificationSource = 'tactical-search' | 'stored-analysis';

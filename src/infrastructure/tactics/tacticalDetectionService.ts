@@ -60,6 +60,7 @@ import type { GameId } from '@/domain/chess/game';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
 import type {
   BuildAnalysisSummaryOptions,
+  ScanProgress,
   SummaryDetectionState,
 } from '@/domain/analysis/summaryDerivation';
 import {
@@ -147,6 +148,14 @@ export class TacticalDetectionService {
    * `game` supplies the game id and the importing user's color, `records` are
    * the run's persisted `MoveAnalysis`. Abort-aware, cache-aware and resumable
    * (see the module header).
+   *
+   * Scan progress (plan 013 W3): Stage 1's candidate set size is written as
+   * the pass's `total` and `done` is advanced (and persisted) as each
+   * candidate settles — verified, or rejected/failed by a Stage-2 guard.
+   * Already-verified rows of a resumed pass count as done immediately, so an
+   * interrupted scan restores its real totals. `queued`/`inProgress` states
+   * carry the additive `scanProgress`; the UI renders a bar from it only while
+   * the pass is live in this session.
    */
   async runPassForCompletedJob(
     job: AnalysisJob,
@@ -162,14 +171,19 @@ export class TacticalDetectionService {
       return;
     }
 
-    const candidates = [...generateCandidates(records, game.userColor, this.now())].sort(
-      (a, b) => a.sourcePly - b.sourcePly,
-    );
+    // Stage-1 output is already capped per game and ordered by swing size
+    // (plan 013 W1/W4), so verification runs the biggest moments first.
+    const candidates = generateCandidates(records, game.userColor, this.now());
+    const total = candidates.length;
 
     // An empty pass still completes: a real zero is written with the detection
     // version so the Library never renders this analysis as absent-detection.
-    if (candidates.length === 0) {
-      await this.writeSummary(job, game, records, 'completed', 0, DETECTION_VERSION);
+    if (total === 0) {
+      await this.writeSummary(job, game, records, 'completed', {
+        missedTacticCount: 0,
+        detectionVersion: DETECTION_VERSION,
+        scanProgress: { done: 0, total: 0 },
+      });
       return;
     }
     if (signal?.aborted) {
@@ -195,7 +209,11 @@ export class TacticalDetectionService {
       }));
     await this.candidates.bulkPutForAnalysis(pending);
 
-    await this.writeSummary(job, game, records, 'inProgress');
+    // Progress starts from the already-verified rows of a resumed pass.
+    let settledCount = Math.min(total, verifiedByPly.size);
+    await this.writeSummary(job, game, records, 'inProgress', {
+      scanProgress: { done: settledCount, total },
+    });
 
     const engineIdentity = this.resolveEngineIdentity(job);
     // A completed run's Game-analysis settings (job.config) may carry a threads
@@ -212,7 +230,9 @@ export class TacticalDetectionService {
 
     for (const candidate of candidates) {
       if (signal?.aborted) {
-        await this.writeSummary(job, game, records, 'queued');
+        await this.writeSummary(job, game, records, 'queued', {
+          scanProgress: { done: settledCount, total },
+        });
         return;
       }
       const reused = verifiedByPly.get(candidate.sourcePly);
@@ -225,12 +245,14 @@ export class TacticalDetectionService {
       // WP-C fast path: when the run's own stored analysis of this position is
       // a decisive complete mate line (same engine, deep enough), the mate is a
       // deterministic board fact — verify without a fresh tactical engine run.
-      const stored = recordsByPly.get(candidate.sourcePly);
-      if (stored) {
-        const fast = this.fastPathCandidate(candidate, engineIdentity, stored);
+      const storedRecord = recordsByPly.get(candidate.sourcePly);
+      if (storedRecord) {
+        const fast = this.fastPathCandidate(candidate, engineIdentity, storedRecord);
         if (fast) {
           await this.candidates.bulkPutForAnalysis([fast]);
           verified.push(fast);
+          settledCount += 1;
+          await this.persistScanProgress(job, game, records, settledCount, total);
           await this.persistAnnotatedRecords(records, verified);
           continue;
         }
@@ -243,32 +265,51 @@ export class TacticalDetectionService {
         threads,
       );
       if (outcome.kind === 'aborted') {
-        await this.writeSummary(job, game, records, 'queued');
+        await this.writeSummary(job, game, records, 'queued', {
+          scanProgress: { done: settledCount, total },
+        });
         return;
       }
       if (outcome.kind === 'engine-failed') {
+        // The engine run itself failed: the candidate is NOT settled (the pass
+        // ends `failed` so the next scan retries it). Its row is marked failed
+        // so the discard/retry state is visible.
         retryableFailures += 1;
         await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
         continue;
       }
       if (outcome.kind === 'rejected') {
+        // A Stage-2 guard gave a definitive verdict: the candidate is settled
+        // (discarded) and counts towards the scan progress.
+        settledCount += 1;
         await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
+        await this.persistScanProgress(job, game, records, settledCount, total);
         continue;
       }
       await this.candidates.bulkPutForAnalysis([outcome.candidate]);
       verified.push(outcome.candidate);
+      settledCount += 1;
+      await this.persistScanProgress(job, game, records, settledCount, total);
       await this.persistAnnotatedRecords(records, verified);
     }
 
     if (signal?.aborted) {
-      await this.writeSummary(job, game, records, 'queued');
+      await this.writeSummary(job, game, records, 'queued', {
+        scanProgress: { done: settledCount, total },
+      });
       return;
     }
     if (retryableFailures > 0) {
-      await this.writeSummary(job, game, records, 'failed');
+      await this.writeSummary(job, game, records, 'failed', {
+        scanProgress: { done: settledCount, total },
+      });
       return;
     }
-    await this.writeSummary(job, game, records, 'completed', verified.length, DETECTION_VERSION);
+    await this.writeSummary(job, game, records, 'completed', {
+      missedTacticCount: verified.length,
+      detectionVersion: DETECTION_VERSION,
+      scanProgress: { done: total, total },
+    });
   }
 
   /**
@@ -336,23 +377,34 @@ export class TacticalDetectionService {
     await this.analyses.replaceAnalysis(annotated);
   }
 
-  /** Persist one per-analysis summary row for the pass state. */
+  /** Persist one per-analysis summary row for the pass state + optional extras. */
   private async writeSummary(
     job: AnalysisJob,
     game: { readonly id: string; readonly userColor: Color },
     records: readonly MoveAnalysis[],
     state: SummaryDetectionState,
-    missedTacticCount?: number | null,
-    detectionVersion?: number | null,
+    extras: {
+      readonly missedTacticCount?: number | null;
+      readonly detectionVersion?: number | null;
+      readonly scanProgress?: ScanProgress | null;
+    } = {},
   ): Promise<void> {
     const options: BuildAnalysisSummaryOptions =
       state === 'completed'
         ? {
             detectionState: state,
-            ...(missedTacticCount !== undefined ? { missedTacticCount } : {}),
-            ...(detectionVersion !== undefined ? { detectionVersion } : {}),
+            ...(extras.missedTacticCount !== undefined
+              ? { missedTacticCount: extras.missedTacticCount }
+              : {}),
+            ...(extras.detectionVersion !== undefined
+              ? { detectionVersion: extras.detectionVersion }
+              : {}),
+            ...(extras.scanProgress !== undefined ? { scanProgress: extras.scanProgress } : {}),
           }
-        : { detectionState: state };
+        : {
+            detectionState: state,
+            ...(extras.scanProgress !== undefined ? { scanProgress: extras.scanProgress } : {}),
+          };
     const built = buildAnalysisSummary(records, game.userColor, options);
     const row: AnalysisSummaryRow = {
       analysisId: job.id,
@@ -362,6 +414,23 @@ export class TacticalDetectionService {
       ...built,
     };
     await this.summaries.putForAnalysis(row);
+  }
+
+  /**
+   * Persist the current scan progress (plan 013 W3) into an `inProgress`
+   * summary. Called after each candidate settles so a live scan's bar advances;
+   * also used mid-pass where the state stays `inProgress`.
+   */
+  private async persistScanProgress(
+    job: AnalysisJob,
+    game: { readonly id: string; readonly userColor: Color },
+    records: readonly MoveAnalysis[],
+    done: number,
+    total: number,
+  ): Promise<void> {
+    await this.writeSummary(job, game, records, 'inProgress', {
+      scanProgress: { done, total },
+    });
   }
 
   private resolveEngineIdentity(job: AnalysisJob): EngineIdentity {

@@ -104,6 +104,7 @@ export function analysisInsightsForGame(
     detectionState: summary.detectionState,
     hasCompletedDetection: detectionCompleted,
     missedTactics: detectionCompleted ? summary.missedTacticCount : null,
+    scanProgress: summary.scanProgress ?? null,
   };
 }
 

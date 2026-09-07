@@ -285,6 +285,7 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         obsolete={data.obsolete || serviceOutdated}
         detectionState={data.detectionState}
         detectionRunning={detectionRunning}
+        scanProgress={data.scanProgress}
         scanActionKind={scanActionKind}
         scanAvailable={Boolean(effectiveService?.scanGame)}
         onScanAction={() => {
@@ -334,6 +335,41 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
   );
 }
 
+/**
+ * Plan-013 W3: a compact numeric scan-progress readout shown inside the Review
+ * scan bar while the pass is running — settled candidates over total, tinted in
+ * the canonical missed-tactic magenta, with the numbers spelled out.
+ */
+function ScanProgressIndicator({
+  progress,
+}: {
+  progress: { readonly done: number; readonly total: number };
+}): React.JSX.Element {
+  const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  return (
+    <span
+      className={styles.scanProgress}
+      data-testid="review-scan-progress"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-label={`Verifying tactic ${progress.done} of ${progress.total}, ${percent} per cent`}
+    >
+      <span className={styles.scanProgressTrack}>
+        <span
+          className={styles.scanProgressFill}
+          style={{ width: `${percent}%` }}
+          data-testid="review-scan-progress-fill"
+        />
+      </span>
+      <span className={styles.scanProgressText} data-testid="review-scan-progress-text">
+        Verifying tactic {progress.done} of {progress.total} · {percent}%
+      </span>
+    </span>
+  );
+}
+
 function GameReview({
   pgn,
   userColor,
@@ -342,6 +378,7 @@ function GameReview({
   obsolete,
   detectionState,
   detectionRunning,
+  scanProgress,
   scanActionKind,
   scanAvailable,
   onScanAction,
@@ -357,6 +394,11 @@ function GameReview({
   detectionState: SummaryDetectionState | null;
   /** True while this analysis's detection pass is live in this session. */
   detectionRunning: boolean;
+  /**
+   * Live Stage-2 scan progress (`done`/`total` settled candidates) of the shown
+   * analysis's detection pass (plan 013 W3); `null` when none is recorded.
+   */
+  scanProgress: { readonly done: number; readonly total: number } | null;
   /** Which scan affordance applies for a non-live pass (`null` = none). */
   scanActionKind: 'resume' | 'retry' | 'run' | null;
   /** Whether the shared service exposes the on-demand scan entry point. */
@@ -956,9 +998,16 @@ function GameReview({
         <div className={styles.scanBar} data-testid="review-scan-bar" role="status">
           <span data-testid="review-scan-text">{SCAN_BAR_COPY[scanBar.kind]!.text}</span>
           {scanBar.kind === 'scanning' ? (
-            <Button variant="secondary" data-testid="review-scan-cancel" onClick={onCancelScan}>
-              {SCAN_BAR_COPY.scanning!.label}
-            </Button>
+            <>
+              {/* Plan-013 W3: numeric live progress (settled candidates over
+                  total) in the distinct missed-tactic colour. */}
+              {scanProgress && scanProgress.total > 0 ? (
+                <ScanProgressIndicator progress={scanProgress} />
+              ) : null}
+              <Button variant="secondary" data-testid="review-scan-cancel" onClick={onCancelScan}>
+                {SCAN_BAR_COPY.scanning!.label}
+              </Button>
+            </>
           ) : (
             <Button
               variant="secondary"

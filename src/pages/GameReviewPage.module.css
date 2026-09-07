@@ -64,6 +64,40 @@
   font-size: var(--font-size-sm);
 }
 
+/* Plan-013 W3: numeric live scan progress inside the Review scan bar. The
+   fill is the canonical missed-tactic magenta so a running tactics scan is
+   visually distinct from the blue analysis progress. */
+.scanProgress {
+  flex: 1 1 auto;
+  min-width: 8rem;
+  max-width: 22rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  color: var(--color-fg-muted);
+}
+
+.scanProgressTrack {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-bg-sunken);
+  overflow: hidden;
+}
+
+.scanProgressFill {
+  display: block;
+  height: 100%;
+  background: #c2185b;
+  transition: width var(--duration-fast, 120ms) var(--easing-standard, ease-out);
+}
+
+.scanProgressText {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .gameId {
   color: var(--color-fg-muted);
   font-size: var(--font-size-sm);

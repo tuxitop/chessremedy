@@ -437,6 +437,85 @@ describe('TacticalDetectionService — pass orchestration', () => {
     expect(summary?.detectionVersion).toBe(DETECTION_VERSION);
   });
 
+  it('persists monotonic scan progress as candidates settle (plan 013 W3)', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const secondPly = 10;
+    const secondFen = plan.moves[4]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+    const withSecond = [...records, fabricatedWhiteBlunder(game.id, job.id, secondPly, secondFen)];
+
+    const rig = createGatedEngine(new Map([[startingFen, mateResult(startingFen)]]), [secondFen]);
+    const service = serviceOf(rig.service);
+
+    const pass = service.runPassForCompletedJob(job, game, withSecond);
+    // The first candidate (mate) verified quickly; the second is held in flight.
+    await waitFor(() => rig.requests.length === 2);
+
+    // Progress persisted mid-pass: 1 of 2 candidates settled while `inProgress`.
+    let summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('inProgress');
+    expect(summary?.scanProgress).toEqual({ done: 1, total: 2 });
+
+    rig.release(secondFen, quietResult(secondFen));
+    await pass;
+
+    summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('completed');
+    expect(summary?.missedTacticCount).toBe(1);
+    expect(summary?.scanProgress).toEqual({ done: 2, total: 2 });
+  });
+
+  it('restores its scan totals when an interrupted pass resumes (plan 013 W3)', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const secondPly = 10;
+    const secondFen = plan.moves[4]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+    const withSecond = [...records, fabricatedWhiteBlunder(game.id, job.id, secondPly, secondFen)];
+
+    const rig = createGatedEngine(new Map([[startingFen, mateResult(startingFen)]]), [secondFen]);
+    const service = serviceOf(rig.service);
+
+    const controller = new AbortController();
+    const firstPass = service.runPassForCompletedJob(job, game, withSecond, controller.signal);
+    await waitFor(() => rig.requests.length === 2);
+    controller.abort();
+    await firstPass;
+
+    // Interrupted pass: the already-verified candidate stays counted.
+    let summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('queued');
+    expect(summary?.scanProgress).toEqual({ done: 1, total: 2 });
+
+    // Resume: totals restored before any new engine work, then settle fully.
+    const secondPass = service.runPassForCompletedJob(job, game, withSecond);
+    await waitFor(() => rig.requests.length === 3);
+    summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('inProgress');
+    expect(summary?.scanProgress).toEqual({ done: 1, total: 2 });
+
+    rig.release(secondFen, quietResult(secondFen));
+    await secondPass;
+
+    summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('completed');
+    expect(summary?.missedTacticCount).toBe(1);
+    expect(summary?.scanProgress).toEqual({ done: 2, total: 2 });
+  });
+
   it('serves Stage-2 from the ADR-018 cache without touching the engine', async () => {
     const game = fixtureGame(BULLET_ID);
     const job = completedJobFor(game);

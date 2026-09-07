@@ -772,6 +772,68 @@ describe('Game Review scan activity bar (plan 012, WP-B)', () => {
     await waitFor(() => expect(cancelScan).toHaveBeenCalledWith(GAME.id));
   });
 
+  it('shows the numeric magenta scan progress while a live scan runs (plan 013 W3)', async () => {
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const built = buildAnalysisSummary(records, 'white', {
+      detectionState: 'inProgress',
+      scanProgress: { done: 1, total: 3 },
+    });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...built,
+    });
+
+    const base = createFakeAnalysisService().service;
+    const service: AnalysisServiceLike = {
+      analyzeGames: (ids, profile, run) => base.analyzeGames(ids, profile, run),
+      statusesOf: (ids, expected) => base.statusesOf(ids, expected),
+      listActiveJobs: () => base.listActiveJobs(),
+      cancelGame: (id) => base.cancelGame(id),
+      activeDetectionGames: async (): Promise<string[]> => [GAME.id],
+      cancelScan: async () => undefined,
+    };
+    renderReview(service);
+    await screen.findByTestId('review-layout');
+
+    const progress = await screen.findByTestId('review-scan-progress');
+    expect(progress).toHaveAttribute('role', 'progressbar');
+    expect(progress).toHaveAttribute('aria-valuenow', '33');
+    expect(progress).toHaveAttribute('aria-label', 'Verifying tactic 1 of 3, 33 per cent');
+    expect(within(progress).getByTestId('review-scan-progress-text')).toHaveTextContent(
+      'Verifying tactic 1 of 3 · 33%',
+    );
+  });
+
+  it('does not claim scan progress when the pass is not live', async () => {
+    // A persisted in-progress summary with progress, but the service does not
+    // report the game as live: the bar must not be drawn (interrupted pass).
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const built = buildAnalysisSummary(records, 'white', {
+      detectionState: 'inProgress',
+      scanProgress: { done: 1, total: 3 },
+    });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...built,
+    });
+
+    const service = createFakeAnalysisService().service;
+    renderReview(service);
+    await screen.findByTestId('review-layout');
+
+    const bar = await screen.findByTestId('review-scan-bar');
+    expect(bar).toHaveTextContent('Tactics scan interrupted');
+    expect(screen.queryByTestId('review-scan-progress')).not.toBeInTheDocument();
+  });
+
   it('offers Cancel analysis while a job is queued/in progress', async () => {
     await gamesRepository.saveGame(GAME);
     const job = createAnalysisJob(GAME.id, TEST_ENGINE, 4, 1);

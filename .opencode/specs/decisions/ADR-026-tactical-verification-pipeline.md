@@ -11,19 +11,34 @@ runs after the per-game analysis (Feature 008) has been completed.
 
 ### Stage 1 — Candidate generation (cheap, no new engine work)
 
-For each analyzed ply *p* in a game:
+Stage 1 runs over the persisted `MoveAnalysis` records of a completed
+run (Feature 008). **Version 2** of the candidate rules (plan 013) uses a
+**position-centric** model ported from the lichess-puzzler generator
+(method + thresholds only; the AGPL/no-license sources are references — no
+code is copied, see `specs/research/tactical-detection.md`). For each user
+ply *p*, a raw candidate is emitted when `playedMove != bestMove`, the
+ply is not a book position, both evaluations exist, and **any** of:
 
-1. Read `MoveAnalysis[p]` (already produced by the bulk analysis).
-2. Compute `wpLoss = wpBefore - wpAfterUserMove` (see
-   `specs/research/move-classification.md`).
-3. If `wpLoss ≥ 10` (mistake-or-worse band, ADR-023) AND
-   `playedMove != bestMove` AND the position is not a book
-   position, emit a raw `puzzleCandidate` tagged with the
-   source game, ply, FEN, best move, best PV, and the metadata
-   needed by Stage 2.
+1. **Today's rule (kept).** `wpLoss ≥ 5` (the ADR-023 inaccuracy band —
+   `WPLOSS_INACCURACY`; the pre-v2 ADR wording of `≥ 10` is superseded by
+   the implemented band).
+2. **Opponent-conceded swing.** The opponent's immediately-previous ply
+   dropped its own mover-perspective win-% by ≥ 25 points to the user
+   (mover-normalized): the opponent just handed the user a tactic that a
+   quiet non-best reply failed to punish.
+3. **Missed decisive / missed mate.** The user's `evalBefore` is already
+   decisive for the user — a user forced mate within 8 plies, or a
+   user-perspective centipawn edge ≥ +300 — yet the best move was not
+   played. (Lichess excludes these from its public DB as trivial; personal
+   training wants exactly "I missed the win".)
+4. **Quiet / small-loss miss.** The played move lost `[1, 5)` win-% but the
+   engine's best first move is forcing (a check or capture), so a real
+   tactic existed despite the small swing.
 
-This stage does no new engine work — every blunder and mistake in
-the user's games is already represented in `MoveAnalysis[]`.
+The emitted set is capped at `MAX_CANDIDATES_PER_GAME` (16) and ordered by
+the swing magnitude, so verification runs the biggest moments first and an
+error-heavy game never triggers an unbounded engine load. The candidate
+rule change is versioned via `CANDIDATE_GENERATION_VERSION` (1 → 2).
 
 ### Stage 2 — Verification (one tactical-profile run per candidate)
 
@@ -46,6 +61,12 @@ For each raw candidate:
    - Reject if no candidate move achieves a tactical objective.
    - Reject if the tactical objective is reachable by a
      non-forcing alternative (the "only one good move" guard).
+   - Reject if the best move is not **unique** (plan 013 W2): for a
+     non-mate objective the best line must beat the best
+     distinct-first-move alternative by ≥ 0.7 winning-chance
+     (lichess unicity) — a second, nearly-as-good move makes the
+     tactic ambiguous. `forcing_mate` paths are exempt (a walked
+     board mate is deterministic).
    - Reject if the WDL at the end of the line does not match the
      classified objective.
    - Reject if the line requires > 8 plies.
@@ -120,7 +141,18 @@ Full evaluation: `specs/research/tactical-detection.md`.
   immediately after Feature 008 finishes a game.
 - Stage 2 is the dominant cost. Per game with ~5 candidates, expect
   ~5 × 15 s = ~75 s of tactical-profile analysis on a desktop, more
-  on mobile.
+  on mobile. Plan 013 bounds the cost per game with
+  `MAX_CANDIDATES_PER_GAME` (16) and orders candidates by swing so the
+  biggest moments verify first; a node/time engine override was
+  considered but not applied (it would change the ADR-018 cache scope
+  and verification determinism for little gain under the cap).
+- Detection passes persist live **scan progress** (`scanProgress
+  { done, total }` on the per-analysis summary, plan 013 W3) as each
+  Stage-2 candidate settles (verified or rejected/failed by a guard;
+  engine-failed candidates stay pending). The UI shows the numeric bar
+  only while the pass is genuinely running in the session — an
+  interrupted pass never claims progress. Writing progress is one
+  small IndexedDB put per settled candidate (≤ the 16-candidate cap).
 - The pipeline depends on Feature 005 (Stockfish), Feature 008
   (game analysis), and ADR-018 (cache). It cannot run before those
   exist.
@@ -129,7 +161,10 @@ Full evaluation: `specs/research/tactical-detection.md`.
   retain their original detection version. Version 2 introduced the
   stored-analysis fast path above; candidates verified from stored
   analysis carry `verificationSource: 'stored-analysis'` (fresh tactical
-  runs carry `'tactical-search'`).
+  runs carry `'tactical-search'`). Version 3 added the Stage-2 **unicity
+  gate** (`best-move-not-unique`), which makes the MultiPV-dependent
+  guards stricter; the candidate-rule change of plan 013 is versioned
+  separately by `CANDIDATE_GENERATION_VERSION` (now 2).
 
 ## Sources
 

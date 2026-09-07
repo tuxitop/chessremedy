@@ -54,6 +54,14 @@ export interface GameRowInsights {
    * `null` until the pass completed; absent when no completed analysis.
    */
   readonly missedTactics?: number | null;
+  /**
+   * Live Stage-2 scan progress (`done`/`total` settled candidates) of the
+   * latest completed analysis's detection pass (plan 013 W3). Absent/`null` on
+   * rows whose pass has not recorded progress. The Library renders a progress
+   * bar from this value only while the shared service reports the game as
+   * live — it never claims progress for an interrupted pass.
+   */
+  readonly scanProgress?: { readonly done: number; readonly total: number } | null;
   readonly puzzleCount?: number;
   readonly masteredPuzzleCount?: number;
 }

@@ -164,6 +164,7 @@ type LibraryGameView = GameSummary & {
       | 'queued' | 'inProgress'      //   scheduled; running only if the service says so
       | 'completed' | 'failed';      //   completed ⇒ missedTactics is a real number
     missedTactics: number;            // user-side, only when a detection pass completed (010)
+    scanProgress: { done, total } | null; // live Stage-2 progress of the pass (010, plan 013 W3)
     puzzleCount: number;              // 011
     masteredPuzzleCount: number;      // 012/013/014
   }>;
@@ -213,6 +214,13 @@ Strip semantics:
   is a failed attempt and `absent` is "Tactics not scanned". The Library
   refreshes the strip while a scan is live and stops as soon as nothing
   is running, so an interrupted pass never keeps polling.
+- **Numeric scan progress** (plan 013 W3): while a pass is genuinely
+  running, the row shows a distinct-colour progress bar fed by
+  `scanProgress { done, total }` ("Verifying tactic X of Y…", numbers
+  spelled out). `done` counts candidates that have settled (verified or
+  rejected by a Stage-2 guard) out of the Stage-1 `total`. A resumed
+  pass restores its `done` from already-verified rows. Absent rows
+  (older passes) have no bar, and an interrupted pass never draws one.
 
 Formatting and layout notes:
 

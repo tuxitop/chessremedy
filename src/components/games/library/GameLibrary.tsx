@@ -203,6 +203,10 @@ export function GameLibrary({
       return;
     }
     let disposed = false;
+    // Plan-013 W3: while a scan is live, refresh rows at a slow cadence so the
+    // persisted scanProgress advances the row's bar; never more often than
+    // every few seconds, and never while a reload is already in flight.
+    let lastScanReload = 0;
     const tick = async (): Promise<void> => {
       if (disposed) {
         return;
@@ -247,6 +251,17 @@ export function GameLibrary({
           libraryRef.current.reload();
           break;
         }
+      }
+      // Live scan progress refresh (plan 013 W3): while a displayed game's scan
+      // is genuinely running, reload at a throttled cadence so its persisted
+      // `done/total` advances the distinct-colour progress bar.
+      const liveOnRows = [...active].some((id) =>
+        libraryRef.current.rows.some((row) => row.id === id),
+      );
+      const nowMs = Date.now();
+      if (liveOnRows && !libraryRef.current.loading && nowMs - lastScanReload > 2_500) {
+        lastScanReload = nowMs;
+        libraryRef.current.reload();
       }
       activeDetectionRef.current = active;
     };
@@ -357,11 +372,26 @@ export function GameLibrary({
     }
   }
   if (busyScanIds.length > 0) {
-    busyParts.push(
+    const scanPart =
       busyScanIds.length === 1
         ? '1 tactics scan running'
-        : `${busyScanIds.length} tactics scans running`,
-    );
+        : `${busyScanIds.length} tactics scans running`;
+    busyParts.push(scanPart);
+    // Plan-013 W3: surface the live numeric progress of the running scans
+    // (settled candidates over total) from the persisted summaries.
+    let scanDone = 0;
+    let scanTotal = 0;
+    for (const id of busyScanIds) {
+      const row = library.rows.find((candidate) => candidate.id === id);
+      const progress = row?.scanProgress;
+      if (progress && progress.total > 0) {
+        scanDone += progress.done;
+        scanTotal += progress.total;
+      }
+    }
+    if (scanTotal > 0) {
+      busyParts.push(`${scanDone}/${scanTotal} candidates verified`);
+    }
   }
   const busyLine = busyParts.length > 0 ? busyParts.join(' · ') : 'Engine work is running…';
 
@@ -681,6 +711,9 @@ function GameRows({
             enabled={scanEnabled}
             onScan={onScan}
           />
+          {scanProgressVisible(row, activeDetectionIds.has(row.id)) ? (
+            <RowScanProgressBar gameId={row.id} progress={row.scanProgress!} />
+          ) : null}
           {analysis?.perGameProgress[row.id] ? (
             <RowProgressBar gameId={row.id} progress={analysis.perGameProgress[row.id]!} />
           ) : null}
@@ -1332,6 +1365,60 @@ function positionPercent(progress: GameAnalysisProgress): number {
     return 0;
   }
   return Math.round((progress.completedPositions / progress.totalPositions) * 100);
+}
+
+/**
+ * True when a row should show the distinct-colour tactics-scan progress bar:
+ * the pass is genuinely running **in this session** and the persisted summary
+ * has recorded a Stage-2 total. An interrupted pass never claims progress.
+ */
+function scanProgressVisible(row: LibraryGameRow, live: boolean): boolean {
+  if (!live) {
+    return false;
+  }
+  if (row.detectionState !== 'queued' && row.detectionState !== 'inProgress') {
+    return false;
+  }
+  const progress = row.scanProgress;
+  return progress !== null && progress !== undefined && progress.total > 0;
+}
+
+/**
+ * Plan-013 W3: full-width scan progress strip under a row whose detection pass
+ * is running right now. Same bar shape as the analysis progress bar, visually
+ * distinct in the canonical missed-tactic magenta, with the numbers spelled out
+ * for assistive tech ("Verifying tactic X of Y").
+ */
+function RowScanProgressBar({
+  gameId,
+  progress,
+}: {
+  gameId: string;
+  progress: { readonly done: number; readonly total: number };
+}): React.JSX.Element {
+  const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  return (
+    <div
+      className={`${styles.rowProgressBar} ${styles.scanProgressBar}`}
+      data-testid={`game-scan-progress-${gameId}`}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-label={`Verifying tactic ${progress.done} of ${progress.total}, ${percent} per cent`}
+    >
+      <span className={styles.rowProgressTrack}>
+        <span
+          className={`${styles.rowProgressFill} ${styles.scanProgressFill}`}
+          style={{ width: `${percent}%` }}
+          data-testid={`game-scan-progress-fill-${gameId}`}
+        />
+      </span>
+      <span className={styles.rowProgressText} data-testid={`game-scan-progress-text-${gameId}`}>
+        Verifying tactic {progress.done} of {progress.total} · {percent}%
+      </span>
+    </div>
+  );
 }
 
 function Pagination({

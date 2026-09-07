@@ -236,14 +236,15 @@ describe('verifyCandidate — alternative-move guard', () => {
     expectReason(input, 'non-forcing-alternative-reaches-objective');
   });
 
-  it('allows a forcing alternative first move that reaches the same objective', () => {
-    // Nxf7 (a capture) reaches the same decisive_advantage but is forcing, so
-    // the candidate survives the alternative-move guard and verifies.
+  it('allows a clearly-worse forcing alternative first move that would be near-best', () => {
+    // Nxf7 (a capture, forcing) is clearly worse than the best line (+100 vs
+    // +900): it survives both the alternative-move guard and the unicity gate
+    // (plan 013 W2) and the candidate verifies.
     const input = verifyInput({
       candidate: makeCandidate({ evalCpBefore: 0 }),
       lines: [
         makeLine({ multipv: 1, uci: ['h2h3'], evalCp: 900 }),
-        makeLine({ multipv: 2, uci: ['g5f7'], evalCp: 900 }),
+        makeLine({ multipv: 2, uci: ['g5f7'], evalCp: 100 }),
       ],
     });
     const verified = asVerified(verifyCandidate(input));
@@ -251,6 +252,75 @@ describe('verifyCandidate — alternative-move guard', () => {
     expect(verified.tacticalObjective).toBe('decisive_advantage');
     expect(verified.candidateSolutionLength).toBe(1);
     expect(verified.verificationStatus).toBe('verified');
+  });
+});
+
+describe('verifyCandidate — unicity gate (plan 013 W2)', () => {
+  it('rejects when the best alternative is as good as the best move (ambiguous)', () => {
+    // Two distinct first moves, both quiet and both reading decisive at +900:
+    // the tactic is not unique.
+    const input = verifyInput({
+      candidate: makeCandidate({ evalCpBefore: 0 }),
+      lines: [
+        makeLine({ multipv: 1, uci: ['h2h3'], evalCp: 900 }),
+        makeLine({ multipv: 2, uci: ['g5f7'], evalCp: 900 }),
+      ],
+    });
+    expectReason(input, 'best-move-not-unique');
+  });
+
+  it('rejects a near-equal second move below the winning-chance gap', () => {
+    // Best h2h3 at +900 (≈ 0.947 winning chance) vs the forcing Nxf7 at +800
+    // (≈ 0.922): the forcing alternative bypasses the alternative-move guard but
+    // the winning-chance gap is far below UNICITY_MIN_WIN_CHANCE_GAP, so the
+    // best move is not unique and the candidate is rejected.
+    const input = verifyInput({
+      candidate: makeCandidate({ evalCpBefore: 0 }),
+      lines: [
+        makeLine({ multipv: 1, uci: ['h2h3'], evalCp: 900 }),
+        makeLine({ multipv: 2, uci: ['g5f7'], evalCp: 800 }),
+      ],
+    });
+    expectReason(input, 'best-move-not-unique');
+  });
+
+  it('never applies the unicity gate to a forcing-mate objective', () => {
+    // 4.Qxf7# (h5f7) is a walked one-move board mate: a forcing_mate objective
+    // skips the unicity gate (a mate is deterministic) and verifies even though
+    // a quiet alternative (h2h3) reads decisive-near-equal.
+    const mateFen = 'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4';
+    const input = verifyInput({
+      candidate: makeCandidate({
+        startingFen: mateFen,
+        bestMove: 'h5f7',
+        bestPv: ['h5f7'],
+        evalCpBefore: null,
+      }),
+      lines: [
+        makeLine({
+          multipv: 1,
+          uci: ['h5f7'],
+          evalCp: null,
+          evalMate: 1,
+          wdl: { w: 1000, d: 0, l: 0 },
+        }),
+        makeLine({ multipv: 2, uci: ['h2h3'], evalCp: 900, wdl: { w: 950, d: 40, l: 10 } }),
+      ],
+    });
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.tacticalObjective).toBe('forcing_mate');
+    expect(verified.candidateSolutionLength).toBe(1);
+  });
+
+  it('keeps the WDL-consistency guard reachable after the unicity gate', () => {
+    // Top line unique (only line), so unicity is vacuous; the end WDL still
+    // contradicts the winning_material objective and rejects.
+    expectReason(
+      verifyInput({
+        lines: [makeLine({ wdl: { w: 100, d: 50, l: 850 } })],
+      }),
+      'wdl-inconsistent',
+    );
   });
 });
 

@@ -215,6 +215,54 @@ describe('buildAnalysisSummary (detection holder: absent vs zero)', () => {
   });
 });
 
+describe('buildAnalysisSummary (scan progress, plan 013 W3)', () => {
+  it('defaults to a null scanProgress for rows that never recorded progress', () => {
+    const built = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      detectionState: 'inProgress',
+    });
+    expect(built.scanProgress).toBeNull();
+  });
+
+  it('records live progress on an inProgress pass', () => {
+    const built = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      detectionState: 'inProgress',
+      scanProgress: { done: 1, total: 3 },
+    });
+    expect(built.scanProgress).toEqual({ done: 1, total: 3 });
+    expect(built.missedTacticCount).toBeNull();
+  });
+
+  it('retains progress on an interrupted (queued) pass for resumability', () => {
+    const built = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      detectionState: 'queued',
+      scanProgress: { done: 2, total: 4 },
+    });
+    expect(built.scanProgress).toEqual({ done: 2, total: 4 });
+  });
+
+  it('persists the completed pass with its final progress and count', () => {
+    const built = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      detectionState: 'completed',
+      missedTacticCount: 2,
+      detectionVersion: 3,
+      scanProgress: { done: 4, total: 4 },
+    });
+    expect(built.scanProgress).toEqual({ done: 4, total: 4 });
+    expect(built.missedTacticCount).toBe(2);
+    expect(built.detectionVersion).toBe(3);
+  });
+
+  it('never counts progress writes as a missed-tactic count on a failed pass', () => {
+    const built = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      detectionState: 'failed',
+      scanProgress: { done: 3, total: 5 },
+    });
+    expect(built.scanProgress).toEqual({ done: 3, total: 5 });
+    expect(built.missedTacticCount).toBeNull();
+    expect(built.detectionVersion).toBeNull();
+  });
+});
+
 describe('buildAnalysisSummary (immutability)', () => {
   it('does not mutate the records or the options', () => {
     const records = blunderGameRecords(GAME, ANALYSIS);

@@ -585,6 +585,19 @@
   transition: width var(--duration-fast, 120ms) var(--easing-standard, ease-out);
 }
 
+/* Plan-013 W3: the tactics-scan progress fill uses the canonical missed-tactic
+   magenta so a running scan is visually distinct from an analysis run. */
+.scanProgressFill {
+  background: #c2185b;
+}
+
+/* Plan-013 W3: a live tactics-scan row strip. Reuses the analysis row progress
+   bar shape (.rowProgressBar is applied alongside) with a magenta top rule so
+   the two bars stay the same shape yet visually different. */
+.scanProgressBar {
+  border-top-color: #c2185b;
+}
+
 .rowProgressText {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;

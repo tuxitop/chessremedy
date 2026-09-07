@@ -76,6 +76,15 @@
  * SAME objective rejects the candidate. Forcing alternatives that also reach
  * it are allowed and simply raise the difficulty estimate's candidate count.
  *
+ * ## Unicity gate (plan 013 W2)
+ *
+ * On top of the alternative-move guard, a non-mate objective additionally
+ * requires the best line to beat the best distinct-first-move alternative by
+ * `UNICITY_MIN_WIN_CHANCE_GAP` winning-chance — so a second move that is
+ * *nearly as good* (even a forcing one) rejects as ambiguous
+ * (`best-move-not-unique`). `forcing_mate` lines are exempt: a walked board
+ * mate is deterministic and keeps the forcing walk.
+ *
  * WDL-consistency and mate thresholds follow ADR-026 / research §3 step 3;
  * threshold changes must bump `DETECTION_VERSION` (ADR-026).
  *
@@ -105,6 +114,7 @@ export const VERIFICATION_REJECTION_REASONS = [
   'no-objective',
   '>8-plies',
   'non-forcing-alternative-reaches-objective',
+  'best-move-not-unique',
   'wdl-inconsistent',
   'difficulty-below-15',
 ] as const;
@@ -144,6 +154,17 @@ export const WDL_WINNING_END_MAX_LOSS_PERMILLE = 800;
  * engine WDL must read `(1000, 0, 0)`.
  */
 export const WDL_MATE_END_MIN_WIN_PERMILLE = 1000;
+
+/**
+ * Unicity gate (plan 013 W2): for a non-mate objective the best line must beat
+ * the best distinct-first-move alternative by at least this winning-chance gap
+ * (lichess-puzzler unicity, on the `[−1, 1]` winning-chance scale of the
+ * Lichess curve — ported method + threshold, no code copied). A second move
+ * that is nearly as good makes the tactic ambiguous, so the candidate is
+ * rejected. `forcing_mate` paths are exempt: a walked board mate is a
+ * deterministic fact and keeps the forcing walk.
+ */
+export const UNICITY_MIN_WIN_CHANCE_GAP = 0.7;
 
 /** One MultiPV line of the tactical-profile verification run. */
 export interface TacticalCandidateLine {
@@ -213,6 +234,19 @@ function numericCp(cp: number | null, mate: number | null): number | null {
     return mate > 0 ? 10_000 : -10_000;
   }
   return null;
+}
+
+/**
+ * Lichess winning-chance value of an end evaluation on the `[−1, 1]` scale
+ * (`2 / (1 + exp(−0.004·cp)) − 1`; a mate maps to ±1). This is the scale the
+ * unicity gap threshold is expressed in (plan 013 W2).
+ */
+function winChanceOfLine(line: TacticalCandidateLine): number {
+  if (line.evalMate !== null) {
+    return line.evalMate > 0 ? 1 : -1;
+  }
+  const cp = line.evalCp ?? 0;
+  return 2 / (1 + Math.exp(-0.004 * cp)) - 1;
 }
 
 function walkPrefix(fen: string, uci: readonly string[], plies: number): LineWalk | null {
@@ -416,9 +450,9 @@ export function wdlContradictsObjective(objective: TacticalObjective, wdl: Wdl |
  * Order of guards (ADR-026): engine-line integrity (`no-lines`, `bad-line`,
  * `draw-line`), objective reachability (`no-objective` / `>8-plies`), the
  * ADR-025 difficulty floor (`difficulty-below-15`), the alternative-move
- * guard (`non-forcing-alternative-reaches-objective`) and WDL consistency
- * (`wdl-inconsistent`). Deterministic: the result is a pure function of the
- * input.
+ * guard (`non-forcing-alternative-reaches-objective`), the plan-013 unicity
+ * gate (`best-move-not-unique`) and WDL consistency (`wdl-inconsistent`).
+ * Deterministic: the result is a pure function of the input.
  */
 export function verifyCandidate(input: TacticalVerificationInput): VerifyResult {
   const { candidate, lines, now, verificationDepth, engine } = input;
@@ -464,6 +498,7 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
   const alternatives: Array<{
     readonly firstForcing: boolean;
     readonly scan: PrefixScanOutcome;
+    readonly winChance: number;
   }> = [];
   for (const line of lines.slice(1)) {
     const firstMove = line.uci[0];
@@ -477,7 +512,11 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
     }
     const firstPly = firstWalk.plies[0];
     const firstForcing = firstPly !== undefined && (firstPly.isCheck || firstPly.isCapture);
-    alternatives.push({ firstForcing, scan: prefixScan(fen, line, startEvalCp) });
+    alternatives.push({
+      firstForcing,
+      scan: prefixScan(fen, line, startEvalCp),
+      winChance: winChanceOfLine(line),
+    });
   }
 
   // Difficulty estimate (ADR-025 formula, ADR-026 ≥ 15 floor). `lineLength`,
@@ -512,6 +551,20 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
   for (const alternative of alternatives) {
     if (!alternative.firstForcing && alternative.scan.objective === objective) {
       return reject('non-forcing-alternative-reaches-objective');
+    }
+  }
+
+  // Unicity gate (plan 013 W2): for a non-mate objective the best move must be
+  // clearly better than every alternative (distinct first move). A second move
+  // nearly as good makes the tactic ambiguous, so the candidate is rejected.
+  if (objective !== 'forcing_mate' && alternatives.length > 0) {
+    const bestChance = winChanceOfLine(topLine);
+    const bestAlternativeChance = alternatives.reduce(
+      (max, alternative) => Math.max(max, alternative.winChance),
+      Number.NEGATIVE_INFINITY,
+    );
+    if (bestChance - bestAlternativeChance < UNICITY_MIN_WIN_CHANCE_GAP) {
+      return reject('best-move-not-unique');
     }
   }
 

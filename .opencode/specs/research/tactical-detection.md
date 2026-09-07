@@ -21,6 +21,28 @@ not find it?
 6. `specs/research/puzzle-generation.md` (downstream consumer).
 7. ADR-005, ADR-006, ADR-012, ADR-018, ADR-019, ADR-020.
 
+**Plan-013 algorithm sources (provenance).** The position-centric
+Stage-1 model and the Stage-2 unicity threshold port the candidate
+rules of the open-source generators below. These repos are used as
+**references only** (facts and thresholds are not copyrightable
+expression; the re-implementation in `src/domain/tactics/` is
+original and none of their code is vendored):
+
+- `ornicar/lichess-puzzler` (AGPL-3.0): candidate keying on the eval
+  swing of the move just played, both-sides scanning, mate handling
+  and the "winning move beats the second move by ≥ 0.7 win-chance"
+  unicity gate.
+- `JakimPL/Chess-Tactic-Finder` (no license — reference only, do not
+  copy): per-ply tactic search with solver/defender variation trees;
+  rejected for V1 cost (one MultiPV-5 engine search per ply).
+- `vitogit/pgn-tactics-generator` (MIT): cheap swing prefilter then
+  best-move-clarity rejection.
+
+ChessRemedy's own product choice keeps the mined tactics **on the
+user's turns only** and V1 stays **missed-only** (the user's own
+successful tactics are a recorded Feature-011 follow-up, not built
+here).
+
 ## Findings
 
 ### 1. Definition (V1)
@@ -66,26 +88,44 @@ tactical detection has two stages:
 **Stage 1 — Candidate generation** (Feature 010, runs on every
 analyzed game).
 
-For each analyzed ply *p* in the user's games:
+Stage 1 v2 (plan 013) is **position-centric**: it keys on positions
+where a tactic was *available on the user's turn*, not only on user
+errors. The model ports the lichess-puzzler generator's candidate
+method (position keying + unicity, see §5; `ornicar/lichess-puzzler`
+is AGPL-3.0 — used as a **reference only**; its method and thresholds
+are re-implemented, none of its code is vendored). For each analyzed
+user ply *p*:
 
-1. Read `MoveAnalysis[p]` from the bulk analysis (Feature 008).
+1. Read `MoveAnalysis[p]` from the bulk analysis (Feature 008) and the
+   opponent's immediately-previous ply `MoveAnalysis[p − 1]`.
 2. Compute `wpLoss = wpBefore - wpAfterUserMove` (see
    `move-accuracy.md`).
-3. If `wpLoss ≥ 10` (the "mistake" or worse band, per
-   `move-classification.md`) AND `playedMove != bestMove`, emit a
-   raw candidate tagged with:
-   - `sourceGameId`
-   - `sourcePly`
-   - `startingFen`
-   - `bestMove`, `bestPv`
-   - `wpLoss`, `evalCpBefore`, `evalCpAfterUserMove`
-   - `candidateGenerationVersion`
+3. Emit a raw candidate when `playedMove != bestMove` (the position is
+   not a book position and both evaluations exist) and **any** of:
+   - `wpLoss ≥ 5` (the ADR-023 inaccuracy band; today's rule);
+   - the opponent's previous ply **conceded a swing** to the user —
+     its own mover-perspective win-% dropped ≥ 25 points (≈ 0.25
+     win-chance), so a tactic was available that a quiet reply failed
+     to punish;
+   - the user's `evalBefore` was **already decisive** — a user forced
+     mate within 8 plies or a user-perspective edge ≥ +300 cp — so
+     the best (mate/forcing) move was missed even though the played
+     move kept a decent evaluation;
+   - a **quiet / small-loss miss**: `wpLoss` in `[1, 5)` and the
+     engine's best first move is forcing (a check or a capture).
+4. Tag each candidate with `sourceGameId`, `sourcePly`, `startingFen`,
+   `bestMove`, `bestPv`, `wpLoss`, `evalCpBefore`, `evalCpAfterUserMove`
+   and `candidateGenerationVersion`.
+
+The emitted set is **capped per game** (`MAX_CANDIDATES_PER_GAME = 16`)
+and ordered by the swing magnitude (biggest first) so the verification
+pass always finishes in bounded engine time and verifies the biggest
+moments first.
 
 This is the cheap "first pass" filter. It runs over the existing
-bulk analysis and produces raw candidates for almost every
-mistake/blunder. Most of these are not actually tactical (the
-engine's best line may be a quiet improvement), so they need to be
-filtered.
+bulk analysis with no new engine work; most raw candidates are not
+actually tactical (the engine's best line may be a quiet
+improvement), so they still need Stage-2 filtering.
 
 **Stage 2 — Verification** (Feature 010, on each raw candidate).
 
@@ -144,25 +184,31 @@ positional improvements.
 
 ### 5. False-positive guards
 
-The two largest sources of false positives in V1 are:
+Stage 2 rejects a raw candidate when (guards run in this order):
 
-1. **"Best move is the only good move anyway"** — the user's move
-   is not a tactical miss, just a quieter alternative that still
-   loses slowly. Guard: require at least one alternative move to
-   score ≥ 80 % of the best move's accuracy contribution; if no
-   alternative does, the position is "only one good move" and is
-   rejected.
-2. **"The tactical line requires deep calculation humans cannot
-   reasonably do"** — the engine finds a 7-ply tactic that no
-   human would spot. Guard: difficulty score (ADR-025) must be ≥
-   15 (the "easy" bucket minimum). Below this, the candidate is
-   rejected. This is a quality filter, not a content filter.
+1. **No candidate move reaches an objective** (`no-objective` /
+   `>8-plies`) — the best line may be a quiet improvement.
+2. **An alternative first move reaches the same objective** by a
+   non-forcing line (`non-forcing-alternative-reaches-objective`) —
+   the "only one good move" guard.
+3. **The best move is not unique** (`best-move-not-unique`, plan 013
+   W2): for a non-mate objective the best line must beat the best
+   distinct-first-move alternative by ≥ 0.7 winning-chance (lichess
+   unicity, §0/Sources). A second nearly-as-good move makes the
+   tactic ambiguous. `forcing_mate` paths are exempt (a walked board
+   mate is deterministic).
+4. **The difficulty estimate is below 15** (ADR-025) — a quality
+   filter, not a content filter.
+5. **The end WDL contradicts the objective** (`wdl-inconsistent`).
 
-A third potential issue is **non-forcing tactical themes** (zugzwang,
-positional sacrifices). V1 explicitly excludes these from the
-`missedTactic` flag because they are not detectable as forcing
-misses. They are still classified as `mistake` or `blunder` if
-their evaluation loss is large.
+The older accuracy-phrased wording ("require an alternative to score
+≥ 80 % of the best move") is superseded by the guards above.
+
+Two further V1 scope notes: **non-forcing tactical themes** (zugzwang,
+positional sacrifices) stay outside the `missedTactic` flag because they
+are not detectable as forcing misses, and the number of engine searches
+per game is bounded by the Stage-1 candidate cap (`MAX_CANDIDATES_PER_GAME`
+= 16) so long scans stay resumable and cancellable.
 
 ### 6. Engine profile and depth
 
@@ -211,11 +257,11 @@ does not implement this optimisation.
   long-term advantage). Detection requires deeper positional
   evaluation than V1 supports.
 - **Defensive tactics** where the user is being attacked and has a
-  forcing resource to escape. These are detected only if the
-  classification `wpLoss ≥ 10` puts the position in the
-  mistake-or-worse band AND the user's resource produces a
-  `neutralizing_threat` outcome. Quiet defensive moves are not
-  flagged.
+  forcing resource to escape. These are detected only if the user's
+  resource produces a `neutralizing_threat` outcome from a candidate
+  emitted by the Stage-1 rules (the inaccuracy band, a conceded
+  swing, or a decisive/mate position); quiet defensive only-moves
+  below those triggers are not flagged.
 - **Tactics requiring > 8 plies.** Capped by the verification
   stage.
 - **Transpositions.** A tactic reachable by a different move order

@@ -475,6 +475,61 @@ describe('GameLibrary resumable scans + persistent engine activity (plan 012, WP
     expect(screen.queryByTestId(`row-scan-resume-${game.id}`)).not.toBeInTheDocument();
   });
 
+  it('shows the distinct-colour tactics-scan progress bar while the pass is live (plan 013 W3)', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'inProgress',
+      scanProgress: { done: 2, total: 4 },
+    });
+    const service = serviceWithScan();
+    service.scanning.add(game.id);
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    // The live-scan bar carries the numeric progress with the numbers spelled
+    // out (a11y) and the strip keeps its "scanning" note (never a silent zero).
+    const progress = await screen.findByTestId(`game-scan-progress-${game.id}`);
+    expect(progress).toHaveAttribute('role', 'progressbar');
+    expect(progress).toHaveAttribute('aria-valuenow', '50');
+    expect(progress).toHaveAttribute('aria-label', 'Verifying tactic 2 of 4, 50 per cent');
+    expect(within(progress).getByTestId(`game-scan-progress-text-${game.id}`)).toHaveTextContent(
+      'Verifying tactic 2 of 4 · 50%',
+    );
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-detection-pending')).toHaveTextContent(
+      'Tactics scan in progress…',
+    );
+
+    // The persistent engine-activity banner aggregates the running scan.
+    const banner = await screen.findByTestId('library-engine-busy-line');
+    expect(banner).toHaveTextContent('1 tactics scan running');
+    expect(banner).toHaveTextContent('2/4 candidates verified');
+  });
+
+  it('never claims scan progress for an interrupted (non-live) pass', async () => {
+    // A persisted `inProgress` summary with recorded progress but no live owner
+    // reads as interrupted: no bar is drawn over it.
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'inProgress',
+      scanProgress: { done: 2, total: 4 },
+    });
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-detection-interrupted')).toHaveTextContent(
+      'Tactics scan interrupted',
+    );
+    expect(screen.queryByTestId(`game-scan-progress-${game.id}`)).not.toBeInTheDocument();
+  });
+
   it('offers Run/Retry actions for absent/failed detection and hides them while live', async () => {
     const absent = await seedAnalyzedGame('cc-blitz-clean', {
       classificationCounts: { best: 4, good: 2, inaccuracy: 1, mistake: 1, blunder: 1 },
