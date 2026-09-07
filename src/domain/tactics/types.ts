@@ -22,9 +22,13 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  * stored mate line without a fresh tactical-profile engine run. Version 3
  * adds the Stage-2 unicity gate (plan 013, W2): for non-mate objectives the
  * best line must beat the best alternative by a large winning-chance margin,
- * so ambiguous near-tie solutions no longer verify.
+ * so ambiguous near-tie solutions no longer verify. Version 4 time-bounds the
+ * tactical verification (`VERIFY_MOVETIME_MS`) and defers engine-failing
+ * candidates after a bounded retry (plan-013 fixes A/C): verification can now
+ * return shallower results instead of failing, so old verified verdicts and
+ * new ones are distinguishable.
  */
-export const DETECTION_VERSION = 3;
+export const DETECTION_VERSION = 4;
 
 /**
  * Candidate-generation version. Incremented when the Stage-1 candidate rules

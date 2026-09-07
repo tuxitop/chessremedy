@@ -245,7 +245,13 @@ what is actually true:
   interrupted"** with a "Resume tactics scan" affordance instead — the
   scan-only entry point continues it without re-analysing the game.
 * **Failed** — a scan attempt ended in failure ("Tactics scan failed");
-  retried via the scan action.
+  retried via the scan action. A pass only ends failed when one or more
+  candidates could not be verified after a bounded per-candidate engine
+  retry: verification searches are time-bounded (`VERIFY_MOVETIME_MS`),
+  so a slow-but-healthy position returns a shallower result instead of
+  failing, and a single flaky candidate no longer aborts the scan of the
+  rest of the game (deferred candidates are retried by the next scan,
+  which is cheap because settled rows and cached positions are reused).
 * **Not scanned** — the run predates this feature (its summary was
   backfilled with an `absent` state) or was never scanned ("Tactics not
   scanned"); the user runs the scan for that analysis.

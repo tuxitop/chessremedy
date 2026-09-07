@@ -406,12 +406,12 @@ describe('engine service — failure handling', () => {
     await dispose();
   });
 
-  it('fails with a timeout when the engine goes silent', async () => {
+  it('fails with a timeout when the engine goes silent and ignores stop', async () => {
     const { service, transports, dispose } = createService({
       configureTransport: (t) => {
         t.autoSearch = false;
       },
-      serviceOverrides: { stallTimeoutMs: 150 },
+      serviceOverrides: { stallTimeoutMs: 150, cancelTimeoutMs: 150 },
     });
     const job = service.analyze(START_FEN, { profile: 'fast' });
     await waitForGo({ service, transports, dispose }, job.id, 0);
@@ -424,6 +424,37 @@ describe('engine service — failure handling', () => {
     const t2 = await waitForGo({ service, transports, dispose }, j2.id, 1);
     completeSearch(t2);
     expect((await j2.outcome).kind).toBe('completed');
+    expect(service.getStatus().lifecycle).toBe('ready');
+    await dispose();
+  });
+
+  it('completes a slow-but-responsive search via graceful stop (stall fix)', async () => {
+    // The engine stops emitting info (a slow, deep search), then answers the
+    // `stop` with its current best move. The job must COMPLETE with the
+    // (shallower) result instead of failing as a timeout.
+    const { service, transports, dispose } = createService({
+      configureTransport: (t) => {
+        t.autoSearch = false;
+      },
+      serviceOverrides: { stallTimeoutMs: 150, cancelTimeoutMs: 60_000 },
+    });
+    const job = service.analyze(START_FEN, { profile: 'fast' });
+    const t1 = await waitForGo({ service, transports, dispose }, job.id, 0);
+
+    // Wait until the stall watchdog asked the engine to stop.
+    await until(() => t1.sent.includes('stop'), 'engine asked to stop');
+    // The engine replies with its current evaluation + best move.
+    t1.emit(
+      'info depth 21 seldepth 22 multipv 1 score cp 21 nodes 4000 nps 200 time 2000 pv e2e4 e7e5',
+    );
+    t1.emit('bestmove e2e4 ponder e7e5');
+
+    const outcome = await job.outcome;
+    expect(outcome.kind).toBe('completed');
+    if (outcome.kind !== 'completed') return;
+    expect(outcome.result.lines[0]!.evaluation).toEqual({ cp: 21 });
+    expect(outcome.result.lines[0]!.principalVariation.map((m) => m.uci)).toEqual(['e2e4', 'e7e5']);
+    // No worker teardown happened for a healthy-but-slow search.
     expect(service.getStatus().lifecycle).toBe('ready');
     await dispose();
   });

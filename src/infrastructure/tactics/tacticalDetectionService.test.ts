@@ -46,7 +46,7 @@ import {
   createFakeEngine,
   FAKE_ENGINE_META,
 } from '@/infrastructure/analysis/test-support/fakeAnalysisEngine';
-import { TacticalDetectionService } from './tacticalDetectionService';
+import { TacticalDetectionService, VERIFY_MOVETIME_MS } from './tacticalDetectionService';
 
 const NOW = 1_700_000_000_000;
 const BULLET_ID = 'li-bullet-missed-mate';
@@ -330,7 +330,7 @@ describe('TacticalDetectionService — pass orchestration', () => {
     expect(summary?.detectionVersion).toBe(DETECTION_VERSION);
   });
 
-  it('marks an engine-failed candidate `failed` and lets the rest of the pass continue', async () => {
+  it('defers an engine-failing candidate after a bounded retry and finishes the rest (plan-13 fix A)', async () => {
     const game = fixtureGame(BULLET_ID);
     const job = completedJobFor(game);
     const plan = planOf(game);
@@ -355,7 +355,9 @@ describe('TacticalDetectionService — pass orchestration', () => {
 
     await service.runPassForCompletedJob(job, game, withSecond);
 
-    expect(rig.requests).toEqual([startingFen, failingFen]);
+    // The failing candidate is attempted once, then retried once (bounded),
+    // while the verifying candidate settles before it.
+    expect(rig.requests).toEqual([startingFen, failingFen, failingFen]);
 
     const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
     expect(rows).toHaveLength(2);
@@ -364,7 +366,8 @@ describe('TacticalDetectionService — pass orchestration', () => {
       [failingPly, 'failed'],
     ]);
 
-    // The verified candidate is still annotated even though the pass is failed.
+    // The verified candidate is still annotated even though the pass is failed
+    // (the deferred candidate must be retried by the next scan).
     const owning = (await analysesRepository.listForGameAndAnalysis(game.id, job.id)).find(
       (record) => record.ply === missedPly,
     );
@@ -374,6 +377,47 @@ describe('TacticalDetectionService — pass orchestration', () => {
     expect(summary?.detectionState).toBe('failed');
     expect(summary?.missedTacticCount).toBeNull();
     expect(summary?.detectionVersion).toBeNull();
+  });
+
+  it('recovers from a transient engine failure on the retry and completes (plan-13 fix A)', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const secondPly = 10;
+    const secondFen = plan.moves[4]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+    const withSecond = [...records, fabricatedWhiteBlunder(game.id, job.id, secondPly, secondFen)];
+
+    const rig = createFakeEngine({
+      results: new Map([[startingFen, mateResult(startingFen)]]),
+      hold: true,
+    });
+    rig.setFailure(secondFen, 'transient crash');
+    const service = serviceOf(rig.service);
+
+    const pass = service.runPassForCompletedJob(job, game, withSecond);
+    // Release the first (verifying) candidate.
+    await waitFor(() => rig.requests.length === 1);
+    rig.releaseAll(1);
+    // First attempt of the flaky candidate fails, so it is retried once.
+    await waitFor(() => rig.requests.length === 2);
+    rig.releaseAll(1);
+    await waitFor(() => rig.requests.length === 3);
+    // The retry succeeds (the transient crash cleared).
+    rig.clearFailures();
+    rig.releaseAll(1);
+    await pass;
+
+    expect(rig.requests).toEqual([startingFen, secondFen, secondFen]);
+    const summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('completed');
+    expect(summary?.missedTacticCount).toBe(1);
+    expect(summary?.detectionVersion).toBe(DETECTION_VERSION);
   });
 
   it('resumes an aborted pass on the next run without re-running verified candidates', async () => {
@@ -534,7 +578,11 @@ describe('TacticalDetectionService — pass orchestration', () => {
       engineBuild: FAKE_ENGINE_META.engineBuild,
     };
     await cache.put(
-      analysisCacheKey(startingFen, { profile: 'tactical' }, engineIdentity),
+      analysisCacheKey(
+        startingFen,
+        { profile: 'tactical', movetimeMs: VERIFY_MOVETIME_MS },
+        engineIdentity,
+      ),
       mateResult(startingFen),
     );
 

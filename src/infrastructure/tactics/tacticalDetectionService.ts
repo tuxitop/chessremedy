@@ -28,9 +28,15 @@
  * candidates are discarded after the run") — is settled. A rejected
  * candidate's row is still marked `failed` so the discard is visible and the
  * pass is never silently "done". A candidate whose *engine run itself* fails
- * (job failure, cancellation, exception) is NOT settled: its row is marked
- * `failed` and the pass ends `failed` so the next verification run retries it
- * (ADR-026 failure modes).
+ * (job failure, cancellation, exception) is NOT settled: it is retried in the
+ * same pass up to `MAX_ENGINE_ATTEMPTS_PER_CANDIDATE`; if it still fails it is
+ * **deferred** (row marked `failed`, verification continues with the rest of
+ * the game — plan-013 fix A) and the pass ends `failed` so the next scan
+ * retries only the deferred candidate (everything else is reused/cached, so a
+ * retry is cheap and one flaky position can never repeatedly fail a whole
+ * long game). Each tactical search is additionally bounded by
+ * `VERIFY_MOVETIME_MS` (plan-013 fix C), so a pathological position cannot
+ * hold a search open indefinitely (ADR-026 failure modes).
  *
  * An aborted pass (caller `AbortSignal`) stops at the next candidate boundary,
  * leaving already-verified rows persisted and the summary back at `queued` —
@@ -92,6 +98,24 @@ import type { EngineAnalysisCache } from '@/infrastructure/engine/cache';
 import { profileConfig } from '@/infrastructure/engine/engineProfiles';
 import type { EngineLine } from '@/infrastructure/engine/types';
 import type { EngineAnalysisResult, EngineService } from '@/infrastructure/engine/types';
+
+/**
+ * Bounded search time for one candidate's tactical verification (plan-013
+ * fix C). The tactical profile stays depth-bounded (ADR-012 depth 22); this
+ * movetime cap backstops it so a pathological position can never hold a search
+ * (and therefore the whole game's scan) for an unbounded time. The engine
+ * stops at whichever limit it reaches first.
+ */
+export const VERIFY_MOVETIME_MS = 45_000;
+
+/**
+ * Engine attempts per candidate before the candidate is deferred (plan-013
+ * fix A): a transient worker crash/timeout is retried once in the same pass;
+ * a candidate that still fails after that is skipped so the rest of the game's
+ * scan completes, and the pass ends `failed` only so the unresolved candidate
+ * can be retried (cheaply — everything else is cached or reused).
+ */
+export const MAX_ENGINE_ATTEMPTS_PER_CANDIDATE = 2;
 
 export interface TacticalDetectionServiceOptions {
   readonly engine: EngineService;
@@ -222,7 +246,7 @@ export class TacticalDetectionService {
     const threads =
       job.config?.threads !== undefined && job.config.threads > 1 ? job.config.threads : undefined;
     const verified: VerifiedTacticalCandidate[] = [];
-    let retryableFailures = 0;
+    let deferredFailures = 0;
     const recordsByPly = new Map<number, MoveAnalysis>();
     for (const record of records) {
       recordsByPly.set(record.ply, record);
@@ -271,11 +295,55 @@ export class TacticalDetectionService {
         return;
       }
       if (outcome.kind === 'engine-failed') {
-        // The engine run itself failed: the candidate is NOT settled (the pass
-        // ends `failed` so the next scan retries it). Its row is marked failed
-        // so the discard/retry state is visible.
-        retryableFailures += 1;
+        // A transient engine failure (worker crash, timeout, cancel) is retried
+        // within the same pass up to MAX_ENGINE_ATTEMPTS_PER_CANDIDATE before
+        // the candidate is deferred. One flaky position must not abort the scan
+        // of the rest of a long game.
+        let settled: VerificationOutcome = outcome;
+        for (
+          let attempt = 1;
+          attempt < MAX_ENGINE_ATTEMPTS_PER_CANDIDATE && settled.kind === 'engine-failed';
+          attempt += 1
+        ) {
+          if (signal?.aborted) {
+            await this.writeSummary(job, game, records, 'queued', {
+              scanProgress: { done: settledCount, total },
+            });
+            return;
+          }
+          settled = await this.verifyCandidateWithEngine(
+            candidate,
+            engineIdentity,
+            signal,
+            threads,
+          );
+          if (settled.kind === 'aborted') {
+            await this.writeSummary(job, game, records, 'queued', {
+              scanProgress: { done: settledCount, total },
+            });
+            return;
+          }
+        }
+        if (settled.kind === 'engine-failed') {
+          // Still failing after the bounded retries: defer this candidate (NOT
+          // settled — its row stays failed so the next scan retries only it)
+          // and continue verifying the rest of the game.
+          deferredFailures += 1;
+          await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
+          continue;
+        }
+        if (settled.kind === 'verified') {
+          await this.candidates.bulkPutForAnalysis([settled.candidate]);
+          verified.push(settled.candidate);
+          settledCount += 1;
+          await this.persistScanProgress(job, game, records, settledCount, total);
+          await this.persistAnnotatedRecords(records, verified);
+          continue;
+        }
+        // settled.kind === 'rejected'
+        settledCount += 1;
         await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
+        await this.persistScanProgress(job, game, records, settledCount, total);
         continue;
       }
       if (outcome.kind === 'rejected') {
@@ -299,7 +367,12 @@ export class TacticalDetectionService {
       });
       return;
     }
-    if (retryableFailures > 0) {
+    if (deferredFailures > 0) {
+      // Everything that could settle did; only deferred (engine-failing)
+      // candidates remain. Surface `failed` so the user can retry the scan —
+      // the retry is cheap: verified rows are reused and searched positions
+      // are served from the ADR-018 cache, so only the deferred candidates
+      // actually run the engine again.
       await this.writeSummary(job, game, records, 'failed', {
         scanProgress: { done: settledCount, total },
       });
@@ -497,9 +570,10 @@ export class TacticalDetectionService {
    * `tactical`-profile engine run (off the UI thread), then the pure
    * `verifyCandidate` verdict. An aborted signal during the engine search
    * cancels the job and reports `aborted`; a failed/cancelled/throw engine job
-   * reports `engine-failed` (retryable) without failing the pass. `threads` is
-   * the run's optional threads override (dropped when undefined/1), applied to
-   * both the engine job and the cache scope so results stay distinguishable.
+   * reports `engine-failed` (retried/deferred by the caller). `threads` is the
+   * run's optional threads override (dropped when undefined/1). The tactical
+   * search is bounded by `VERIFY_MOVETIME_MS` (plan-013 fix C), which is part
+   * of the ADR-018 cache scope so time-capped results stay distinguishable.
    */
   private async verifyCandidateWithEngine(
     candidate: RawCandidate,
@@ -509,6 +583,7 @@ export class TacticalDetectionService {
   ): Promise<VerificationOutcome> {
     const scope = {
       profile: 'tactical' as const,
+      movetimeMs: VERIFY_MOVETIME_MS,
       ...(threads !== undefined && threads > 1 ? { threads } : {}),
     };
     const key = analysisCacheKey(candidate.startingFen, scope, engineIdentity);
@@ -526,6 +601,12 @@ export class TacticalDetectionService {
     try {
       const handle = this.engine.analyze(candidate.startingFen, {
         profile: 'tactical',
+        // Depth stays the ADR-012 tactical depth; VERIFY_MOVETIME_MS backstops
+        // it so a pathological position can never hold the search open past
+        // the bound (plan-013 fix C). The depth is also passed explicitly so
+        // the engine stops at whichever limit it reaches first.
+        maxDepth: this.tacticalDepth,
+        movetimeMs: VERIFY_MOVETIME_MS,
         ...(threads !== undefined && threads > 1 ? { threads } : {}),
       });
       const settled = await Promise.race([handle.outcome, abortSignal(signal)]);
@@ -550,7 +631,11 @@ export class TacticalDetectionService {
     if (this.engineCache) {
       const putKey = analysisCacheKey(
         candidate.startingFen,
-        { profile: result.profile, ...(threads !== undefined && threads > 1 ? { threads } : {}) },
+        {
+          profile: result.profile,
+          movetimeMs: VERIFY_MOVETIME_MS,
+          ...(threads !== undefined && threads > 1 ? { threads } : {}),
+        },
         result.engine,
       );
       try {

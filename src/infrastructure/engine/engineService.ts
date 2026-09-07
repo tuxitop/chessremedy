@@ -55,8 +55,10 @@ export interface EngineServiceOptions {
   /** Time to wait for the UCI handshake (`uci`→`uciok`, `isready`→`readyok`). */
   readonly initTimeoutMs?: number;
   /**
-   * Time without any engine output while a search is running before the job
-   * is failed as a timeout and the Worker is restarted.
+   * Time without any engine output while a search is running before the engine
+   * is asked to stop and hand over its current best move (graceful slow-search
+   * handling). A search that then stays silent for `cancelTimeoutMs` more is
+   * failed as a timeout and the Worker is restarted.
    */
   readonly stallTimeoutMs?: number;
   /** How long an active `stop` may take before the Worker is recreated. */
@@ -258,6 +260,12 @@ export class EngineServiceImpl implements EngineService {
   private searchStartTime = 0;
   private lastEngineActivityAt = 0;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Grace timer armed when a running search is *slow* (no output past the stall
+   * window): the engine is asked to `stop` and return its current best move,
+   * and only fails as a timeout if it stays silent past `cancelTimeoutMs`.
+   */
+  private stallStopTimer: ReturnType<typeof setTimeout> | null = null;
   private queueWatchdogTimer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
   private drainRunning = false;
@@ -714,12 +722,27 @@ export class EngineServiceImpl implements EngineService {
       this.searchSettle = { resolve, reject };
       this.watchdogTimer = setInterval(() => {
         if (!this.searchSettle) return;
+        // A cancelled job already sent `stop` and has its own grace timer.
+        if (this.active?.cancelRequested) return;
         const idle = Date.now() - this.lastEngineActivityAt;
         if (idle <= this.stallTimeoutMs) return;
-        const settle = this.searchSettle;
-        this.searchSettle = null;
-        this.clearWatchdog();
-        settle.reject({ reason: 'timeout', message: 'Engine produced no output for too long.' });
+        if (this.stallStopTimer !== null) return;
+        // Slow but (presumably) healthy: ask for the current best move. Most
+        // engines finalize and reply within ~1s; if it stays silent we fail it
+        // after `cancelTimeoutMs` so a genuinely hung worker is still recreated.
+        this.send('stop');
+        const stopGraceTimer = setTimeout(() => {
+          const settle = this.searchSettle;
+          if (!settle) return;
+          this.searchSettle = null;
+          this.clearWatchdog();
+          settle.reject({
+            reason: 'timeout',
+            message: 'Engine produced no output for too long.',
+          });
+        }, this.cancelTimeoutMs);
+        stopGraceTimer.unref?.();
+        this.stallStopTimer = stopGraceTimer;
       }, 1000);
       this.watchdogTimer.unref?.();
     });
@@ -729,6 +752,10 @@ export class EngineServiceImpl implements EngineService {
     if (this.watchdogTimer) {
       clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;
+    }
+    if (this.stallStopTimer) {
+      clearTimeout(this.stallStopTimer);
+      this.stallStopTimer = null;
     }
   }
 

@@ -111,10 +111,22 @@ metadata used for verification (`engineName`, `engineVersion`,
 ### Failure modes
 
 - Engine failure during Stage 2 (worker crash, network drop in
-  sync context). The raw candidate is retained as
-  `verificationStatus: 'failed'` and retried on the next
-  verification job. Feature 011 does not see the candidate until
-  verification succeeds.
+  sync context). The candidate is retried in the same pass up to
+  `MAX_ENGINE_ATTEMPTS_PER_CANDIDATE` (2). A transient failure that
+  clears is absorbed; a candidate that still fails is **deferred**:
+  the rest of the game's candidates keep verifying, the deferred
+  candidate's row is left `failed`, and the pass ends `failed` so the
+  next scan retries it (verified rows are reused and searched
+  positions are ADR-018-cached, so a retry is cheap and one flaky
+  position never repeatedly fails a whole long game). Feature 011 does
+  not see the candidate until verification succeeds.
+- Slow searches are bounded: every tactical verification is capped at
+  `VERIFY_MOVETIME_MS` (45 s) alongside the depth limit (engine stops
+  at whichever comes first), and the engine-service stall watchdog
+  asks a silent engine to `stop` and return its current best move
+  before it ever fails a healthy-but-slow search. Verification can
+  therefore return a shallower result instead of timing out (this is
+  part of `detectionVersion` 4).
 - Engine-version change (ADR-020). Existing verified candidates
   remain valid for the engine that verified them. A future
   re-verification pass may upgrade them; this is opt-in, not
@@ -143,9 +155,9 @@ Full evaluation: `specs/research/tactical-detection.md`.
   ~5 × 15 s = ~75 s of tactical-profile analysis on a desktop, more
   on mobile. Plan 013 bounds the cost per game with
   `MAX_CANDIDATES_PER_GAME` (16) and orders candidates by swing so the
-  biggest moments verify first; a node/time engine override was
-  considered but not applied (it would change the ADR-018 cache scope
-  and verification determinism for little gain under the cap).
+  biggest moments verify first; each tactical search is additionally
+  time-bounded by `VERIFY_MOVETIME_MS` (detectionVersion 4), so no
+  single candidate — nor a whole long game's scan — can run unbounded.
 - Detection passes persist live **scan progress** (`scanProgress
   { done, total }` on the per-analysis summary, plan 013 W3) as each
   Stage-2 candidate settles (verified or rejected/failed by a guard;
@@ -164,7 +176,11 @@ Full evaluation: `specs/research/tactical-detection.md`.
   runs carry `'tactical-search'`). Version 3 added the Stage-2 **unicity
   gate** (`best-move-not-unique`), which makes the MultiPV-dependent
   guards stricter; the candidate-rule change of plan 013 is versioned
-  separately by `CANDIDATE_GENERATION_VERSION` (now 2).
+  separately by `CANDIDATE_GENERATION_VERSION` (now 2). Version 4
+  time-bounds each tactical search (`VERIFY_MOVETIME_MS`) and defers
+  engine-failing candidates after a bounded retry (plan-013 fixes A/C),
+  so a verification may settle with a shallower result instead of
+  failing the game's whole scan.
 
 ## Sources
 
