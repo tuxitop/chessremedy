@@ -1080,6 +1080,15 @@ function GameReview({
         <div className={styles.scanReport} data-testid="review-scan-report" role="status">
           <span className={styles.scanReportLabel}>Tactics scan report:</span>
           <span data-testid="review-scan-report-text">{scanReportSentence(scanReport)}</span>
+          {scanReport.bestMoves.length > 0 ? (
+            <span className={styles.scanReportMoves} data-testid="review-scan-report-moves">
+              {scanReport.bestMoves.map((note) => (
+                <span key={note.sourcePly} data-testid={`review-scan-report-ply-${note.sourcePly}`}>
+                  {`ply ${note.sourcePly}: ${REJECTION_LABELS[note.reason] ?? note.reason} — engine best ${note.move}`}
+                </span>
+              ))}
+            </span>
+          ) : null}
         </div>
       ) : null}
 

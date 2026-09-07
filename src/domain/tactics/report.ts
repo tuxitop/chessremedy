@@ -16,9 +16,13 @@ import type { VerificationRejectionReason } from './verify';
 
 /** Structural view of a candidate row the report can read (persistence-agnostic). */
 export interface CandidateRowLike {
+  /** 0-based ply of the position (candidate identity). */
+  readonly sourcePly?: number;
   readonly verificationStatus: 'raw' | 'failed' | 'verified';
   /** Set only when a Stage-2 guard rejected the candidate (definitive verdict). */
   readonly rejectionReason?: VerificationRejectionReason;
+  /** The engine's top move of the rejected candidate's Stage-2 evaluation. */
+  readonly verificationTopLine?: { readonly move: string };
 }
 
 /** What one settled detection pass did with a game's candidates. */
@@ -38,6 +42,17 @@ export interface ScanPassReport {
    * discarded and would be retried by the next scan.
    */
   readonly unresolved: number;
+  /**
+   * Per-rejected note: the candidate's ply, the guard reason, and the engine's
+   * top move that was evaluated there — so "no objective reached" can be
+   * explained ("the engine's best was Qh5+"). Empty when no engine line was
+   * stored (older rows / cache-only verdicts without a stored line).
+   */
+  readonly bestMoves: ReadonlyArray<{
+    readonly sourcePly: number;
+    readonly reason: VerificationRejectionReason;
+    readonly move: string;
+  }>;
 }
 
 export function summarizeCandidateRows(rows: readonly CandidateRowLike[]): ScanPassReport {
@@ -45,6 +60,11 @@ export function summarizeCandidateRows(rows: readonly CandidateRowLike[]): ScanP
   let rejected = 0;
   const rejectedByReason: Partial<Record<VerificationRejectionReason, number>> = {};
   let unresolved = 0;
+  const bestMoves: Array<{
+    sourcePly: number;
+    reason: VerificationRejectionReason;
+    move: string;
+  }> = [];
   for (const row of rows) {
     if (row.verificationStatus === 'verified') {
       verified += 1;
@@ -53,6 +73,13 @@ export function summarizeCandidateRows(rows: readonly CandidateRowLike[]): ScanP
     if (row.rejectionReason !== undefined) {
       rejected += 1;
       rejectedByReason[row.rejectionReason] = (rejectedByReason[row.rejectionReason] ?? 0) + 1;
+      if (row.sourcePly !== undefined && row.verificationTopLine?.move) {
+        bestMoves.push({
+          sourcePly: row.sourcePly,
+          reason: row.rejectionReason,
+          move: row.verificationTopLine.move,
+        });
+      }
       continue;
     }
     // `failed` without a guard reason or a leftover `raw` row: not settled.
@@ -64,5 +91,6 @@ export function summarizeCandidateRows(rows: readonly CandidateRowLike[]): ScanP
     rejected,
     rejectedByReason,
     unresolved,
+    bestMoves,
   };
 }

@@ -25,6 +25,16 @@ import type {
 import type { GameId } from '@/domain/chess/game';
 import { db, type ChessRemedyDatabase } from './database';
 
+/** The engine's top evaluation line a rejected candidate was judged against. */
+export interface CandidateVerificationLine {
+  /** Top move as UCI. */
+  readonly move: string;
+  /** Top principal variation as UCI tokens. */
+  readonly uci: readonly string[];
+  readonly evalCp: number | null;
+  readonly evalMate: number | null;
+}
+
 /** A candidate that has not (yet) passed Stage-2 verification. */
 export interface UnverifiedPuzzleCandidateRow extends RawCandidate {
   /** `'raw'` while awaiting verification, `'failed'` after a failed run. */
@@ -37,6 +47,12 @@ export interface UnverifiedPuzzleCandidateRow extends RawCandidate {
    * rows lack it.
    */
   readonly rejectionReason?: VerificationRejectionReason;
+  /**
+   * The engine's top line the Stage-2 run evaluated, persisted so a rejected
+   * candidate can explain "no tactic found — the engine's best was …".
+   * Additive; absent on older/verified rows.
+   */
+  readonly verificationTopLine?: CandidateVerificationLine;
 }
 
 /**
@@ -66,11 +82,13 @@ export interface PuzzleCandidatesRepository {
    * Record a definitive Stage-2 guard rejection for one candidate (plan-13
    * recall diagnostics, C): flips the row to `failed` and stores the guard
    * `reason` so the scan report can say *why* each candidate was rejected.
+   * `line` (optional) stores the engine's top evaluation line for that verdict.
    */
   updateRejected(
     analysisId: string,
     sourcePly: number,
     reason: VerificationRejectionReason,
+    line?: CandidateVerificationLine,
   ): Promise<void>;
   /** Remove every candidate of one analysis run (forced re-analysis cleanup). */
   deleteForAnalysis(analysisId: string): Promise<void>;
@@ -127,10 +145,12 @@ export class DexiePuzzleCandidatesRepository implements PuzzleCandidatesReposito
     analysisId: string,
     sourcePly: number,
     reason: VerificationRejectionReason,
+    line?: CandidateVerificationLine,
   ): Promise<void> {
     await this.database.puzzleCandidates.update([analysisId, sourcePly], {
       verificationStatus: 'failed',
       rejectionReason: reason,
+      ...(line !== undefined ? { verificationTopLine: line } : {}),
     });
   }
 

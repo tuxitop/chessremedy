@@ -25,18 +25,27 @@ describe('summarizeCandidateRows (scan report)', () => {
       rejected: 0,
       rejectedByReason: {},
       unresolved: 0,
+      bestMoves: [],
     });
   });
 
   it('counts verified vs guard-rejected candidates grouped by reason', () => {
     const report = summarizeCandidateRows([
-      row('verified'),
-      row('verified'),
-      row('failed', { rejectionReason: 'no-objective' }),
-      row('failed', { rejectionReason: 'no-objective' }),
-      row('failed', { rejectionReason: 'no-objective' }),
-      row('failed', { rejectionReason: 'best-move-not-unique' }),
-      row('failed', { rejectionReason: '>8-plies' }),
+      row('verified', { sourcePly: 0 }),
+      row('verified', { sourcePly: 2 }),
+      row('failed', {
+        sourcePly: 6,
+        rejectionReason: 'no-objective',
+        verificationTopLine: { move: 'd2d4' },
+      }),
+      row('failed', { sourcePly: 8, rejectionReason: 'no-objective' }),
+      row('failed', { sourcePly: 10, rejectionReason: 'no-objective' }),
+      row('failed', {
+        sourcePly: 12,
+        rejectionReason: 'best-move-not-unique',
+        verificationTopLine: { move: 'g5f7' },
+      }),
+      row('failed', { sourcePly: 14, rejectionReason: '>8-plies' }),
     ]);
     expect(report.examined).toBe(7);
     expect(report.verified).toBe(2);
@@ -47,23 +56,29 @@ describe('summarizeCandidateRows (scan report)', () => {
       '>8-plies': 1,
     });
     expect(report.unresolved).toBe(0);
+    // Engine top move is retained only when the row stored one.
+    expect(report.bestMoves).toEqual([
+      { sourcePly: 6, reason: 'no-objective', move: 'd2d4' },
+      { sourcePly: 12, reason: 'best-move-not-unique', move: 'g5f7' },
+    ]);
   });
 
   it('counts engine-failed / leftover-raw / legacy rows as unresolved', () => {
     const report = summarizeCandidateRows([
-      row('raw'),
-      row('failed'), // no rejectionReason: engine-failed, deferred or legacy
-      row('verified'),
+      row('raw', { sourcePly: 4 }),
+      row('failed', { sourcePly: 6 }), // no rejectionReason: engine-failed, deferred or legacy
+      row('verified', { sourcePly: 8 }),
     ]);
     expect(report.verified).toBe(1);
     expect(report.rejected).toBe(0);
     expect(report.unresolved).toBe(2);
+    expect(report.bestMoves).toEqual([]);
   });
 
   it('never mutates its input', () => {
     const rows: readonly CandidateRowLike[] = [
-      row('failed', { rejectionReason: 'no-objective' }),
-      row('verified'),
+      row('failed', { sourcePly: 6, rejectionReason: 'no-objective' }),
+      row('verified', { sourcePly: 8 }),
     ];
     summarizeCandidateRows(rows);
     expect(rows[0]!.rejectionReason).toBe('no-objective');

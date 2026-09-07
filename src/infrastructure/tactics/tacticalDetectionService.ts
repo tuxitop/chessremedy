@@ -87,6 +87,7 @@ import type { AnalysisJobsRepository } from '@/infrastructure/db/analysis-jobs-r
 import type {
   PuzzleCandidatesRepository,
   UnverifiedPuzzleCandidateRow,
+  CandidateVerificationLine,
 } from '@/infrastructure/db/candidates-repository';
 import type { GamesRepository } from '@/infrastructure/db/games-repository';
 import type {
@@ -135,7 +136,12 @@ type EngineIdentity = Pick<EngineMetadata, 'engineName' | 'engineVersion' | 'eng
 
 type VerificationOutcome =
   | { readonly kind: 'verified'; readonly candidate: VerifiedTacticalCandidate }
-  | { readonly kind: 'rejected'; readonly reason: VerificationRejectionReason }
+  | {
+      readonly kind: 'rejected';
+      readonly reason: VerificationRejectionReason;
+      /** Engine's top line the rejection was judged against (for the report). */
+      readonly line?: CandidateVerificationLine;
+    }
   | { readonly kind: 'engine-failed'; readonly message: string }
   | { readonly kind: 'aborted' };
 
@@ -342,7 +348,12 @@ export class TacticalDetectionService {
         }
         // settled.kind === 'rejected'
         settledCount += 1;
-        await this.candidates.updateRejected(job.id, candidate.sourcePly, settled.reason);
+        await this.candidates.updateRejected(
+          job.id,
+          candidate.sourcePly,
+          settled.reason,
+          settled.line,
+        );
         await this.persistScanProgress(job, game, records, settledCount, total);
         continue;
       }
@@ -351,7 +362,12 @@ export class TacticalDetectionService {
         // (discarded) and counts towards the scan progress. The guard reason is
         // persisted so the scan report can explain why it was rejected.
         settledCount += 1;
-        await this.candidates.updateRejected(job.id, candidate.sourcePly, outcome.reason);
+        await this.candidates.updateRejected(
+          job.id,
+          candidate.sourcePly,
+          outcome.reason,
+          outcome.line,
+        );
         await this.persistScanProgress(job, game, records, settledCount, total);
         continue;
       }
@@ -666,8 +682,24 @@ export class TacticalDetectionService {
     if (verdict.ok) {
       return { kind: 'verified', candidate: verdict.candidate };
     }
-    return { kind: 'rejected', reason: verdict.reason };
+    const top = result.lines[0];
+    return {
+      kind: 'rejected',
+      reason: verdict.reason,
+      ...(top !== undefined ? { line: toCandidateVerificationLine(top) } : {}),
+    };
   }
+}
+
+/** The engine's top line of a rejected verdict, for the scan report. */
+function toCandidateVerificationLine(line: EngineLine): CandidateVerificationLine {
+  const evaluation = line.evaluation;
+  return {
+    move: line.principalVariation[0]?.uci ?? '',
+    uci: line.principalVariation.map((move) => move.uci),
+    evalCp: 'cp' in evaluation ? evaluation.cp : null,
+    evalMate: 'mate' in evaluation ? evaluation.mate : null,
+  };
 }
 
 /** Map an engine line onto the engine-free Stage-2 verification input. */
