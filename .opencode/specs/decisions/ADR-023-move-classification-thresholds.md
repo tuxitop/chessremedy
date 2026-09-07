@@ -38,11 +38,35 @@ The thresholds follow Lichess (`lila` `modules/tree/src/main/Advice.scala`,
 
 Special cases override the table:
 
-- **Mate sign flip.** A position-before non-mating, position-after mating
-  against the mover (`evalMate` flips to a negative mate distance from the
-  side-to-move perspective) is always `blunder`. (Lichess refines
-  already-losing allow-mate cases with cp anchors; V1 keeps the simpler rule
-  because `wpLoss` is already near zero in those positions.)
+- **Mate transitions (Lichess-faithful).** Mate scores are not run through
+  the logistic. Verified against Lichess (`modules/tree/src/main/Advice.scala`
+  `MateAdvice`/`MateSequence`, commit 5013970), Lichess grades mate moves
+  **only** for these sign transitions between the before- and after-move
+  evaluations:
+
+  | Transition (before → after) | Lichess verdict |
+  |-----------------------------|-----------------|
+  | cp → Mate(neg) — `MateCreated` | `blunder`, unless before-cp ≤ −700 ⇒ `mistake`, ≤ −1000 ⇒ `inaccuracy` |
+  | Mate(pos) → cp — `MateLost` | after-cp ≥ 1000 ⇒ `inaccuracy`; 701–999 ⇒ `mistake`; ≤ 700 ⇒ `blunder` |
+  | Mate(pos) → Mate(neg) — `MateLost` | `blunder` |
+  | mover already being mated (before Mate(neg)) | matched by **no** case — **unannotated (silent)** |
+
+  V2 keeps ChessRemedy's existing rule for the sign flip — a
+  position-before non-mating, position-after mating against the mover
+  (`evalMate` flips to a negative mate distance from the side-to-move
+  perspective) is always `blunder`, which matches Lichess's default
+  `MateCreated` verdict. A move played while the mover is **already**
+  being mated (before Mate(neg)) is matched by no Lichess case and is
+  **unannotated**; ChessRemedy's classifier already matches that silence —
+  mate clamps to ±1000 win%, so the best defence reads `best`/`good` (this
+  was the intent of the plan's "mate while already being mated ⇒
+  inaccuracy" clause, which misread the anchors and is **closed**).
+- **Deferred mate anchors.** The two cp-anchor refinements above —
+  `MateCreated` before-cp ≤ −700 / ≤ −1000 (mistake / inaccuracy) and
+  `MateLost` residual after-cp (≥ 1000 / 701–999 / ≤ 700) — are **not**
+  adopted in V2: they would change current classifications. They are
+  recorded here and deferred to a potential future **`CLASSIFICATION_VERSION
+  3`**; the version stays **2** until then.
 - **Forced move.** A move with `legalMovesCount == 1` cannot exceed
   `mistake` (a "forced blunder" is meaningless because the player had no
   choice).

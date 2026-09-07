@@ -30,6 +30,18 @@ const BULLET_PGN = pgn(
   '1. f3 {[%clk 0:05:00]} e5 {[%clk 0:04:59]} 2. g4 {[%clk 0:04:57]} Qh4# {[%clk 0:04:55]}',
 );
 
+// Feature 010 / plan 011 P7: the deterministic missed-mate fixture. White
+// (the user) plays 4.d3, missing the one-move 4.Qxf7# mate; Black's 4...Nd4
+// fails to defend and 5.Qxf7# lands. A one-move forcing mate is a decisive,
+// engine-version-robust missed tactic (Stage-2 verifies it with a real
+// tactical-profile search).
+const MISSED_MATE_PGN = pgn(
+  USERNAME,
+  'bulletbob',
+  '1-0',
+  '1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. d3 Nd4 5. Qxf7#',
+);
+
 async function enableChessMock(page: Page): Promise<void> {
   await page.route('**/api.chess.com/**', async (route) => {
     const url = new URL(route.request().url());
@@ -55,6 +67,40 @@ async function enableChessMock(page: Page): Promise<void> {
             rules: 'chess',
             white: { username: USERNAME, rating: 1500 },
             black: { username: 'bulletpete', rating: 1520 },
+          },
+        ],
+      });
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body });
+  });
+}
+
+/** Mock Chess.com archive returning only the deterministic missed-mate game. */
+async function enableMissedMateMock(page: Page): Promise<void> {
+  await page.route('**/api.chess.com/**', async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    const base = `/pub/player/${USERNAME}`;
+    let body = '{}';
+    if (path === base) {
+      body = JSON.stringify({ username: USERNAME, player_id: 1 });
+    } else if (path === `${base}/games/archives`) {
+      body = JSON.stringify({
+        archives: [`https://api.chess.com/pub/player/${USERNAME}/games/2026/05`],
+      });
+    } else if (path === `${base}/games/2026/05`) {
+      body = JSON.stringify({
+        games: [
+          {
+            url: 'https://www.chess.com/game/live/7123456703',
+            pgn: MISSED_MATE_PGN,
+            time_control: '60',
+            time_class: 'standard',
+            end_time: Math.floor(Date.parse('2026-05-25T00:02:00Z') / 1000),
+            rated: true,
+            rules: 'chess',
+            white: { username: USERNAME, rating: 1821 },
+            black: { username: 'bulletbob', rating: 1795 },
           },
         ],
       });
@@ -221,5 +267,68 @@ test.describe('Game analysis & review (Feature 008)', () => {
       const g4 = page.locator('[data-testid="move-list-move"][data-san="g4"]');
       await expect(g4.locator('[data-testid="nag-glyph"][data-nag="4"]')).toHaveCount(1);
     }
+  });
+});
+
+test.describe('Missed-tactic surface proof (Feature 010 / plan 011 P7)', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.setTimeout(LONG);
+
+  test('analyzes the deterministic missed-mate fixture and proves a real missed tactic surfaces in row + Review', async ({
+    page,
+  }) => {
+    const gameId = 'chesscom:7123456703';
+    await enableMissedMateMock(page);
+
+    // A fresh context → a fresh IndexedDB library.
+    await page.goto('/games');
+    await expect(page.getByTestId('library-empty')).toBeVisible();
+    await page.getByTestId('import-toggle').click();
+    await page.getByTestId('import-username-chesscom').fill(USERNAME);
+    await page.getByTestId('import-run-chesscom').click();
+    await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await expect(page.getByTestId('game-row')).toHaveCount(1);
+
+    // Fast Game-analysis profile keeps the run short (depth 10).
+    await page.goto('/settings');
+    await expect(page.getByTestId('setting-game-analysis-profile')).toBeVisible();
+    await page.getByTestId('setting-game-analysis-profile').selectOption('fast');
+    await page.goto('/games');
+    await expect(page.getByTestId('game-row')).toHaveCount(1);
+
+    // Analyze the game (real Stockfish). 4.d3 is a one-move mate-in-1 blunder
+    // (missed 4.Qxf7#), so the Feature-010 pass has a decisive candidate to
+    // verify. The detached pass settles right after the completed analysis;
+    // the Library's live-scan poll reloads the row, so the strip shows the
+    // missed tactic without a manual refresh.
+    await page.getByTestId(`game-select-${gameId}`).click();
+    await page.getByTestId('library-analyze').click();
+    await expect(page.getByTestId(`game-analysis-${gameId}`)).toHaveAttribute(
+      'data-status',
+      'completed',
+      { timeout: RESULT_TIMEOUT },
+    );
+
+    // Row proof (AC #13): the insights strip shows a real user-side missed
+    // tactic once the detection pass settles.
+    const missed = page
+      .getByTestId(`row-insights-${gameId}`)
+      .getByTestId('row-insights-missed-tactics');
+    await expect(missed).toBeVisible({ timeout: RESULT_TIMEOUT });
+    await expect(missed).toHaveText('Missed tactics 1');
+
+    // Review proof (AC #13): the Summary shows the user missed-tactic count
+    // and the owning ply (4.d3) carries the additional NAG 9 marker.
+    await page.getByTestId(`game-review-${gameId}`).click();
+    await expect(page.getByTestId('review-layout')).toBeVisible();
+    await expect(page.getByTestId('summary-missed-tactics-value')).toHaveText('1', {
+      timeout: RESULT_TIMEOUT,
+    });
+
+    const d3 = page.locator('[data-testid="move-list-move"][data-san="d3"]');
+    await expect(d3).toBeVisible();
+    // 4.d3 was also a blunder (?? NAG 4): the verified miss adds NAG 9 next to it.
+    await expect(d3.locator('[data-testid="nag-glyph"]')).toHaveCount(2);
+    await expect(d3.locator('[data-testid="nag-glyph"][data-nag="9"]')).toHaveCount(1);
   });
 });

@@ -41,6 +41,25 @@ cached engine results. The fresh result is written back to the cache on
 completion. A plain re-run/resume without `force` keeps using the cache
 (Restart behavior, Feature 008 §5).
 
+### Game-analysis overrides extend the key scope
+
+Game analysis (Feature 008) can run under the Settings **Game analysis**
+configuration — a resolved profile plus optional **depth**, per-position
+**search time** and **threads** overrides (`AnalysisJob.config`, Feature
+008 §3/§4). When any override is set, the cache-key scope is the ADR-018
+tuple above **plus the effective overrides**: `(positionKey, profile,
+engineName, engineVersion, engineBuild, depth, searchTime, threads)`.
+This is exactly the extended scope the session-cache key function already
+builds for the live board (Feature 006). Two runs whose resolved
+Game-analysis settings differ therefore never share a cache entry, so a
+later run is never served a stale result produced under different
+depth/time/threads.
+
+Runs under the **default configuration (no overrides)** keep the
+historical tuple key, so previously stored default-config rows remain
+readable unchanged (stored-key compatibility; no migration or prune
+needed).
+
 ## Invalidation
 
 Cached entries are **invalidated** when any of the following changes:

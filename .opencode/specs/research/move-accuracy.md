@@ -54,36 +54,51 @@ For each analyzed ply the analysis pipeline already records
 
 These are the only inputs the accuracy formula may consume.
 
-### 2. Lichess accuracy formula (the published version)
+### 2. Lichess accuracy formula (verified against source)
 
 Lichess converts centipawns to a win percentage using the standard
-logistic mapping used in the Lc0/Stockfish tradition:
+logistic mapping, **clamping cp to ±1000 before the conversion**
+(`scalachess eval.scala` `Eval.Cp.CEILING`, lila commit 5013970), so a
+mate behaves like ±1000:
 
 ```text
-winPercent(cp) = 50 + 50 * (2 / (1 + exp(-0.00368208 * cp)) - 1)
+winPercent(cp) = 50 + 50 * (2 / (1 + exp(-0.00368208 * clamp(cp, ±1000))) - 1)
 ```
 
-For each move Lichess computes:
+For each move Lichess computes (side-to-move perspective):
 
-- `wpBefore = winPercent(evalCp)` from the side-to-move perspective
-  before the move.
+- `wpBefore = winPercent(evalCp)` before the move.
 - `wpAfter = winPercent(evalCpAfterMove)`.
-- `wpLoss = max(0, wpBefore - wpAfter)`.
+- `Δ = wpLoss = clamp(0, 100, wpBefore - wpAfter)`.
 
-Per-move accuracy (Lichess blog, equation 2):
+Per-move accuracy (`modules/analyse/src/main/AccuracyPercent.scala`):
 
 ```text
-accuracy = 103.1668 * exp(-0.04354 * wpLoss) - 3.1669
+accuracy = 103.1668100711649 * exp(-0.04354415386753951 * Δ)
+             - 3.166924740191411 + 1
 clamped to [0, 100]
 ```
 
-Game-level accuracy is the **mean of per-move accuracies** (unweighted
-across move number; Lichess does not re-weight by phase).
+The `+1` is Lichess's "uncertainty bonus (due to imperfect analysis)";
+the full unrounded constants replace the older rounded `103.1668`,
+`0.04354`, `-3.1669`.
 
-The constants `103.1668`, `0.04354` and `-3.1669` were fitted so that
-the function maps `wpLoss = 0` → accuracy 100, `wpLoss ≈ 100` →
-accuracy 0, and produces a smooth curve that agrees with Lichess'
-crowdsourced calibration data.
+Game-level accuracy is **not** the unweighted arithmetic mean of the
+per-move values. Lichess's `gameAccuracy` is the **mean of the
+volatility-weighted mean and the harmonic mean** of the player's per-move
+accuracies over a sliding window:
+
+- window size = `(n / 10).squeeze(2, 8)` plies;
+- per-ply weight = the Win% standard deviation across that ply's window,
+  `.squeeze(0.5, 12)` (no weight when the stddev is 0);
+- `volatilityWeightedMean = Σ(accuracyᵢ · weightᵢ) / Σ(weightᵢ)`;
+- `harmonicMean = n / Σ(1 / accuracyᵢ)`;
+- `gameAccuracy = (volatilityWeightedMean + harmonicMean) / 2`.
+
+A move that swings the evaluation sharply (a big `wpLoss`) sits in a
+volatile window and therefore dominates the weighted mean. ChessRemedy
+reproduces `gameAccuracy` exactly (ADR-024 V2); where no window is
+volatile it falls back to the harmonic mean alone.
 
 ### 3. Chess.com accuracy methodology
 
@@ -155,12 +170,14 @@ The Lichess formula already captures this implicitly because it uses
 class dimension. Accuracy aggregates must therefore be split by
 time-control category (ADR-013).
 
-Within a single game, accuracy could in principle be weighted by game
-phase. Empirical evidence (Lichess blog post; independent observation)
-suggests that an arithmetically unweighted mean per move is the least
-surprising choice and matches the public Lichess behaviour, so V1
-should adopt it. Phase-specific breakdown is a per-game aggregate
-("accuracy by phase") exposed through Feature 014 statistics.
+Within a single game Lichess does **not** average moves arithmetically: it
+weights each move by the volatility of its surrounding window (the
+`gameAccuracy` blend in §2), and ChessRemedy reproduces that per-game
+figure (ADR-024 V2) rather than adopting an unweighted mean. Game phase is
+not a separate weighting inside one game. Phase-specific breakdown is a
+per-game aggregate ("accuracy by phase") exposed through Feature 014
+statistics — a breakdown of the same per-move values, not a replacement
+weighting.
 
 ### 7. Aggregate accuracy vs per-game accuracy
 
@@ -192,21 +209,24 @@ loss" in saturated endgames.
 
 ChessRemedy V1 should:
 
-1. Use **WDL-derived `wpLoss`** as the per-move accuracy unit, computed
-   from the centipawn eval via the published Lichess logistic curve.
-2. Apply the **Lichess per-move accuracy mapping**
-   `accuracy = 103.1668 * exp(-0.04354 * wpLoss) - 3.1669`,
-   clamped to `[0, 100]`.
-3. Aggregate at game level as the **arithmetic mean of per-move
-   accuracies** (no phase weighting inside one game).
+1. Use **`wpLoss`** (win-percentage loss) as the per-move accuracy unit,
+   computed from the centipawn eval via the published Lichess logistic
+   curve with **cp clamped to ±1000** before conversion.
+2. Apply the **Lichess per-move accuracy mapping** with the full constants
+   `accuracy = 103.1668100711649 * exp(-0.04354415386753951 * wpLoss)
+   - 3.166924740191411 + 1`, clamped to `[0, 100]`.
+3. Aggregate at game level as **Lichess `gameAccuracy`** — the mean of the
+   volatility-weighted mean and the harmonic mean over the §2 window — and
+   **never** as an unweighted arithmetic mean of per-move accuracies.
 4. Aggregate across games as a **move-weighted mean**
    (`sum(accuracy * moveCount) / sum(moveCount)`).
 5. Always split aggregates by **time control** and **platform**
    (ADR-013, `specs/AGENTS.md`).
 6. Expose `n` (number of moves / number of games) alongside every
    accuracy value (the V1 sample-size rule).
-7. Treat `evalMate` as `cp = ±10000` for the centipawn-to-WP
-   conversion (mating positions have WP = 100 / 0).
+7. Treat mate as saturating the ±1000 cp clamp (`Eval.Cp.CEILING`), so a
+   mating position converts to WP = 100 / 0 through the same clamp; raw
+   mate-distance numbers are not part of accuracy.
 
 The thresholds used by move-classification (inaccuracy, mistake,
 blunder) are then defined in the classification research as ranges of

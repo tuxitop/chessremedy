@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { MOVE_CLASSIFICATIONS } from '@/domain/chess';
 import {
   CLASSIFICATION_COLORS,
@@ -56,5 +58,27 @@ describe('classificationColors (P5 canonical palette)', () => {
   it('colours the missed-tactic count green at zero, magenta when present', () => {
     expect(missedTacticCountColor(0)).toBe(ZERO_COUNT_COLOR);
     expect(missedTacticCountColor(1)).toBe(MISSED_TACTIC_COLOR);
+  });
+
+  it('keeps the board square highlights in parity with the canonical palette', () => {
+    // P5 single source of truth: `reviewBoardHighlights.css` expresses each
+    // classification as `rgba(<hex>, <alpha>)`. This guard fails if a hex in
+    // the CSS drifts from the palette module.
+    const css = readFileSync(resolve(process.cwd(), 'src/pages/reviewBoardHighlights.css'), 'utf8');
+    const rgbaFromHex = (hex: string, alpha: string): string =>
+      `rgba(${[1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)).join(', ')}, ${alpha})`;
+
+    const cases: ReadonlyArray<[string, string, string]> = [
+      ['review-cls-best', CLASSIFICATION_COLORS.best, '0.42'],
+      ['review-cls-inaccuracy', CLASSIFICATION_COLORS.inaccuracy, '0.42'],
+      ['review-cls-mistake', CLASSIFICATION_COLORS.mistake, '0.48'],
+      ['review-cls-blunder', CLASSIFICATION_COLORS.blunder, '0.5'],
+    ];
+    for (const [className, hex, alpha] of cases) {
+      const rule = new RegExp(`\\.${className}\\s*\\{[^}]*background-color:\\s*([^;]+);`);
+      const match = rule.exec(css);
+      expect(match, `missing ${className} rule`).not.toBeNull();
+      expect(match![1]!.trim(), `${className} parity`).toBe(rgbaFromHex(hex, alpha));
+    }
   });
 });

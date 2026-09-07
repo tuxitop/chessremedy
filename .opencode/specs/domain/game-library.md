@@ -214,6 +214,29 @@ Strip semantics:
   refreshes the strip while a scan is live and stops as soon as nothing
   is running, so an interrupted pass never keeps polling.
 
+Formatting and layout notes:
+
+- **Accuracy formatting** — the strip's accuracy renders with **one
+  decimal** via the Feature-009 helper (`formatAccuracy(value,
+  { decimals: 1 })`, Feature 009), the same figure Game Review shows.
+- **Count colours** — count values are coloured by the canonical
+  Feature-009 palette (`classificationColors.ts`) with the summary zero
+  rules: negative classes (blunders/mistakes/inaccuracies) and missed
+  tactics read green at `0`, else their class colour; best/good are
+  neutral at `0`. Colour is never the only signal (screen-reader text
+  spells every value out).
+- **Row layout and actions are UI decisions** and stay out of the domain
+  row model: the Lichess-style card row, the per-row icon actions
+  (Review / Analyze / Re-analyze / Cancel / Delete), the 🔬 analysis
+  glyph and the full-width per-row progress bar live in the Feature-007
+  page; this model only supplies the fields, capability registry and
+  summary read path above.
+- **Lazy summary backfill** — insights/summaries for games whose latest
+  completed analysis predates this milestone are **lazily backfilled**:
+  the Library requests summary/insight derivation for completed/outdated
+  rows that lack one (on load, without a manual re-analysis), so older
+  analyzed games show their strip too (Feature 010).
+
 Row actions are registered by capability:
 
 ```ts

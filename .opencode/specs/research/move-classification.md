@@ -1,15 +1,18 @@
 # Move Classification Research
 
-> **Revision (2026-09-06).** The "Lichess bands" in §2 and the threshold
-> table in §5 were **wrong**: they were invented by inverting the accuracy
-> curve and do not match Lichess. Lichess's actual classifier is
-> `modules/tree/src/main/Advice.scala` (`CpAdvice.winningChanceJudgements`):
-> a move is Inaccuracy / Mistake / Blunder when the mover's **winning-chance
-> loss ≥ 0.10 / 0.20 / 0.30** on the `[−1, 1]` logistic scale (≈ 5 / 10 / 15
-> win%), and nothing below 0.10 is annotated; cp is clamped to ±1000 before
-> the logistic and best moves are never labelled. ADR-023 (V2) and the
-> implementation now use these bands. The worked examples below that rely on
-> the old bands are historical only.
+> **Revision (2026-09-06).** §2 and the §5 threshold table previously
+> derived "Lichess bands" of 2/10/20 win% by inverting the accuracy curve;
+> those bands were **not** Lichess's and are removed. These sections now
+> document the **verified method**: Lichess's actual classifier is
+> `modules/tree/src/main/Advice.scala`
+> (`CpAdvice.winningChanceJudgements`, commit 5013970) — a move is
+> Inaccuracy / Mistake / Blunder when the mover's **winning-chance loss ≥
+> 0.10 / 0.20 / 0.30** on the `[−1, 1]` logistic scale (≈ 5 / 10 / 15
+> win%), nothing below 0.10 is annotated, cp is clamped to ±1000 before
+> the logistic, best moves are never labelled, and mate transitions follow
+> `MateAdvice`/`MateSequence` (§2). ADR-023 (V2) and the implementation
+> now use these bands. Worked examples below that rely on the old bands are
+> historical only.
 
 ## Question
 
@@ -60,31 +63,45 @@ The chosen unit for classification is therefore the same `wpLoss` (win
 percentage loss) used by `move-accuracy.md`. It already encodes
 endgame scaling, mate-distance, and position context.
 
-### 2. Lichess' published thresholds (win percentage loss)
+### 2. Lichess' verified thresholds (winning-chance loss)
 
-Lichess does not publish exact centipawn thresholds; what it does
-publish (blog + source) is the per-move accuracy curve, from which the
-buckets can be derived:
+Lichess's classifier is `modules/tree/src/main/Advice.scala`
+(`CpAdvice.winningChanceJudgements`, lila commit 5013970). It does not use
+the accuracy curve's inverse; it buckets a move by the mover's
+**winning-chance loss** on the `[−1, 1]` logistic winning-chance scale
+(winPercent converted to `[−1, 1]`), with **cp clamped to ±1000**
+(`scalachess eval.scala` `Eval.Cp.CEILING`) before the conversion:
 
-| Classification | wpLoss (percentage points) | Notes                                |
-|----------------|--------------------------:|--------------------------------------|
-| Best move      |                       0   | `wpLoss == 0` AND `playedMove == bestMove` |
-| Good           |                     ≤ 2   | Below this the curve is essentially flat at 100 % |
-| Inaccuracy     |                  2 – 10  | Lichess bands "inaccuracy" at ~2-10 wpLoss |
-| Mistake        |                 10 – 20  | A clear error that swings the position |
-| Blunder        |                    > 20  | A decisive error: usually a piece or worse |
+| Classification | Winning-chance loss | ≈ Win% loss | Notes                                |
+|----------------|--------------------:|------------:|--------------------------------------|
+| (not annotated)|            < 0.10   |        < 5  | below the inaccuracy floor nothing is annotated |
+| Inaccuracy     |             ≥ 0.10  |        ≥ 5  | the mover's chance dips by ≈ 5 win%  |
+| Mistake        |             ≥ 0.20  |       ≥ 10  | a clear error that swings the position |
+| Blunder        |             ≥ 0.30  |       ≥ 15  | a decisive error                      |
 
-These bands are extracted from the inverse of the Lichess accuracy
-curve (`accuracy = 103.1668 * exp(-0.04354 * wpLoss) - 3.1669`):
+A change of 0.10 on the `[−1, 1]` scale equals 5 win-percentage points
+(win% = 50·(1 + sig)), so the 0.10 / 0.20 / 0.30 bands are ≈ 5 / 10 / 15
+win%. A played move that equals the engine's best move is never labelled,
+and nothing below 0.10 is annotated (ChessRemedy keeps those moves as
+`good`).
 
-- `wpLoss = 2` → accuracy ≈ 96.5 (the "good / inaccuracy" crossover
-  Lichess uses for colour-coding the move marker)
-- `wpLoss = 10` → accuracy ≈ 67.7 (the "inaccuracy / mistake"
-  crossover)
-- `wpLoss = 20` → accuracy ≈ 36.4 (the "mistake / blunder" crossover)
+Mate scores are not run through the logistic. Lichess grades them only
+through `MateAdvice`/`MateSequence`, and **only** for these sign
+transitions between the before- and after-move evaluations:
 
-The numeric thresholds themselves are not magic; they are the result
-of fitting the curve and the Lichess UI's qualitative labelling.
+| Transition (before → after) | Lichess verdict |
+|-----------------------------|-----------------|
+| cp → Mate(neg) — `MateCreated` | `blunder`, unless before-cp ≤ −700 ⇒ `mistake`, ≤ −1000 ⇒ `inaccuracy` |
+| Mate(pos) → cp — `MateLost` | after-cp ≥ 1000 ⇒ `inaccuracy`; 701–999 ⇒ `mistake`; ≤ 700 ⇒ `blunder` |
+| Mate(pos) → Mate(neg) — `MateLost` | `blunder` |
+| mover already being mated (before Mate(neg)) | matched by **no** case — **unannotated (silent)** |
+
+A move played while the mover is *already* being mated is silent in Lichess
+(no `Advice` case matches it); ChessRemedy reproduces that silence — mate
+clamps to ±1000 win%, so the best defence reads `best`/`good` (ADR-023 V2).
+The `MateCreated`/`MateLost` cp anchors above are deferred in ChessRemedy:
+V2 keeps its simpler mate rule, and a potential `CLASSIFICATION_VERSION 3`
+may adopt the anchor table.
 
 ### 3. Chess.com's published thresholds (centipawn, phase-dependent)
 
@@ -117,26 +134,38 @@ Two reasonable models exist. V1 picks the **WDL-based** model because:
 
 ### 5. Proposed V1 thresholds
 
-The V1 classifier maps `wpLoss` (percentage points, derived from
-ADR-019 WDL) to a category as follows:
+The V1 classifier maps `wpLoss` (win-percentage points, derived from the
+centipawn eval through the Lichess logistic with cp clamped to ±1000 —
+see §2 and ADR-023 V2) to a category as follows:
 
 | Category   | Condition                                              |
 |------------|--------------------------------------------------------|
 | `best`     | `playedMove == bestMove`                               |
-| `good`     | `wpLoss < 2`                                           |
-| `inaccuracy` | `2 ≤ wpLoss < 10`                                    |
-| `mistake`  | `10 ≤ wpLoss < 20`                                     |
-| `blunder`  | `wpLoss ≥ 20`                                          |
+| `good`     | `wpLoss < 5`                                           |
+| `inaccuracy` | `5 ≤ wpLoss < 10`                                    |
+| `mistake`  | `10 ≤ wpLoss < 15`                                     |
+| `blunder`  | `wpLoss ≥ 15`                                          |
+
+These are the win% equivalents of Lichess's 0.10 / 0.20 / 0.30
+winning-chance-loss bands in §2 (a move played while the mover is already
+being mated is not a special case: mate clamps to ±1000 win%, so the best
+defence reads `best`/`good`, matching Lichess's silence on that
+transition).
 
 Special cases:
 
-- **`evalMate` change of sign.** If the position before the move is
-  not mate and the position after the move *is* mate against the
-  player (`evalMate` flips to a negative mate distance from the
-  side-to-move perspective), the move is classified as `blunder`
-  regardless of `wpLoss`.
+- **Mate transitions.** If the position before the move is not mating and
+  the position after the move *is* mate against the player (`evalMate`
+  flips to a negative mate distance from the side-to-move perspective),
+  the move is classified as `blunder` regardless of `wpLoss` — the
+  `MateCreated` anchor reductions (before-cp ≤ −700 / ≤ −1000) are
+  deferred (ADR-023). A `MateLost` position (a mating before-position
+  followed by a non-mating or mated after-position) is handled by the
+  `wpLoss` bands (mate → ±1000), which already yields `blunder` for a
+  mate-squandered-to-loss; the `MateLost` residual after-cp anchors are
+  likewise deferred.
 - **Forced moves.** If `legalMovesCount == 1`, the move is `good`
-  unless `wpLoss ≥ 20`, in which case `mistake` is the worst
+  unless `wpLoss ≥ 15`, in which case `mistake` is the worst
   classification reachable (a "forced blunder"). A forced move cannot
   be a `blunder` in V1 because the player had no choice.
 - **Best-move tie.** If multiple moves are within `evalCpBestDelta

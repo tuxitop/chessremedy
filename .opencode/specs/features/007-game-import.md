@@ -52,11 +52,12 @@ It must support:
 - eventual bulk operations.
 
 The page must work well with a few, hundreds, or thousands of games. The
-design must support future features (analysis, puzzle counts, mastered
-counts, per-game accuracy) without a redesign: rows expose an **insights
-region** and a **row-actions** menu through a capability registry
-(`domain/game-library.md`); in V1 only deletion is enabled plus a
-disabled, clearly labelled placeholder for bulk analysis.
+design supports future features (puzzle counts, mastered counts, further
+per-game accuracy) without a redesign: rows expose an **insights region**
+and per-row **icon actions** through a capability registry
+(`domain/game-library.md`). Bulk **Analyze / Re-analyze**, per-row
+analysis actions and **Delete** are live (registered by Feature 008 /
+Feature 010); the Library itself never computes analysis values.
 
 ### Layout
 
@@ -75,16 +76,33 @@ Desktop layout (conceptual):
   `domain/game-library.md` (§1, §2, §7) and they follow the same filter
   state/URL rules as every other dimension.
 - **Results toolbar**: result count ("N of M games") and **Select all**.
-- **Rows**: selection checkbox, White player, Black player, Result,
-  Date, Time control (verbatim string + category), Platform, Your side,
-  future insights region, row-actions menu.
+- **Rows**: Lichess-style **card rows** on every breakpoint — the
+  deliberate mobile card is the only row layout, with no column
+  alignment and no table header on desktop. Each card stacks its
+  fields: line 1 = players (with a "You" chip) + result chip + Your
+  side; line 2 = date · platform · time control (verbatim + category) ·
+  termination/moves. Cards keep `role=table/row/cell` semantics and
+  accessible screen-reader labels (never colour-only), plus a selection
+  checkbox. Below the card content each row carries:
+  - per-row **icon actions** with accessible labels/tooltips: **Review**
+    (link), **Re-analyze** (only when the game is analyzed/outdated),
+    **Analyze/Retry** (unanalyzed/failed/cancelled), **Cancel**
+    (queued/in-progress), and a per-row **Delete** that opens the
+    existing confirmation dialog for that game;
+  - a **full-width per-row progress bar** while the game is being
+    analyzed;
+  - the **insights strip** (Feature 010): colored, one-decimal accuracy
+    and classification/missed-tactic counts that appear as soon as that
+    game's analysis completes.
+- The 🔬 **analysis glyph** appears in the top nav on the **Analysis**
+  entry and on the row / analysis / review actions that lead into
+  analysis surfaces.
 - **Selection toolbar** (visible when ≥ 1 game is selected): selected
-  count, **Analyze** (disabled in V1), **Delete**.
+  count, **Analyze** and **Re-analyze** (enabled when the selection
+  contains ≥ 1 analyzed/outdated game) and **Delete**.
 
-Mobile: the same controls in a compact, deliberate mobile layout — the
-table becomes **cards** (players, result · platform · time control, and
-date) with a selection checkbox per card; filters may collapse into a
-drawer/sheet. Mobile is a designed representation, not a shrunk table.
+Filters may collapse into a drawer/sheet on mobile. The card layout is
+the same deliberate design on every breakpoint — never a shrunk table.
 
 Layout decisions (placement, labels, card vs table) are ordinary UI
 decisions and are not architecture decisions.
@@ -196,20 +214,25 @@ pagination/virtualization. Rules:
 
 ### Future analysis workflow
 
-The page provides the natural path toward analysis without faking it:
+The page is the natural path toward analysis:
 
 ```
-Game Library → Filter → Select → Analyze → queue/progress → results → puzzles
+Game Library → Filter → Select → Analyze / Re-analyze → queue/progress → results → Review → puzzles
 ```
 
-V1 ships the selection mechanism and a disabled **Analyze** action with
-clear labelling; Feature 008 activates it over the selected games and
-registers the per-row **Review** action. Row actions open Live Analysis /
-Review / "Puzzles from this game" only when the owning feature is
-available (capability registry). The insights region renders per-game
-accuracy, classification counts, analysis status, and puzzles-from-game
-vs mastered counts supplied by Features 008–014 — never computed by the
-Library page.
+Bulk **Analyze** and bulk **Re-analyze** are active and operate on the
+current selection (Feature 008 registers them over the selected games,
+together with the per-row **Review** and per-row **Re-analyze**); the
+analysis queue serializes requests — a new request queues behind the
+running one and never aborts it (Feature 008 §5/§6). A game's insights
+strip appears **as soon as that game's analysis completes** (the Library
+refreshes when a batch advances, no manual reload), and games analyzed
+before insights existed are **lazily backfilled** on Library load
+(Feature 010). Row actions open Live Analysis / Review / "Puzzles from
+this game" only when the owning feature is available (capability
+registry). The insights region renders per-game accuracy, classification
+counts, analysis status, and puzzles-from-game vs mastered counts
+supplied by Features 008–014 — never computed by the Library page.
 
 ### Game deletion
 
@@ -238,7 +261,8 @@ Library page.
 
 ### Responsive & accessibility
 
-- Desktop table and deliberate mobile card list (see Layout).
+- Lichess-style card rows on every breakpoint (see Layout); no desktop
+  table / column header.
 - Keyboard-accessible filters, search and selection; accessible
   checkboxes/buttons; visible focus states; semantic labels;
   confirmation dialog; screen-reader-friendly result counts
@@ -267,7 +291,9 @@ Library page.
 16. Select-all operates on the current filtered result set.
 17. Selection clears predictably when filters/search change or games are
     deleted.
-18. The page has a clear, non-faked future path for bulk analysis.
+18. Bulk **Analyze / Re-analyze** acts on the current selection with
+    visible queue/progress; per-row icon actions (Review / Analyze /
+    Re-analyze / Cancel / Delete) are discoverable and accessible.
 19. Individual games can be deleted.
 20. Multiple games can be deleted.
 21. Destructive deletion requires confirmation.

@@ -76,6 +76,12 @@ engine-lines visibility behave identically across the two modes.
   off: stored lines show only where they exist, otherwise the region is
   hidden; while the engine is enabled the region is always reserved (even
   before the first line arrives) so the panel never collapses mid-search.
+- Evaluation sign convention: numeric evaluation **text is White-positive
+  everywhere** — the header eval text, the per-move chips and the stored
+  engine-lines panel share one helper, so `+` always means good for White
+  even when the user plays Black. The evaluation **bar's height stays
+  bottom-oriented** and carries no numeric text tied to the bottom sign
+  (Features 006/008).
 
 ## Sources
 

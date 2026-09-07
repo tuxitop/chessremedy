@@ -51,6 +51,15 @@ In scope:
   showing the position evaluation; the equal/zero point is marked with a
   fixed line in the middle. Rendered from the bottom player's perspective.
   The bar spans the full board/panel height.
+- Evaluation text sign convention: the **bar's height is bottom-oriented**
+  (it flips when the user plays Black) and carries **no numeric sign
+  text**. Numeric evaluation **text** is a separate concern and is
+  **White-positive everywhere**: the header `position-eval` text, the
+  per-ply evaluation chips in the move list and the stored/live
+  engine-lines panel share one helper (`formatWhiteEvaluation`), so `+`
+  always means good for White — `+0.44` is White's advantage even when the
+  user plays Black and the bar height points the other way. Game Review
+  (Feature 008) follows the same convention (ADR-033).
 - Engine-line arrows on the board are visually distinct from mouse-drawn
   arrows: the best line is drawn in a warm colour, and (in "all lines"
   mode) further principal variations are drawn as greyed arrows with

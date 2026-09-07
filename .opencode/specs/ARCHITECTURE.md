@@ -167,6 +167,12 @@ Engine jobs must support:
 - failure
 - resumability
 
+Full-game-analysis **runs** (Feature 008) are serialized on the shared
+analysis service: a new analyze request issued while a run is in progress
+**queues** behind it and starts only when the running run completes — it
+never aborts the running run; cancellation of a run is explicit (Feature
+008 §5/§6). Engine *jobs* inside a run remain individually cancellable.
+
 A FEN-keyed analysis cache (ADR-018) lives in IndexedDB. The
 classification domain (Feature 009) consumes `MoveAnalysis` records
 that may carry WDL (ADR-019). Engine version upgrades follow a

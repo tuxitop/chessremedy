@@ -76,6 +76,16 @@ the same game are distinguishable:
 An existing analysis is never silently treated as equivalent to a newly
 requested analysis with a different identity (ADR-020/§9 versioning).
 
+The **resolved Game-analysis configuration** (Feature 008 §3/§4) — the
+profile plus any effective depth / per-position search-time / threads
+overrides from the Settings `analysis.game` group — is part of this
+deterministic identity. `AnalysisJob.config` carries the resolved values,
+the job id fingerprints them, and two runs of the same game that differ
+only in their resolved Game-analysis settings are distinguishable. A
+completed run whose resolved configuration differs from the current
+Game-analysis settings reads `outdated` and is re-run only on explicit
+request (Feature 008 §22).
+
 ## Analysis job states
 
 Persistent per-game jobs (Feature 008 queue):
@@ -90,6 +100,12 @@ A game is only "completed" when every required position has a persisted
 `MoveAnalysis` record for the requested analysis identity. Completed
 records survive job cancellation/restart and interrupted work resumes
 without repeating completed positions.
+
+This invariant is **enforced by the analysis service**, not merely
+documented: a job is persisted as `completed` only when every required
+position has a persisted `MoveAnalysis` record for the job's identity and
+the build over all planned plies succeeded. A cancelled or partial run is
+never kept, shown or presented as `completed` (Feature 008 §24).
 
 ## Required concepts (position context)
 

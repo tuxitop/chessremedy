@@ -7,22 +7,30 @@
  * its start and end squares are tinted with the classification colour
  * (instead of the default last-move highlight). Rules are intentionally
  * plain (not CSS-module) because Chessground owns the square DOM.
+ *
+ * The hex values below are the canonical palette in
+ * `src/components/analysis/classificationColors.ts` (P5) — the shared source
+ * used by NAG glyphs, Review Summary counts and Library insight counts — here
+ * expressed as `rgba` for translucent overlays. `classificationColors.test.ts`
+ * asserts this file stays in parity with the palette.
  */
 
 cg-board square.review-cls-best {
+  /* #15781b (best) at 42 % */
   background-color: rgba(21, 120, 27, 0.42);
 }
 
 cg-board square.review-cls-inaccuracy {
-  /* #d89000 amber — see NAG_META in pgnAnnotations.ts (P5). */
+  /* #d89000 amber (inaccuracy) — clearly distinct from mistake (P5). */
   background-color: rgba(216, 144, 0, 0.42);
 }
 
 cg-board square.review-cls-mistake {
-  /* #d94f00 orange-red — clearly distinct from inaccuracy amber (P5). */
+  /* #d94f00 orange-red (mistake) — clearly distinct from inaccuracy amber (P5). */
   background-color: rgba(217, 79, 0, 0.48);
 }
 
 cg-board square.review-cls-blunder {
+  /* #c4261c red (blunder). */
   background-color: rgba(196, 38, 28, 0.5);
 }

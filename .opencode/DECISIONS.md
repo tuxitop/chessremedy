@@ -32,11 +32,11 @@ Read order for any feature task:
 | [ADR-015](specs/decisions/ADR-015-sync-scope.md) | V1 sync uses Dropbox App Folder; single `sync.json.gz` | Accepted | Sync |
 | [ADR-016](specs/decisions/ADR-016-sync-file-format.md) | Sync payload = versioned gzipped JSON envelope of collections | Accepted | Sync |
 | [ADR-017](specs/decisions/ADR-017-sync-conflict-resolution.md) | JSON-level merge with last-write-wins fallback + Dropbox `rev` retry | Accepted | Sync |
-| [ADR-018](specs/decisions/ADR-018-engine-analysis-cache.md) | Position-keyed engine analysis cache keyed by FEN + profile/engine identity; never synced | Accepted | Engine/Storage |
+| [ADR-018](specs/decisions/ADR-018-engine-analysis-cache.md) | Position-keyed engine cache keyed by FEN + profile/engine identity + effective game-analysis overrides (depth/search-time/threads); never synced | Accepted | Engine/Storage |
 | [ADR-019](specs/decisions/ADR-019-wdl-storage.md) | Nullable `wdl` per-mille stored on every `MoveAnalysis` (null for `fast`) | Accepted | Analysis/Storage |
 | [ADR-020](specs/decisions/ADR-020-engine-version-upgrade-policy.md) | Lazy, opt-in re-analysis on engine upgrades; engine metadata versioned | Accepted | Engine |
-| [ADR-023](specs/decisions/ADR-023-move-classification-thresholds.md) | Move classification via WDL-derived `wpLoss` thresholds (2/10/20); versioned | Accepted | Classification |
-| [ADR-024](specs/decisions/ADR-024-move-accuracy-formula.md) | Per-move/per-game accuracy uses the Lichess formula; versioned | Accepted | Analysis/Statistics |
+| [ADR-023](specs/decisions/ADR-023-move-classification-thresholds.md) | Move classification via `wpLoss` at winning-chance-loss thresholds 0.10/0.20/0.30 (≈5/10/15 win%) calibrated to Lichess `Advice.scala`; mate transitions unannotated (see ADR) | Accepted | Classification |
+| [ADR-024](specs/decisions/ADR-024-move-accuracy-formula.md) | Per-move accuracy via the Lichess curve; per-game accuracy = Lichess `gameAccuracy` (volatility-weighted/harmonic blend); versioned | Accepted | Analysis/Statistics |
 | [ADR-025](specs/decisions/ADR-025-puzzle-difficulty-formula.md) | Deterministic `[0,100]` puzzle difficulty; five buckets; `<15` filter | Accepted | Puzzles |
 | [ADR-026](specs/decisions/ADR-026-tactical-verification-pipeline.md) | Two-stage tactical verification pipeline | Accepted | Tactical detection |
 | [ADR-027](specs/decisions/ADR-027-license-gpl.md) | ChessRemedy licensed GPL-3.0-or-later | Accepted | All |
@@ -44,7 +44,7 @@ Read order for any feature task:
 | [ADR-030](specs/decisions/ADR-030-drop-pgn-viewer.md) | Drop `@lichess-org/pgn-viewer`; custom `MoveList` on `chessops/pgn` | Accepted | Board/MoveList |
 | [ADR-031](specs/decisions/ADR-031-tactical-training-cycles.md) | V1 tactical training = cycle-based over fixed sets; no FSRS/per-puzzle scheduler | Accepted | Puzzle training |
 | [ADR-032](specs/decisions/ADR-032-typescript-version.md) | TypeScript tracks the latest stable supported by the current `typescript-eslint` peer range; no override | Accepted | Toolchain |
-| [ADR-033](specs/decisions/ADR-033-unified-analysis-board.md) | One shared analysis-board surface for Review (stored) and Live Analysis (engine); live never overwrites stored analysis; exploration non-destructive | Accepted | Analysis/Board |
+| [ADR-033](specs/decisions/ADR-033-unified-analysis-board.md) | One shared analysis-board surface for Review (stored) and Live Analysis (engine); live never overwrites stored analysis; exploration non-destructive; numeric eval text White-positive, bar height bottom-oriented | Accepted | Analysis/Board |
 
 ## Critical Constraints
 

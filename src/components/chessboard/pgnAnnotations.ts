@@ -142,6 +142,11 @@ export function annotationsFromComments(comments: readonly string[]): readonly A
   return shapes;
 }
 
+import {
+  CLASSIFICATION_COLORS,
+  MISSED_TACTIC_COLOR,
+} from '@/components/analysis/classificationColors';
+
 export interface NagMeta {
   /** Number as written in PGN (`$1` … `$9`). */
   readonly nag: number;
@@ -153,26 +158,25 @@ export interface NagMeta {
   readonly color: string;
 }
 
-const GOOD = '#15781b';
+// The NAG tones that map onto the canonical ADR-023 classification palette
+// (P5) reuse the single source of truth — `classificationColors` — so glyphs,
+// counts and board highlights never drift apart. NAG 3/5 (`!!`/`!?`) have no
+// classification counterpart yet (they are reserved for future detectors) and
+// keep their own distinct colours.
 const BRILLIANT = '#0a7a3c';
-// Inaccuracy vs mistake must read as clearly different (P5): amber vs
-// orange-red. Values are the single source also used (as rgba) by the
-// classification square highlights in reviewBoardHighlights.css.
-const MISTAKE = '#d94f00';
-const BLUNDER = '#c4261c';
 const INTERESTING = '#1a56db';
-const DUBIOUS = '#d89000';
-const MISS = '#c2185b';
 
 export const NAG_META: Readonly<Record<number, NagMeta>> = {
-  1: { nag: 1, glyph: '!', tone: 'good', color: GOOD },
-  2: { nag: 2, glyph: '?', tone: 'mistake', color: MISTAKE },
+  1: { nag: 1, glyph: '!', tone: 'good', color: CLASSIFICATION_COLORS.good },
+  2: { nag: 2, glyph: '?', tone: 'mistake', color: CLASSIFICATION_COLORS.mistake },
   3: { nag: 3, glyph: '!!', tone: 'brilliant', color: BRILLIANT },
-  4: { nag: 4, glyph: '??', tone: 'blunder', color: BLUNDER },
+  4: { nag: 4, glyph: '??', tone: 'blunder', color: CLASSIFICATION_COLORS.blunder },
   5: { nag: 5, glyph: '!?', tone: 'interesting', color: INTERESTING },
-  6: { nag: 6, glyph: '?!', tone: 'dubious', color: DUBIOUS },
+  // Inaccuracy uses the canonical amber — clearly distinct from mistake's
+  // orange-red (P5).
+  6: { nag: 6, glyph: '?!', tone: 'dubious', color: CLASSIFICATION_COLORS.inaccuracy },
   // Non-standard (Chess.com) "miss" marker. Rendered as a distinct `X`.
-  9: { nag: 9, glyph: 'X', tone: 'miss', color: MISS },
+  9: { nag: 9, glyph: 'X', tone: 'miss', color: MISSED_TACTIC_COLOR },
 };
 
 /** NAG metadata for a numeric NAG, or `null` when not in the table. */
