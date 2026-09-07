@@ -26,9 +26,15 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  * tactical verification (`VERIFY_MOVETIME_MS`) and defers engine-failing
  * candidates after a bounded retry (plan-013 fixes A/C): verification can now
  * return shallower results instead of failing, so old verified verdicts and
- * new ones are distinguishable.
+ * new ones are distinguishable. Version 5 drops the ADR-025 difficulty
+ * rejection floor: difficulty is still computed and persisted, but a tactic
+ * the user genuinely missed surfaces regardless of how easy a puzzle it would
+ * make (the floor was in practice unreachable; Feature-011 may apply its own
+ * quality threshold when building training puzzles). Version 6 lowers the
+ * `winning_material` objective floor from 3 to 2 piece-value units (owner
+ * decision): a won exchange / quiet fork that nets two points is a real miss.
  */
-export const DETECTION_VERSION = 4;
+export const DETECTION_VERSION = 6;
 
 /**
  * Candidate-generation version. Incremented when the Stage-1 candidate rules

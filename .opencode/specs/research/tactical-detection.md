@@ -144,7 +144,8 @@ For each raw candidate:
      delta < 30 over two consecutive plies).
 3. Classify the tactical objective:
    - `winning_material` if material delta from start to end of the
-     line ≥ 3 (in piece-value units, queen = 9).
+     line ≥ 2 (in piece-value units, queen = 9; owner decision — a
+     won exchange/quiet fork that nets two points is a genuine miss).
    - `forcing_mate` if `evalMate != null` and mate distance ≤ 8 at
      the end of the line.
    - `decisive_advantage` if `|wpEnd - wpStart| ≥ 30` and not
@@ -197,9 +198,14 @@ Stage 2 rejects a raw candidate when (guards run in this order):
    unicity, §0/Sources). A second nearly-as-good move makes the
    tactic ambiguous. `forcing_mate` paths are exempt (a walked board
    mate is deterministic).
-4. **The difficulty estimate is below 15** (ADR-025) — a quality
-   filter, not a content filter.
-5. **The end WDL contradicts the objective** (`wdl-inconsistent`).
+4. **The end WDL contradicts the objective** (`wdl-inconsistent`).
+
+The ADR-025 difficulty estimate is computed and persisted on every
+verified candidate (Feature-011 follow-up) but is **not** a rejection
+floor for detection (`detectionVersion` 5): a tactic the user genuinely
+missed surfaces however easy a puzzle it would make. Puzzle-quality
+thresholding (if any) belongs to Feature 011 when it builds training
+puzzles.
 
 The older accuracy-phrased wording ("require an alternative to score
 ≥ 80 % of the best move") is superseded by the guards above.

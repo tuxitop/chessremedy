@@ -342,15 +342,16 @@ export class TacticalDetectionService {
         }
         // settled.kind === 'rejected'
         settledCount += 1;
-        await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
+        await this.candidates.updateRejected(job.id, candidate.sourcePly, settled.reason);
         await this.persistScanProgress(job, game, records, settledCount, total);
         continue;
       }
       if (outcome.kind === 'rejected') {
         // A Stage-2 guard gave a definitive verdict: the candidate is settled
-        // (discarded) and counts towards the scan progress.
+        // (discarded) and counts towards the scan progress. The guard reason is
+        // persisted so the scan report can explain why it was rejected.
         settledCount += 1;
-        await this.candidates.updateStatus(job.id, candidate.sourcePly, 'failed');
+        await this.candidates.updateRejected(job.id, candidate.sourcePly, outcome.reason);
         await this.persistScanProgress(job, game, records, settledCount, total);
         continue;
       }

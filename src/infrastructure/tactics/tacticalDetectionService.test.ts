@@ -374,6 +374,12 @@ describe('TacticalDetectionService — pass orchestration', () => {
       [missedPly, 'verified'],
       [failingPly, 'failed'],
     ]);
+    // The engine-failed candidate carries NO guard rejection reason (it is
+    // unresolved/deferred, not a definitive Stage-2 verdict).
+    const deferredRow = rows.find((row) => row.sourcePly === failingPly);
+    expect(
+      (deferredRow as { rejectionReason?: string } | undefined)?.rejectionReason,
+    ).toBeUndefined();
 
     // The verified candidate is still annotated even though the pass is failed
     // (the deferred candidate must be retried by the next scan).
@@ -479,6 +485,11 @@ describe('TacticalDetectionService — pass orchestration', () => {
       [missedPly, 'verified'],
       [secondPly, 'failed'],
     ]);
+    // The guard-rejected candidate persists WHY it was rejected (scan report).
+    const rejectedRow = rows.find((row) => row.sourcePly === secondPly);
+    expect(
+      (rejectedRow as { rejectionReason?: string } | undefined)?.rejectionReason,
+    ).toBeDefined();
     const owning = (await analysesRepository.listForGameAndAnalysis(game.id, job.id)).find(
       (record) => record.ply === missedPly,
     );

@@ -37,8 +37,10 @@ import type { Wdl } from '@/domain/chess';
 import type { TacticalObjective } from './types';
 
 /** Minimum net material gain, in piece-value units (queen = 9), that makes a
- * line `winning_material` (research §3 step 3). */
-export const WINNING_MATERIAL_MIN_DELTA = 3;
+ * line `winning_material` (research §3 step 3; owner decision: 2 points — a
+ * won exchange/piece-pair qualifies, so genuine misses like a quiet fork that
+ * nets two points surface instead of being hidden). */
+export const WINNING_MATERIAL_MIN_DELTA = 2;
 
 /** Longest end-of-line mate distance (mover to mate) still classified
  * `forcing_mate` (research §3 step 3). */

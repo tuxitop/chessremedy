@@ -13,7 +13,6 @@ import { ANALYSIS_VERSION } from '@/domain/chess';
 import { estimateDifficulty } from './difficulty';
 import { forcingness, materialDelta, walkLine } from './line';
 import {
-  VERIFICATION_MIN_DIFFICULTY,
   verifyCandidate,
   type TacticalCandidateLine,
   type TacticalVerificationInput,
@@ -403,26 +402,11 @@ describe('verifyCandidate — verified solution is persisted', () => {
   });
 });
 
-describe('verifyCandidate — difficulty-below-15 guard', () => {
-  it('documents that the difficulty-below-15 rejection cannot fire with ADR-025 constants', () => {
-    expect(VERIFICATION_MIN_DIFFICULTY).toBe(15);
-
-    // Any objective-bearing verification occupies >= 1 solution ply with >= 1
-    // solving first move, so the ADR-025 estimate is at least
-    // 10 * 1 + 8 * 1 = 18 — above the floor. The guard is unreachable.
-    expect(
-      estimateDifficulty({
-        lineLength: 1,
-        candidateFirstMoves: 1,
-        forcingness: 0,
-        evalSwing: 0,
-        material: 0,
-        depth: 0,
-      }),
-    ).toBe(18);
-
-    // A minimal end-to-end verification (single quiet decisive move, no
-    // alternatives) still verifies ok rather than ever rejecting below 15.
+describe('verifyCandidate — no ADR-025 difficulty rejection floor (owner decision)', () => {
+  it('verifies a minimal (easy) tactic and still stores its difficulty', () => {
+    // Surfacing a tactic the user genuinely missed never depends on how hard a
+    // puzzle it would make: a single quiet decisive move (ADR-025 estimate
+    // well below the old 15 floor) verifies and its difficulty is persisted.
     const minimal = verifyInput({
       candidate: makeCandidate({ evalCpBefore: 0 }),
       lines: [makeLine({ uci: ['h2h3'], evalCp: 400 })],
@@ -430,6 +414,30 @@ describe('verifyCandidate — difficulty-below-15 guard', () => {
     const verified = asVerified(verifyCandidate(minimal));
     expect(verified.candidateSolutionLength).toBe(1);
     expect(verified.tacticalObjective).toBe('decisive_advantage');
+    expect(typeof verified.difficulty).toBe('number');
+  });
+
+  it('verifies even a bare material win with no forcingness', () => {
+    // An easy one-move queen grab (a3 rook takes the loose d3 queen):
+    // forcingness 0 and a flat eval swing — still a verified missed tactic
+    // (the old difficulty floor would have hidden it).
+    const raw = makeCandidate({
+      startingFen: '4k3/8/8/8/8/R2q4/8/4K3 w - - 0 1',
+      evalCpBefore: 0,
+      bestMove: 'a3d3',
+      bestPv: ['a3d3'],
+      userMovePlayed: 'h1h3',
+    });
+    const verified = asVerified(
+      verifyCandidate(
+        verifyInput({
+          candidate: raw,
+          lines: [makeLine({ uci: ['a3d3'], evalCp: 800, wdl: { w: 950, d: 40, l: 10 } })],
+        }),
+      ),
+    );
+    expect(verified.tacticalObjective).toBe('winning_material');
+    expect(typeof verified.difficulty).toBe('number');
   });
 });
 
@@ -462,7 +470,6 @@ describe('verifyCandidate — persisted difficulty and accepted moves (Feature-0
     const verified = asVerified(verifyCandidate(input));
 
     expect(typeof verified.difficulty).toBe('number');
-    expect(verified.difficulty).toBeGreaterThanOrEqual(VERIFICATION_MIN_DIFFICULTY);
     expect(verified.acceptedFirstMoves).toEqual(['g5f7']);
   });
 

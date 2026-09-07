@@ -70,7 +70,13 @@ For each raw candidate:
    - Reject if the WDL at the end of the line does not match the
      classified objective.
    - Reject if the line requires > 8 plies.
-   - Reject if the difficulty estimate (ADR-025) is below 15.
+
+   The ADR-025 difficulty estimate is **computed and persisted** on every
+   verified candidate but is **not** a rejection floor: a tactic the user
+   genuinely missed surfaces regardless of how easy a puzzle it would make
+   (`detectionVersion` 5; the old `≥ 15` floor was in practice unreachable
+   and was dropped by the owner). Feature 011 may still apply its own
+   quality threshold when it turns a candidate into a training puzzle.
 
 ### Stage 2 fast path — verification from stored decisive analysis
 
@@ -89,7 +95,7 @@ line is authoritative when **all** of these hold (`detectionVersion` 2):
   delivered by the starting mover.
 
 This path deliberately does **not** apply the MultiPV-dependent guards
-(alternative-move reachability, difficulty floor) or the end-line WDL guard:
+(alternative-move reachability, unicity) or the end-line WDL guard:
 a full-PV board checkmate is a stronger and complete verdict, and those
 guards need a fresh MultiPV/WDL search. Verification provenance records the
 stored line's engine, the stored analysis's own `analysisVersion` and its

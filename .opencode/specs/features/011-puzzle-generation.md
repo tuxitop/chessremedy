@@ -20,11 +20,14 @@ detection pipeline (ADR-026) already owns:
 - Stage-2 engine verification at the **tactical profile** (ADR-012: depth 22,
   MultiPV 5) — the engine run, line walk to the tactical objective, forcingness
   and objective classification, and every false-positive guard;
-- the ADR-025 difficulty estimate and its **`≥ 15` floor** (a Stage-2 quality
-  gate — `difficulty-below-15`);
+- the ADR-025 difficulty estimate, computed and persisted on each verified
+  candidate (there is **no** difficulty rejection floor in Feature-010 —
+  `detectionVersion` 5; a missed tactic surfaces however easy a puzzle it
+  would make);
 - persistence of the **verified candidate** row (`verificationStatus:
   'verified'`) with `bestMove`/`bestPv` (the line walked to the objective),
-  `tacticalObjective`, `candidateSolutionLength` and `verificationMetadata`
+  `tacticalObjective`, `candidateSolutionLength`, the stored `difficulty`
+  and `acceptedFirstMoves`, plus `verificationMetadata`
   (`engineName/Version/Build`, `analysisVersion`, `verificationDepth`,
   `verificationTimestamp`, `wdlAfterBestLine`), `detectionVersion` and
   `candidateGenerationVersion`.
@@ -35,8 +38,10 @@ Feature 011 therefore:
   `listVerifiedForGame` is the documented Feature-011 input;
 - does **no engine work**: no tactical or MultiPV run, no `deep`-profile (depth
   30) confirmation run, no re-verification, no difficulty recomputation;
-- does not generate candidates and does not apply the difficulty `≥ 15` floor
-  (both Feature-010);
+- does not generate candidates (that is Feature-010); it may apply its **own
+  quality threshold** (e.g. a minimum ADR-025 difficulty) when it decides
+  which verified candidates become *training* puzzles — surfacing in Game
+  Review is unaffected by any such threshold;
 - owns the **final puzzle assembly and persistence**: candidate → immutable
   `puzzle` row (schema v8), the generation pass state machine, the Game
   Library row insight/action surface, and the read-only per-game puzzle view.
@@ -181,16 +186,14 @@ deeper verification would change the depth input semantics and must be handled
 as a generator-version/formula change (new ADR, `puzzleGeneratorVersion` bump;
 stored scores are never retroactively re-mapped).
 
-Difficulty is a single integer in `[0, 100]`, bucketed per ADR-025, and is the
-same value Feature-010's `≥ 15` gate used — the puzzle inherits it, Feature-011
-does not re-filter.
-
-> Interface note (open item): the implemented verified-candidate row does not
-> yet persist the numeric difficulty estimate (Feature-010 computes it
-> transiently for the gate). Persisting the ADR-025 estimate (at depth 22) on
-> the verified candidate row is the clean way for Feature-011 to store it
-> "as-is" without engine work or cache reads; this is an additive Feature-010
-> output contract to coordinate.
+Difficulty is a single integer in `[0, 100]`, bucketed per ADR-025. Each
+verified candidate already carries the estimate Feature-010 persisted (the
+tactical-profile run at depth 22; the stored-mate fast path at the stored
+line's depth). The puzzle inherits that value as-is — Feature-011 does not
+recompute it. Because Feature-010 applies no difficulty rejection floor, a
+verified candidate can have any score `≥ 0`; Feature-011 decides whether a
+*puzzle-quality* threshold applies when it promotes candidates into the
+training-puzzle set (Game-Review surfacing is unaffected).
 
 ### Deduplication & re-analysis
 
@@ -514,7 +517,9 @@ Feature 011 intentionally does not include:
 
 - any engine work (no tactical/MultiPV/deep runs, no re-verification, no cache
   reads);
-- candidate generation or the difficulty `≥ 15` floor (Feature-010);
+- candidate generation (Feature-010) — Feature-010 also no longer applies any
+  difficulty rejection floor (`detectionVersion` 5), so a puzzle-quality
+  threshold, if Feature-011 uses one, is Feature-011's own policy;
 - solving interaction, hints, attempts or post-solve analysis (Feature-012);
 - training-set/cycle lifecycle or per-puzzle scheduling (Feature-013; ADR-031:
   no FSRS, no per-puzzle scheduler in V1);

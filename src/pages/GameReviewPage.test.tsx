@@ -7,6 +7,7 @@ import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
+import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
 import { settingsRepository } from '@/infrastructure/db/settings-repository';
 import { SETTINGS_KEYS } from '@/config/app-config';
 import { defaultGameAnalysisSettings } from '@/components/analysis/gameAnalysisSettings';
@@ -851,5 +852,107 @@ describe('Game Review scan activity bar (plan 012, WP-B)', () => {
       const stored = await analysisJobsRepository.listByGame(GAME.id);
       return stored.every((storedJob) => storedJob.state === 'cancelled');
     });
+  });
+});
+
+describe('Game Review scan report (plan-13 recall diagnostics, option C)', () => {
+  beforeEach(async () => {
+    chessboardProps.length = 0;
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.puzzleCandidates.clear();
+    await db.positionAnalysisCache.clear();
+  });
+
+  function failedCandidateRow(
+    sourcePly: number,
+    rejectionReason?: 'no-objective' | 'best-move-not-unique',
+  ): Parameters<typeof puzzleCandidatesRepository.bulkPutForAnalysis>[0][number] {
+    const base = {
+      id: `c:${sourcePly}`,
+      analysisId: 'a',
+      sourceGameId: GAME.id,
+      sourcePly,
+      startingFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      userMovePlayed: 'e2e4',
+      bestMove: 'd2d4',
+      bestPv: ['d2d4'],
+      wpLoss: 60,
+      evalCpBefore: 0,
+      evalCpAfterUserMove: -400,
+      candidateGenerationVersion: 2,
+      createdAt: 1,
+      verificationStatus: 'failed' as const,
+    };
+    return rejectionReason === undefined ? base : { ...base, rejectionReason };
+  }
+
+  it('explains a "0 missed tactics" outcome with examined/rejected/reason counts', async () => {
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const summary = buildAnalysisSummary(records, 'white', {
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: 5,
+    });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...summary,
+    });
+    await puzzleCandidatesRepository.bulkPutForAnalysis([
+      { ...failedCandidateRow(6, 'no-objective'), analysisId: jobId },
+      { ...failedCandidateRow(8, 'best-move-not-unique'), analysisId: jobId },
+    ]);
+
+    renderReview(createFakeAnalysisService().service);
+    await screen.findByTestId('review-layout');
+
+    const report = await screen.findByTestId('review-scan-report');
+    expect(report).toHaveTextContent('Tactics scan report:');
+    expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent(
+      '2 positions examined',
+    );
+    expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent(
+      '0 missed tactics verified',
+    );
+    expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent('2 rejected');
+    expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent(
+      'no objective reached: 1',
+    );
+    expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent(
+      'another move is as good: 1',
+    );
+  });
+
+  it('reports engine-unresolved candidates on a failed pass', async () => {
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const summary = buildAnalysisSummary(records, 'white', { detectionState: 'failed' });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...summary,
+    });
+    await puzzleCandidatesRepository.bulkPutForAnalysis([
+      { ...failedCandidateRow(6, 'no-objective'), analysisId: jobId },
+      // An engine-failed (deferred) row: no guard reason.
+      { ...failedCandidateRow(8), analysisId: jobId },
+    ]);
+
+    renderReview(createFakeAnalysisService().service);
+    await screen.findByTestId('review-layout');
+
+    const report = await screen.findByTestId('review-scan-report');
+    expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent('1 rejected');
+    expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent(
+      '1 could not be checked by the engine (retry the scan)',
+    );
   });
 });

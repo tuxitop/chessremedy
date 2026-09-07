@@ -58,6 +58,7 @@ import {
 import { summarizeAnalysis } from '@/domain/analysis/summary';
 import { gameAccuracy } from '@/domain/analysis/accuracy';
 import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
+import type { ScanPassReport, VerificationRejectionReason } from '@/domain/tactics';
 import {
   classificationCountColor,
   missedTacticCountColor,
@@ -286,6 +287,7 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         detectionState={data.detectionState}
         detectionRunning={detectionRunning}
         scanProgress={data.scanProgress}
+        scanReport={data.scanReport}
         scanActionKind={scanActionKind}
         scanAvailable={Boolean(effectiveService?.scanGame)}
         onScanAction={() => {
@@ -370,6 +372,52 @@ function ScanProgressIndicator({
   );
 }
 
+/** Human label for each Stage-2 rejection reason (scan report, option C). */
+const REJECTION_LABELS: Readonly<Record<VerificationRejectionReason, string>> = {
+  'no-lines': 'no engine line',
+  'bad-line': 'invalid line',
+  'draw-line': 'drawing line',
+  'no-objective': 'no objective reached',
+  '>8-plies': 'tactic longer than 8 plies',
+  'non-forcing-alternative-reaches-objective': 'another quiet move also wins',
+  'best-move-not-unique': 'another move is as good',
+  'wdl-inconsistent': 'engine win% contradicts the line',
+};
+
+/**
+ * One-sentence, screen-reader-friendly scan report for a settled detection
+ * pass: how many positions were examined, how many were verified as missed
+ * tactics, and — for every rejection — why. Turns a bare "0 missed tactics"
+ * into something actionable ("the scan ran, looked at N positions, and
+ * rejected them for these reasons").
+ */
+function scanReportSentence(report: ScanPassReport): string {
+  const parts: string[] = [];
+  const positions = report.examined === 1 ? '1 position' : `${report.examined} positions`;
+  parts.push(`${positions} examined`);
+  const verified =
+    report.verified === 1
+      ? '1 missed tactic verified'
+      : `${report.verified} missed tactics verified`;
+  parts.push(verified);
+  if (report.rejected > 0) {
+    const reasons = (
+      Object.entries(report.rejectedByReason) as Array<[VerificationRejectionReason, number]>
+    )
+      .map(([reason, count]) => `${REJECTION_LABELS[reason] ?? reason}: ${count}`)
+      .join('; ');
+    parts.push(`${report.rejected} rejected${reasons.length > 0 ? ` (${reasons})` : ''}`);
+  }
+  if (report.unresolved > 0) {
+    parts.push(
+      report.unresolved === 1
+        ? '1 could not be checked by the engine (retry the scan)'
+        : `${report.unresolved} could not be checked by the engine (retry the scan)`,
+    );
+  }
+  return parts.join(' · ');
+}
+
 function GameReview({
   pgn,
   userColor,
@@ -379,6 +427,7 @@ function GameReview({
   detectionState,
   detectionRunning,
   scanProgress,
+  scanReport,
   scanActionKind,
   scanAvailable,
   onScanAction,
@@ -399,6 +448,11 @@ function GameReview({
    * analysis's detection pass (plan 013 W3); `null` when none is recorded.
    */
   scanProgress: { readonly done: number; readonly total: number } | null;
+  /**
+   * Per-analysis scan report (plan-13 recall diagnostics, C): what the settled
+   * detection pass did with the game's candidates, including rejection reasons.
+   */
+  scanReport: ScanPassReport | null;
   /** Which scan affordance applies for a non-live pass (`null` = none). */
   scanActionKind: 'resume' | 'retry' | 'run' | null;
   /** Whether the shared service exposes the on-demand scan entry point. */
@@ -1017,6 +1071,15 @@ function GameReview({
               {SCAN_BAR_COPY[scanBar.kind]!.label}
             </Button>
           )}
+        </div>
+      ) : null}
+
+      {scanReport &&
+      scanReport.examined > 0 &&
+      (detectionCompleted || detectionState === 'failed') ? (
+        <div className={styles.scanReport} data-testid="review-scan-report" role="status">
+          <span className={styles.scanReportLabel}>Tactics scan report:</span>
+          <span data-testid="review-scan-report-text">{scanReportSentence(scanReport)}</span>
         </div>
       ) : null}
 

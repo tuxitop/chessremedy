@@ -31,7 +31,9 @@ function inputs(overrides: Partial<ObjectiveInputs> = {}): ObjectiveInputs {
 
 describe('objective thresholds & constants', () => {
   it('pins the research/calibration thresholds', () => {
-    expect(WINNING_MATERIAL_MIN_DELTA).toBe(3);
+    // Owner decision: a 2-point net material gain already qualifies as a
+    // missed tactical win (a won exchange / quiet fork), not only >= 3.
+    expect(WINNING_MATERIAL_MIN_DELTA).toBe(2);
     expect(FORCING_MATE_MAX_DISTANCE).toBe(8);
     expect(DECISIVE_WP_SWING).toBe(30);
     expect(NEUTRALIZING_LOST_BEFORE_WDL_L).toBe(800);
@@ -42,13 +44,14 @@ describe('objective thresholds & constants', () => {
 });
 
 describe('classifyObjective — winning material', () => {
-  it('classifies a net material gain of at least 3 piece-value units', () => {
+  it('classifies a net material gain of at least 2 piece-value units', () => {
+    expect(classifyObjective(inputs({ lineMaterialDelta: 2 }))).toBe('winning_material');
     expect(classifyObjective(inputs({ lineMaterialDelta: 3 }))).toBe('winning_material');
     expect(classifyObjective(inputs({ lineMaterialDelta: 9 }))).toBe('winning_material');
   });
 
   it('does not classify a sub-threshold material gain', () => {
-    expect(classifyObjective(inputs({ lineMaterialDelta: 2.9 }))).toBeNull();
+    expect(classifyObjective(inputs({ lineMaterialDelta: 1.9 }))).toBeNull();
   });
 });
 

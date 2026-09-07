@@ -46,9 +46,9 @@
  * per prefix. Two gates keep eval-backed objectives honest given the single
  * terminal evaluation:
  * - `winning_material` requires **retention**: the gain must be irreversible
- *   through the walk window (the mover is still up `>= 3` at the stop point),
- *   so a prefix that temporarily nets a queen (an equal trade the PV
- *   recaptures) is never reported as a one-ply material win.
+ *   through the walk window (the mover is still up `>= WINNING_MATERIAL_MIN_DELTA`
+ *   at the stop point), so a prefix that temporarily nets a queen (an equal
+ *   trade the PV recaptures) is never reported as a one-ply material win.
  * - `forcing_mate` only counts at a prefix whose walked end actually is
  *   checkmate (a prefix that delivers mate on the board) — an engine mate
  *   value reported for a longer line must not fire at an interior prefix.
@@ -116,7 +116,6 @@ export const VERIFICATION_REJECTION_REASONS = [
   'non-forcing-alternative-reaches-objective',
   'best-move-not-unique',
   'wdl-inconsistent',
-  'difficulty-below-15',
 ] as const;
 
 export type VerificationRejectionReason = (typeof VERIFICATION_REJECTION_REASONS)[number];
@@ -136,9 +135,6 @@ export const MAX_TACTIC_PLIES = 8;
  * header) implies.
  */
 export const STABILISATION_CP_DELTA = 30;
-
-/** Difficulty estimate floor for a verified candidate (ADR-025 / ADR-026). */
-export const VERIFICATION_MIN_DIFFICULTY = 15;
 
 /**
  * Mover losing share (per-mille) at the line end at or above which an end WDL
@@ -449,10 +445,15 @@ export function wdlContradictsObjective(objective: TacticalObjective, wdl: Wdl |
  *
  * Order of guards (ADR-026): engine-line integrity (`no-lines`, `bad-line`,
  * `draw-line`), objective reachability (`no-objective` / `>8-plies`), the
- * ADR-025 difficulty floor (`difficulty-below-15`), the alternative-move
- * guard (`non-forcing-alternative-reaches-objective`), the plan-013 unicity
- * gate (`best-move-not-unique`) and WDL consistency (`wdl-inconsistent`).
- * Deterministic: the result is a pure function of the input.
+ * alternative-move guard (`non-forcing-alternative-reaches-objective`), the
+ * plan-013 unicity gate (`best-move-not-unique`) and WDL consistency
+ * (`wdl-inconsistent`). The ADR-025 difficulty is computed and persisted on
+ * every verified candidate but is NOT a rejection floor in Feature-010:
+ * surfacing a tactic the user genuinely missed never depends on how hard a
+ * puzzle it would make (the ADR-025 >= 15 floor was dropped by the owner;
+ * Feature-011 may still set its own quality threshold when it turns a
+ * candidate into a training puzzle). Deterministic: the result is a pure
+ * function of the input.
  */
 export function verifyCandidate(input: TacticalVerificationInput): VerifyResult {
   const { candidate, lines, now, verificationDepth, engine } = input;
@@ -544,9 +545,6 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
     material: materialWon,
     depth: verificationDepth,
   });
-  if (difficulty < VERIFICATION_MIN_DIFFICULTY) {
-    return reject('difficulty-below-15');
-  }
 
   // Alternative-move guard: a non-forcing first move that independently
   // reaches the same objective rejects (ADR-026 / research §1.4).
@@ -600,7 +598,9 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
     // Feature-011 follow-up: persist the ADR-025 difficulty estimate and the
     // accepted solving first moves (best + distinct alternatives reaching an
     // objective) so the final puzzle needs no second engine run to carry
-    // them. `difficulty` is the same estimate the >= 15 floor used.
+    // them. Difficulty is not a rejection gate in Feature-010 — it is stored
+    // so Feature-011 can apply its own quality threshold when it builds
+    // training puzzles.
     difficulty,
     acceptedFirstMoves: [
       topLine.uci[0] ?? candidate.bestMove,

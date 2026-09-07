@@ -706,8 +706,15 @@ describe('AnalysisService — Feature-010 completion hooks', () => {
     expect(jobs.map((job) => job.state)).toEqual(['completed', 'completed']);
     expect(await analysesRepository.countForGame(a)).toBe(plan.plan.moves.length);
     expect(await analysesRepository.countForGame(b)).toBe(14);
-    // The queued summary was still written before the (broken) detection hook.
-    expect((await summariesRepository.getForAnalysis(jobs[0]!.id))?.detectionState).toBe('queued');
+    // A crashed pass is surfaced as `failed` (never silently stuck in progress)
+    // once the detached detection hook settles.
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(jobs[0]!.id);
+      return summary?.detectionState === 'failed';
+    });
+    const summary = await summariesRepository.getForAnalysis(jobs[0]!.id);
+    expect(summary?.detectionState).toBe('failed');
+    expect(summary?.missedTacticCount).toBeNull();
   });
 
   it('starts the next game as soon as the previous analysis completes (detection never holds the queue)', async () => {

@@ -832,8 +832,27 @@ export class AnalysisService {
           records,
           controller.signal,
         );
-      } catch {
-        // Detection is derived data: a failure never fails the completed job.
+      } catch (err) {
+        // Detection is derived data: a crash never fails the completed job,
+        // but it must NEVER be swallowed silently — that left scans stuck at
+        // "interrupted"/`inProgress` with no explanation. Log the real error
+        // and surface the pass as `failed` so the user can retry it (the scan
+        // report shows which candidates were already settled).
+        console.error('[ChessRemedy] Tactics scan crashed:', err);
+        if (this.summaries) {
+          try {
+            const existing = await this.summaries.getForAnalysis(job.id);
+            if (existing && existing.detectionState !== 'completed') {
+              await this.summaries.putForAnalysis({
+                ...existing,
+                detectionState: 'failed',
+                updatedAt: this.now(),
+              });
+            }
+          } catch {
+            // Best-effort; the scan stays resumable either way.
+          }
+        }
       } finally {
         // Drop only our own pass: a newer scan may have replaced it.
         if (this.scans.get(game.id)?.controller === controller) {

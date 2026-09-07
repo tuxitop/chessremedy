@@ -19,6 +19,7 @@
 import type {
   CandidateVerificationStatus,
   RawCandidate,
+  VerificationRejectionReason,
   VerifiedTacticalCandidate,
 } from '@/domain/tactics';
 import type { GameId } from '@/domain/chess/game';
@@ -28,6 +29,14 @@ import { db, type ChessRemedyDatabase } from './database';
 export interface UnverifiedPuzzleCandidateRow extends RawCandidate {
   /** `'raw'` while awaiting verification, `'failed'` after a failed run. */
   readonly verificationStatus: 'raw' | 'failed';
+  /**
+   * The Stage-2 guard reason that rejected a candidate (plan-13 recall
+   * diagnostics, C). Present only when the row was rejected by a definitive
+   * `verifyCandidate` verdict; engine-failed / deferred candidates carry no
+   * reason (their row is still `'failed'` but unresolved). Additive — older
+   * rows lack it.
+   */
+  readonly rejectionReason?: VerificationRejectionReason;
 }
 
 /**
@@ -52,6 +61,16 @@ export interface PuzzleCandidatesRepository {
     analysisId: string,
     sourcePly: number,
     status: CandidateVerificationStatus,
+  ): Promise<void>;
+  /**
+   * Record a definitive Stage-2 guard rejection for one candidate (plan-13
+   * recall diagnostics, C): flips the row to `failed` and stores the guard
+   * `reason` so the scan report can say *why* each candidate was rejected.
+   */
+  updateRejected(
+    analysisId: string,
+    sourcePly: number,
+    reason: VerificationRejectionReason,
   ): Promise<void>;
   /** Remove every candidate of one analysis run (forced re-analysis cleanup). */
   deleteForAnalysis(analysisId: string): Promise<void>;
@@ -101,6 +120,17 @@ export class DexiePuzzleCandidatesRepository implements PuzzleCandidatesReposito
   ): Promise<void> {
     await this.database.puzzleCandidates.update([analysisId, sourcePly], {
       verificationStatus: status,
+    });
+  }
+
+  async updateRejected(
+    analysisId: string,
+    sourcePly: number,
+    reason: VerificationRejectionReason,
+  ): Promise<void> {
+    await this.database.puzzleCandidates.update([analysisId, sourcePly], {
+      verificationStatus: 'failed',
+      rejectionReason: reason,
     });
   }
 
