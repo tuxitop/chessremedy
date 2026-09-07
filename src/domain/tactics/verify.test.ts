@@ -271,10 +271,10 @@ describe('verifyCandidate — alternative-move guard', () => {
   });
 });
 
-describe('verifyCandidate — unicity gate (plan 013 W2)', () => {
-  it('rejects when the best alternative is as good as the best move (ambiguous)', () => {
-    // Two distinct first moves, both quiet and both reading decisive at +900:
-    // the tactic is not unique.
+describe('verifyCandidate — near-equal alternatives are accepted (unicity gate removed, owner)', () => {
+  it('verifies even when the best alternative is as good as the best move', () => {
+    // Two distinct first moves, both reading decisive at +900: ambiguity no
+    // longer rejects — the user still missed the (best) tactic.
     const input = verifyInput({
       candidate: makeCandidate({ evalCpBefore: 0 }),
       lines: [
@@ -282,14 +282,13 @@ describe('verifyCandidate — unicity gate (plan 013 W2)', () => {
         makeLine({ multipv: 2, uci: ['g5f7'], evalCp: 900 }),
       ],
     });
-    expectReason(input, 'best-move-not-unique');
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.tacticalObjective).toBe('decisive_advantage');
+    // The near-equal forcing alternative is stored as an accepted solving move.
+    expect(verified.acceptedFirstMoves).toEqual(['h2h3', 'g5f7']);
   });
 
-  it('rejects a near-equal second move below the winning-chance gap', () => {
-    // Best h2h3 at +900 (≈ 0.947 winning chance) vs the forcing Nxf7 at +800
-    // (≈ 0.922): the forcing alternative bypasses the alternative-move guard but
-    // the winning-chance gap is far below UNICITY_MIN_WIN_CHANCE_GAP, so the
-    // best move is not unique and the candidate is rejected.
+  it('verifies a near-equal second move (previously below the win-chance gap)', () => {
     const input = verifyInput({
       candidate: makeCandidate({ evalCpBefore: 0 }),
       lines: [
@@ -297,13 +296,11 @@ describe('verifyCandidate — unicity gate (plan 013 W2)', () => {
         makeLine({ multipv: 2, uci: ['g5f7'], evalCp: 800 }),
       ],
     });
-    expectReason(input, 'best-move-not-unique');
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.tacticalObjective).toBe('decisive_advantage');
   });
 
-  it('never applies the unicity gate to a forcing-mate objective', () => {
-    // 4.Qxf7# (h5f7) is a walked one-move board mate: a forcing_mate objective
-    // skips the unicity gate (a mate is deterministic) and verifies even though
-    // a quiet alternative (h2h3) reads decisive-near-equal.
+  it('still verifies a walked one-move board mate with a near-equal quiet alternative', () => {
     const mateFen = 'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4';
     const input = verifyInput({
       candidate: makeCandidate({
@@ -328,9 +325,7 @@ describe('verifyCandidate — unicity gate (plan 013 W2)', () => {
     expect(verified.candidateSolutionLength).toBe(1);
   });
 
-  it('keeps the WDL-consistency guard reachable after the unicity gate', () => {
-    // Top line unique (only line), so unicity is vacuous; the end WDL still
-    // contradicts the winning_material objective and rejects.
+  it('keeps the WDL-consistency guard reachable', () => {
     expectReason(
       verifyInput({
         lines: [makeLine({ wdl: { w: 100, d: 50, l: 850 } })],

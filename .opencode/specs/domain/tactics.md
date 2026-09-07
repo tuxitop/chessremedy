@@ -103,10 +103,12 @@ identity that produced it:
 
 Candidates are derived data owned by their source game and removed with
 it (ARCHITECTURE.md §7). Guard/threshold/verification-source changes bump
-`DETECTION_VERSION` (currently 3 after the plan-013 Stage-2 unicity
-gate) and candidate-rule changes bump `CANDIDATE_GENERATION_VERSION`
-(currently 2 after the plan-013 position-centric rules); existing records
-retain theirs (ARCHITECTURE.md §9).
+`DETECTION_VERSION` (currently 7; versions 5–7 dropped the ADR-025
+difficulty rejection floor, lowered `winning_material` to 2 points, and
+removed the unicity gate) and candidate-rule changes bump
+`CANDIDATE_GENERATION_VERSION` (currently 2 after the plan-013
+position-centric rules); existing records retain theirs (ARCHITECTURE.md
+§9).
 
 ## Scan progress (plan 013, W3)
 

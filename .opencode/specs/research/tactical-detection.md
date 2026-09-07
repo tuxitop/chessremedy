@@ -192,13 +192,13 @@ Stage 2 rejects a raw candidate when (guards run in this order):
 2. **An alternative first move reaches the same objective** by a
    non-forcing line (`non-forcing-alternative-reaches-objective`) —
    the "only one good move" guard.
-3. **The best move is not unique** (`best-move-not-unique`, plan 013
-   W2): for a non-mate objective the best line must beat the best
-   distinct-first-move alternative by ≥ 0.7 winning-chance (lichess
-   unicity, §0/Sources). A second nearly-as-good move makes the
-   tactic ambiguous. `forcing_mate` paths are exempt (a walked board
-   mate is deterministic).
-4. **The end WDL contradicts the objective** (`wdl-inconsistent`).
+3. **The end WDL contradicts the objective** (`wdl-inconsistent`).
+
+There is **no unicity / "best-move-not-unique" guard** (the plan-013 W2
+gate was removed in `detectionVersion` 7): a tactic the user missed is a
+miss even when a second move is nearly as good. Near-equal alternatives
+only raise the ADR-025 difficulty input and join the accepted solving
+moves.
 
 The ADR-025 difficulty estimate is computed and persisted on every
 verified candidate (Feature-011 follow-up) but is **not** a rejection

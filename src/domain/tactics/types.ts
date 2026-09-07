@@ -33,8 +33,11 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  * quality threshold when building training puzzles). Version 6 lowers the
  * `winning_material` objective floor from 3 to 2 piece-value units (owner
  * decision): a won exchange / quiet fork that nets two points is a real miss.
+ * Version 7 removes the unicity / `best-move-not-unique` rejection (owner
+ * decision): a tactic the user missed is a miss even when a second move is
+ * nearly as good.
  */
-export const DETECTION_VERSION = 6;
+export const DETECTION_VERSION = 7;
 
 /**
  * Candidate-generation version. Incremented when the Stage-1 candidate rules

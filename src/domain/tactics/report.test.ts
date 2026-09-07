@@ -42,24 +42,24 @@ describe('summarizeCandidateRows (scan report)', () => {
       row('failed', { sourcePly: 10, rejectionReason: 'no-objective' }),
       row('failed', {
         sourcePly: 12,
-        rejectionReason: 'best-move-not-unique',
+        rejectionReason: '>8-plies',
         verificationTopLine: { move: 'g5f7' },
       }),
-      row('failed', { sourcePly: 14, rejectionReason: '>8-plies' }),
+      row('failed', { sourcePly: 14, rejectionReason: 'wdl-inconsistent' }),
     ]);
     expect(report.examined).toBe(7);
     expect(report.verified).toBe(2);
     expect(report.rejected).toBe(5);
     expect(report.rejectedByReason).toEqual({
       'no-objective': 3,
-      'best-move-not-unique': 1,
       '>8-plies': 1,
+      'wdl-inconsistent': 1,
     });
     expect(report.unresolved).toBe(0);
     // Engine top move is retained only when the row stored one.
     expect(report.bestMoves).toEqual([
       { sourcePly: 6, reason: 'no-objective', move: 'd2d4' },
-      { sourcePly: 12, reason: 'best-move-not-unique', move: 'g5f7' },
+      { sourcePly: 12, reason: '>8-plies', move: 'g5f7' },
     ]);
   });
 

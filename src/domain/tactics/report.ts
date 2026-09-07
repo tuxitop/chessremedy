@@ -21,8 +21,11 @@ export interface CandidateRowLike {
   readonly verificationStatus: 'raw' | 'failed' | 'verified';
   /** Set only when a Stage-2 guard rejected the candidate (definitive verdict). */
   readonly rejectionReason?: VerificationRejectionReason;
-  /** The engine's top move of the rejected candidate's Stage-2 evaluation. */
-  readonly verificationTopLine?: { readonly move: string };
+  /** The engine's top line of the rejected candidate's Stage-2 evaluation. */
+  readonly verificationTopLine?: {
+    readonly move: string;
+    readonly uci?: readonly string[];
+  };
 }
 
 /** What one settled detection pass did with a game's candidates. */
@@ -52,6 +55,8 @@ export interface ScanPassReport {
     readonly sourcePly: number;
     readonly reason: VerificationRejectionReason;
     readonly move: string;
+    /** Shortened engine principal variation (uci), when stored. */
+    readonly pv?: string;
   }>;
 }
 
@@ -64,6 +69,7 @@ export function summarizeCandidateRows(rows: readonly CandidateRowLike[]): ScanP
     sourcePly: number;
     reason: VerificationRejectionReason;
     move: string;
+    pv?: string;
   }> = [];
   for (const row of rows) {
     if (row.verificationStatus === 'verified') {
@@ -74,10 +80,12 @@ export function summarizeCandidateRows(rows: readonly CandidateRowLike[]): ScanP
       rejected += 1;
       rejectedByReason[row.rejectionReason] = (rejectedByReason[row.rejectionReason] ?? 0) + 1;
       if (row.sourcePly !== undefined && row.verificationTopLine?.move) {
+        const pv = row.verificationTopLine.uci?.slice(0, 8).join(' ');
         bestMoves.push({
           sourcePly: row.sourcePly,
           reason: row.rejectionReason,
           move: row.verificationTopLine.move,
+          ...(pv !== undefined && pv !== '' ? { pv } : {}),
         });
       }
       continue;

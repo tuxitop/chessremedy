@@ -868,7 +868,7 @@ describe('Game Review scan report (plan-13 recall diagnostics, option C)', () =>
 
   function failedCandidateRow(
     sourcePly: number,
-    rejectionReason?: 'no-objective' | 'best-move-not-unique',
+    rejectionReason?: 'no-objective' | '>8-plies',
   ): Parameters<typeof puzzleCandidatesRepository.bulkPutForAnalysis>[0][number] {
     const base = {
       id: `c:${sourcePly}`,
@@ -906,7 +906,7 @@ describe('Game Review scan report (plan-13 recall diagnostics, option C)', () =>
     });
     await puzzleCandidatesRepository.bulkPutForAnalysis([
       { ...failedCandidateRow(6, 'no-objective'), analysisId: jobId },
-      { ...failedCandidateRow(8, 'best-move-not-unique'), analysisId: jobId },
+      { ...failedCandidateRow(8, '>8-plies'), analysisId: jobId },
     ]);
 
     renderReview(createFakeAnalysisService().service);
@@ -925,7 +925,7 @@ describe('Game Review scan report (plan-13 recall diagnostics, option C)', () =>
       'no objective reached: 1',
     );
     expect(within(report).getByTestId('review-scan-report-text')).toHaveTextContent(
-      'another move is as good: 1',
+      'tactic longer than 8 plies: 1',
     );
   });
 

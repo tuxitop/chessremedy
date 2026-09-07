@@ -61,15 +61,15 @@ For each raw candidate:
    - Reject if no candidate move achieves a tactical objective.
    - Reject if the tactical objective is reachable by a
      non-forcing alternative (the "only one good move" guard).
-   - Reject if the best move is not **unique** (plan 013 W2): for a
-     non-mate objective the best line must beat the best
-     distinct-first-move alternative by ≥ 0.7 winning-chance
-     (lichess unicity) — a second, nearly-as-good move makes the
-     tactic ambiguous. `forcing_mate` paths are exempt (a walked
-     board mate is deterministic).
    - Reject if the WDL at the end of the line does not match the
      classified objective.
    - Reject if the line requires > 8 plies.
+
+   There is **no unicity / "best-move-not-unique" rejection** (the plan-013
+   W2 gate was removed by the owner in `detectionVersion` 7): a tactic the
+   user missed is still surfaced even when a second move is nearly as good —
+   ambiguity only raises the ADR-025 difficulty input (its candidate count)
+   and adds the near-equal move to the accepted solving moves.
 
    The ADR-025 difficulty estimate is **computed and persisted** on every
    verified candidate but is **not** a rejection floor: a tactic the user
@@ -95,7 +95,7 @@ line is authoritative when **all** of these hold (`detectionVersion` 2):
   delivered by the starting mover.
 
 This path deliberately does **not** apply the MultiPV-dependent guards
-(alternative-move reachability, unicity) or the end-line WDL guard:
+(alternative-move reachability) or the end-line WDL guard:
 a full-PV board checkmate is a stronger and complete verdict, and those
 guards need a fresh MultiPV/WDL search. Verification provenance records the
 stored line's engine, the stored analysis's own `analysisVersion` and its
@@ -180,8 +180,10 @@ Full evaluation: `specs/research/tactical-detection.md`.
   stored-analysis fast path above; candidates verified from stored
   analysis carry `verificationSource: 'stored-analysis'` (fresh tactical
   runs carry `'tactical-search'`). Version 3 added the Stage-2 **unicity
-  gate** (`best-move-not-unique`), which makes the MultiPV-dependent
-  guards stricter; the candidate-rule change of plan 013 is versioned
+  gate**, and Version 7 **removed** it again (owner decision: ambiguity is
+  not a rejection — see Stage 2 above). Version 5 dropped the ADR-025
+  difficulty rejection floor; Version 6 lowered `winning_material` to a
+  2-point floor; the candidate-rule change of plan 013 is versioned
   separately by `CANDIDATE_GENERATION_VERSION` (now 2). Version 4
   time-bounds each tactical search (`VERIFY_MOVETIME_MS`) and defers
   engine-failing candidates after a bounded retry (plan-013 fixes A/C),

@@ -380,7 +380,6 @@ const REJECTION_LABELS: Readonly<Record<VerificationRejectionReason, string>> = 
   'no-objective': 'no objective reached',
   '>8-plies': 'tactic longer than 8 plies',
   'non-forcing-alternative-reaches-objective': 'another quiet move also wins',
-  'best-move-not-unique': 'another move is as good',
   'wdl-inconsistent': 'engine win% contradicts the line',
 };
 
@@ -1084,7 +1083,7 @@ function GameReview({
             <span className={styles.scanReportMoves} data-testid="review-scan-report-moves">
               {scanReport.bestMoves.map((note) => (
                 <span key={note.sourcePly} data-testid={`review-scan-report-ply-${note.sourcePly}`}>
-                  {`ply ${note.sourcePly}: ${REJECTION_LABELS[note.reason] ?? note.reason} — engine best ${note.move}`}
+                  {`ply ${note.sourcePly}: ${REJECTION_LABELS[note.reason] ?? note.reason} — engine best ${note.move}${note.pv !== undefined ? ` · ${note.pv}` : ''}`}
                 </span>
               ))}
             </span>

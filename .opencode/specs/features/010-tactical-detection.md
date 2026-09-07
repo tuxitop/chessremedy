@@ -282,13 +282,14 @@ Once a pass has settled (completed or failed), Game Review shows a compact
 **scan report** for the analysis: how many candidate positions Stage 1
 examined, how many Stage 2 verified, and — for every candidate a guard
 rejected — the reason (`no-objective`, `>8-plies`,
-`non-forcing-alternative-reaches-objective`, `best-move-not-unique`,
-`wdl-inconsistent`, engine-line errors), plus how many could not be checked
-by the engine (engine-failed/deferred) and need a retry. Guard rejections
-persist their `rejectionReason` on the candidate row; the report is a pure
-summary of the analysis's rows. This is the diagnostic that tells a user
-whether "no missed tactics" means the scan found nothing worth showing, or
-found positions and rejected them (and why).
+`non-forcing-alternative-reaches-objective`, `wdl-inconsistent`,
+engine-line errors) plus the engine's top move/PV it evaluated there, and
+how many could not be checked by the engine (engine-failed/deferred) and
+need a retry. Guard rejections persist their `rejectionReason` (and the
+evaluated top line) on the candidate row; the report is a pure summary of
+the analysis's rows. This is the diagnostic that tells a user whether "no
+missed tactics" means the scan found nothing worth showing, or found
+positions and rejected them (and why).
 
 ### Resumable scans & engine-activity surfacing (plan 012, WP-A/WP-B)
 
