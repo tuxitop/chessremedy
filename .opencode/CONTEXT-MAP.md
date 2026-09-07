@@ -64,8 +64,8 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 005, 007 (Library surface + canonical filter state), 008 (persisted `MoveAnalysis` + analysis status), 009 (per-game summary/accuracy tooling); output consumed by Features 011, 014 and by the Game Library read-only row insights.
 
 ### Feature 011 — Tactical Puzzle Generation
-- Required: ADRs `decisions/ADR-006`, `decisions/ADR-025`, `decisions/ADR-026`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-031`; domain `domain/puzzle-model.md`, `domain/tactics.md`, `domain/tactical-training.md`; research `research/puzzle-generation.md`, `research/tactical-detection.md`.
-- Dependencies: Feature 010 (candidates); output feeds Feature 013.
+- Required: ADRs `decisions/ADR-006`, `decisions/ADR-025`, `decisions/ADR-026`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-031`; domain `domain/puzzle-model.md`, `domain/tactics.md`, `domain/tactical-training.md`, `domain/game-library.md`; research `research/puzzle-generation.md`, `research/tactical-detection.md`.
+- Dependencies: Feature 007 (Library row surface + capability registry), Feature 010 (verified candidates); output consumed by Features 012/013.
 
 ### Feature 012 — Puzzle Training
 - Required: `ARCHITECTURE.md` (post-solve reuse of Feature 006); ADRs `decisions/ADR-031`, `decisions/ADR-023`, `decisions/ADR-018`; domain `domain/tactical-training.md`, `domain/puzzle-model.md`; research `research/cycle-training.md`.
