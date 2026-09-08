@@ -54,7 +54,24 @@ default context; consult them only to answer "why" questions or when a
 feature explicitly references them. Do not load unrelated features,
 ADRs, research, plans, or README history.
 
----
+## Output discipline
+
+Keep session context small:
+
+- **Offload exploration and research.** Use the `task` tool (or the
+  `explore` / `research` commands, which force `subtask: true`) for
+  codebase searches and open research questions. Only the subagent's
+  final summary returns to this session — its file reads and searches
+  do not.
+- **Return deltas, not whole files.** Prefer diffs and `file:line`
+  references over pasting full file contents. Summarise tool output
+  instead of echoing large results back verbatim.
+- **Do not re-read what is already loaded** or in the current diff.
+- **Narrow first, gate later.** Run focused tests/documents before the
+  full gate so failures are diagnosed on small output.
+- **Cut sessions at natural boundaries.** Commit completed work and
+  start a fresh session (resume with `--continue`) instead of letting
+  one session grow until it must be compacted repeatedly.
 
 ## Source of truth
 
@@ -189,7 +206,13 @@ This rule is inherited by every `.opencode/commands/*.md` and every
 Use the narrowest relevant verification first (focused unit/domain
 tests), then the project's full gate in `## Execution policy`. Before
 considering a feature complete run lint, typecheck, tests, and the
-production build. See `.opencode/commands/verify.md`.
+production build.
+
+When you need to actually run the gate, load the `verify-gate` skill
+(`.opencode/skills/verify-gate/SKILL.md`) for the narrow-first order, the
+exact commands, and the failure/escalation protocol; `.opencode/commands/verify.md`
+is the thin command wrapper around it. Do not carry that runbook in
+every-session context.
 
 ---
 
