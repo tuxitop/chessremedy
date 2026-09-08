@@ -82,7 +82,7 @@ tutorial trainers.
 
 ### 3. Two-stage pipeline
 
-Per ADR-005 / ADR-006 / `specs/features/009-tactical-detection.md`,
+Per ADR-005 / ADR-006 / `specs/features/010-tactical-detection.md`,
 tactical detection has two stages:
 
 **Stage 1 — Candidate generation** (Feature 010, runs on every
@@ -142,6 +142,11 @@ For each raw candidate:
    - or the depth exceeds 8 plies,
    - or the position stabilises (no checks, no captures, evalCp
      delta < 30 over two consecutive plies).
+
+   From `detectionVersion` 8 the stabilisation stop is **narrowly
+   relaxed** — it does not truncate the material-retention scan when the
+   mover had already captured before the quiet pair. The exact rule is
+   guard 1 in §5 (single source).
 3. Classify the tactical objective:
    - `winning_material` if material delta from start to end of the
      line ≥ 2 (in piece-value units, queen = 9; owner decision — a
@@ -188,11 +193,21 @@ positional improvements.
 Stage 2 rejects a raw candidate when (guards run in this order):
 
 1. **No candidate move reaches an objective** (`no-objective` /
-   `>8-plies`) — the best line may be a quiet improvement.
+   `>8-plies`) — the best line may be a quiet improvement. From
+   `detectionVersion` 8 the stabilisation stop is relaxed **narrowly**
+   (plan 14 §B1): when the mover had already captured at or before a quiet
+   defender pair, material retention is scanned across the full ≤8-ply
+   window, so a fork/pin whose gain is collected a couple of plies after a
+   quiet reply still verifies (`winning_material`). Purely quiet lines keep
+   the strict stop.
 2. **An alternative first move reaches the same objective** by a
    non-forcing line (`non-forcing-alternative-reaches-objective`) —
    the "only one good move" guard.
-3. **The end WDL contradicts the objective** (`wdl-inconsistent`).
+3. **The end WDL contradicts the objective** (`wdl-inconsistent`). From
+   `detectionVersion` 8 the veto applies only to objectives claimed at the
+   engine line's terminal prefix; an interior-prefix retained
+   `winning_material` (line continues past the tactic) is not vetoed by a
+   terminal WDL that reflects an already-lost surrounding game.
 
 There is **no unicity / "best-move-not-unique" guard** (the plan-013 W2
 gate was removed in `detectionVersion` 7): a tactic the user missed is a

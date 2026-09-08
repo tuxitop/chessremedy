@@ -47,7 +47,7 @@
  * terminal evaluation:
  * - `winning_material` requires **retention**: the gain must be irreversible
  *   through the walk window (the mover is still up `>= WINNING_MATERIAL_MIN_DELTA`
- *   at the stop point), so a prefix that temporarily nets a queen (an equal
+ *   at the window end), so a prefix that temporarily nets a queen (an equal
  *   trade the PV recaptures) is never reported as a one-ply material win.
  * - `forcing_mate` only counts at a prefix whose walked end actually is
  *   checkmate (a prefix that delivers mate on the board) — an engine mate
@@ -55,6 +55,29 @@
  * - `decisive_advantage` / `neutralizing_threat` describe the completed
  *   line's end state (terminal evaluation vs the candidate start state), so
  *   they only count when the walked prefix IS the whole engine line.
+ *
+ * ## Narrow stabilisation relaxation (detectionVersion 8, plan 14 §B1)
+ *
+ * The research §3 walk stops at the first stabilised two-ply pair. From
+ * detectionVersion 8 this stop no longer truncates the material retention scan
+ * when the mover had already captured at or before the pair: a fork/pin whose
+ * engine line collects `>= WINNING_MATERIAL_MIN_DELTA` within the ≤8-ply window
+ * even though a quiet defender reply sits mid-line is a real `winning_material`
+ * ("the line still ends with a retained material gain on the full ≤8-ply
+ * line"). Purely quiet positional lines (the quiet pair precedes any capture)
+ * keep the strict stop, so "quiet positional improvement" noise stays rejected.
+ *
+ * ## WDL-consistency guard (detectionVersion 8 relaxation)
+ *
+ * The end-of-line WDL veto now applies only when the objective is claimed AT
+ * the engine line's terminal prefix (`solutionPlies === line length`): an
+ * end-of-line objective's terminal WDL describes that exact claim position, so
+ * a contradiction there is real. A `winning_material` secured at an interior
+ * prefix (the engine line continues past the tactic) is a within-window
+ * retained board-level fact; the terminal WDL then reflects the surrounding
+ * game — which may be lost for unrelated earlier reasons — not the tactic, so
+ * it cannot veto the surface (owner decision: surfacing "if I missed it" wins,
+ * even in an already-lost game).
  *
  * ## `>8-plies` vs `no-objective` (precise rule)
  *
@@ -283,6 +306,11 @@ function lastPlyForcing(walk: LineWalk): boolean {
   return lastPly !== undefined && (lastPly.isCheck || lastPly.isCapture);
 }
 
+/** True when the mover (the line's starting side) made a capture in `walk`. */
+function moverCaptured(walk: LineWalk): boolean {
+  return walk.plies.some((ply) => ply.sideToMoveBefore === walk.startTurn && ply.isCapture);
+}
+
 /**
  * First prefix (1-based) whose cumulative material is `>= min` from that
  * prefix through the walked window — the point at which a material gain
@@ -310,12 +338,21 @@ function earliestIrreversibleWin(materials: readonly number[], min: number): num
  *
  * Material objectives are evaluated for **retention**: a `winning_material`
  * prefix only counts when the gain is irreversible through the walk window
- * (the mover is still up `>= WINNING_MATERIAL_MIN_DELTA` at the stop point,
+ * (the mover is still up `>= WINNING_MATERIAL_MIN_DELTA` at the window end,
  * and the returned `plies` is the first prefix after which that never changes
  * — so an equal queen trade `Qxd8+ Kxd8` whose PV nets zero is never reported
  * as a one-ply material win). End-state objectives (`decisive_advantage`,
  * `neutralizing_threat`, board-checkmate `forcing_mate`) only count at the
  * whole engine line's end, where the single terminal evaluation is defined.
+ *
+ * Narrow stabilisation relaxation (detectionVersion 8, plan 14 §B1): when the
+ * mover had already captured at or before the quiet pair, retention is scanned
+ * across the full walked window rather than being truncated at the pair — a
+ * fork/pin whose gain is collected a couple of plies after a quiet defender
+ * reply (research §B1: "the line still ends with a retained material gain on
+ * the full ≤8-ply line") is a real `winning_material`. A line whose quiet pair
+ * precedes any capture stays strictly truncated, so pure quiet positional
+ * improvements (no material is ever captured) remain rejected.
  */
 export function prefixScan(
   fen: string,
@@ -353,8 +390,21 @@ export function prefixScan(
     }
   }
 
-  // Retention-gated material win across the walked window (up to `stop`).
-  const windowMaterials = materials.slice(0, stop);
+  // Retention-gated material win across the walked window. Normally the scan
+  // window ends at the stabilisation pair (`stop`). Narrow relaxation (plan 14
+  // §B1, owner decision, detectionVersion 8): when the mover had ALREADY
+  // captured material at or before the quiet pair, a quiet defender reply
+  // mid-line no longer truncates the retention scan — a fork/pin whose gain is
+  // only collected a couple of plies later (the engine line still ends with a
+  // retained `>= WINNING_MATERIAL_MIN_DELTA` gain inside the ≤8-ply window) is
+  // still a real `winning_material`. Pure quiet positional lines (no capture
+  // before the pair) keep the strict stop, so quiet positional-improvement
+  // noise stays rejected: a line that never captures cannot reach the
+  // retention threshold.
+  const windowMaterials =
+    stoppedByStabilisation && moverCaptured(walks[stop - 1]!)
+      ? materials
+      : materials.slice(0, stop);
   const irreversible = earliestIrreversibleWin(windowMaterials, WINNING_MATERIAL_MIN_DELTA);
   if (irreversible !== null) {
     return {
@@ -533,8 +583,18 @@ export function verifyCandidate(input: TacticalVerificationInput): VerifyResult 
   // lowers the ADR-025 difficulty (its candidate-count input C rises) but is
   // not a reason to hide the tactic.
 
-  // WDL-consistency guard on the best line's end WDL.
-  if (wdlContradictsObjective(objective, topLine.wdl)) {
+  // WDL-consistency guard on the best line's end WDL. It only vetoes an
+  // objective claimed AT the engine line's terminal prefix: the engine's
+  // terminal WDL describes that exact claim position, so a contradiction there
+  // is real (e.g. an end-of-line `decisive_advantage` whose own terminal WDL
+  // says the mover is still losing). A `winning_material` objective that
+  // retention proves irreversible at an INTERIOR prefix is secured before the
+  // engine line's later positions — the terminal WDL then reflects the
+  // surrounding game (which may be lost for unrelated earlier reasons), not the
+  // tactic, so it cannot veto a within-window retained material gain
+  // (detectionVersion 8, plan 14 owner decision; surfaces e.g. the b4/Bxe6
+  // fork in an already-losing game).
+  if (solutionPlies === topLine.uci.length && wdlContradictsObjective(objective, topLine.wdl)) {
     return reject('wdl-inconsistent');
   }
 

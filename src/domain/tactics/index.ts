@@ -27,8 +27,6 @@ export type {
   MaterialBalance,
   LineTermination,
 } from './line';
-export { summarizeCandidateRows } from './report';
-export type { CandidateRowLike, ScanPassReport } from './report';
 export { classifyObjective } from './objective';
 export type { ObjectiveInputs } from './objective';
 export { estimateDifficulty } from './difficulty';

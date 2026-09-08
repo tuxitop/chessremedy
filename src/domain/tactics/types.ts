@@ -36,8 +36,21 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  * Version 7 removes the unicity / `best-move-not-unique` rejection (owner
  * decision): a tactic the user missed is a miss even when a second move is
  * nearly as good.
+ * Version 8 (plan 14 §B1, owner decision) relaxes two false-positive guards to
+ * surface threat-based recalls:
+ * - **Narrow stabilisation relaxation.** When the mover had already captured at
+ *   or before a quiet defender pair, the retention scan is no longer truncated
+ *   at the pair: a fork/pin whose material is only collected a couple of plies
+ *   after a quiet defender reply still verifies as `winning_material` inside
+ *   the ≤8-ply window. Purely quiet positional lines (no capture before the
+ *   pair) keep the strict stop.
+ * - **Interior-prefix WDL relaxation.** The end-of-line WDL veto applies only
+ *   when the objective is claimed at the engine line's terminal prefix; a
+ *   `winning_material` secured at an interior prefix (the engine line continues
+ *   past the tactic) is not vetoed by a terminal WDL that reflects the
+ *   surrounding — possibly already-lost — game rather than the tactic.
  */
-export const DETECTION_VERSION = 7;
+export const DETECTION_VERSION = 8;
 
 /**
  * Candidate-generation version. Incremented when the Stage-1 candidate rules

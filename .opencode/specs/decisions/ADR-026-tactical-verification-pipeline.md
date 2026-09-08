@@ -65,6 +65,14 @@ For each raw candidate:
      classified objective.
    - Reject if the line requires > 8 plies.
 
+   The plan-014 owner decisions (`detectionVersion` 8) relax two guards so
+   threat-based recalls surface: a **narrow stabilisation relaxation** (a
+   quiet defender reply does not truncate material retention when the mover
+   had already captured) and the **WDL veto scoped to terminal-prefix
+   objectives** (an interior-prefix retained `winning_material` is not vetoed
+   by an end-of-line WDL that reflects an already-lost surrounding game).
+   Full guard mechanics: `research/tactical-detection.md` §5.
+
    There is **no unicity / "best-move-not-unique" rejection** (the plan-013
    W2 gate was removed by the owner in `detectionVersion` 7): a tactic the
    user missed is still surfaced even when a second move is nearly as good —
@@ -184,11 +192,14 @@ Full evaluation: `specs/research/tactical-detection.md`.
   not a rejection — see Stage 2 above). Version 5 dropped the ADR-025
   difficulty rejection floor; Version 6 lowered `winning_material` to a
   2-point floor; the candidate-rule change of plan 013 is versioned
-  separately by `CANDIDATE_GENERATION_VERSION` (now 2). Version 4
-  time-bounds each tactical search (`VERIFY_MOVETIME_MS`) and defers
-  engine-failing candidates after a bounded retry (plan-013 fixes A/C),
-  so a verification may settle with a shallower result instead of
-  failing the game's whole scan.
+   separately by `CANDIDATE_GENERATION_VERSION` (now 2). Version 4
+   time-bounds each tactical search (`VERIFY_MOVETIME_MS`) and defers
+   engine-failing candidates after a bounded retry (plan-013 fixes A/C),
+   so a verification may settle with a shallower result instead of
+   failing the game's whole scan. Version 8 (plan 14, owner decision)
+   relaxes the stabilisation stop (narrow) and scopes the WDL veto to
+   terminal-prefix objectives — see Stage 2 above and
+   `research/tactical-detection.md` §5.
 
 ## Sources
 

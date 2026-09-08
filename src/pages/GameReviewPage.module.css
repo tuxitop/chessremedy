@@ -64,38 +64,6 @@
   font-size: var(--font-size-sm);
 }
 
-/* Plan-13 recall diagnostics (option C): a compact, readable scan report for a
-   settled pass — how many positions were examined and why the rest were
-   rejected — so "0 missed tactics" is never an unexplained silence. */
-.scanReport {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2) var(--space-3);
-  flex-wrap: wrap;
-  padding: var(--space-2) var(--space-3);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-fg-muted);
-  font-size: var(--font-size-sm);
-}
-
-.scanReportLabel {
-  color: var(--color-fg);
-  font-weight: 600;
-}
-
-/* Per-candidate rejection notes inside the scan report (why each position was
-   rejected: guard reason + the engine move that was evaluated there). */
-.scanReportMoves {
-  flex-basis: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  color: var(--color-fg-muted);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-}
-
 /* Plan-013 W3: numeric live scan progress inside the Review scan bar. The
    fill is the canonical missed-tactic magenta so a running tactics scan is
    visually distinct from the blue analysis progress. */

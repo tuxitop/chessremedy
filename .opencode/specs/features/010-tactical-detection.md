@@ -122,6 +122,13 @@ Verification must establish:
 * that the result is not trivially achievable through an alternative move;
 * that the tactical line satisfies the V1 depth/forcingness constraints.
 
+Verification is **recall-first** (`detectionVersion` 8): a fork/pin whose
+retained `>= 2` material gain is collected after a quiet defender reply, and
+a `winning_material` secured at an interior prefix of the engine line, are
+surfaced even when the surrounding game is already lost. Guard semantics and
+the exact relaxations live in ADR-026 §Stage 2 (see
+`research/tactical-detection.md` §5 for the guard mechanics).
+
 Only verified candidates receive the `missedTactic` annotation.
 
 ## Relationship to Move Classification
@@ -276,20 +283,15 @@ appears only while the shared service reports the game as actively
 detecting, and a resumed pass restores its real `done` from the already
 verified rows before continuing.
 
-### Scan report — "0 missed tactics" is never unexplained (plan-13, option C)
+### Rejection provenance on candidate rows
 
-Once a pass has settled (completed or failed), Game Review shows a compact
-**scan report** for the analysis: how many candidate positions Stage 1
-examined, how many Stage 2 verified, and — for every candidate a guard
-rejected — the reason (`no-objective`, `>8-plies`,
-`non-forcing-alternative-reaches-objective`, `wdl-inconsistent`,
-engine-line errors) plus the engine's top move/PV it evaluated there, and
-how many could not be checked by the engine (engine-failed/deferred) and
-need a retry. Guard rejections persist their `rejectionReason` (and the
-evaluated top line) on the candidate row; the report is a pure summary of
-the analysis's rows. This is the diagnostic that tells a user whether "no
-missed tactics" means the scan found nothing worth showing, or found
-positions and rejected them (and why).
+Stage-2 guard rejections persist their `rejectionReason` (and the engine's
+evaluated top line) on the candidate row, and the ADR-018 position cache
+reuses the verification search, so a later re-scan never re-searches a
+settled position. This diagnostic provenance is stored data only — Game
+Review does not render a scan-report block for it (the plan-13 option C
+summary UI was removed by the owner; the candidate rows and the persisted
+rejection reasons remain the source of truth for debugging recall).
 
 ### Resumable scans & engine-activity surfacing (plan 012, WP-A/WP-B)
 

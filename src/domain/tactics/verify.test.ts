@@ -500,3 +500,112 @@ describe('verifyCandidate — persisted difficulty and accepted moves (Feature-0
     expect(verified.acceptedFirstMoves![0]).toBe('h2h3');
   });
 });
+
+// Real positions from the plan-14 recall game (owner = White), captured by
+// replaying the PGN to the candidate ply. These pin the b4/Bxe6 fork recall
+// shapes the owner reported as missed.
+const PLAN14_FEN24 = 'r3k2r/1ppq2pp/pn2bp2/n1b1p3/8/1BPP4/PP1B1PPP/RN1Q1RK1 w kq - 3 13'; // before 13.Qh5+
+const PLAN14_FEN26 = 'r2k3r/1ppq2pp/pn2bp2/n1b1p2Q/8/1BPP4/PP1B1PPP/RN3RK1 w - - 5 14'; // before 14.d4
+
+function plan14Candidate(fen: string, sourcePly: number, userMove: string): RawCandidate {
+  return makeCandidate({
+    id: `plan14:${sourcePly}`,
+    sourceGameId: 'plan14:game',
+    sourcePly,
+    startingFen: fen,
+    userMovePlayed: userMove,
+    bestMove: 'b3e6',
+    bestPv: [],
+    evalCpBefore: 0,
+  });
+}
+
+describe('verifyCandidate — plan-14 b4/Bxe6 fork recall (real game FENs)', () => {
+  it('verifies the 13th-move position fork (ply 24) as winning_material in 5 plies', () => {
+    // Stockfish's own top line at ply 24 IS the owner's line: Bxe6 Qxe6 b4
+    // Bxb4 cxb4 nets a retained +2 by ply 5. DetectionVersion 8 keeps this
+    // verified (unicity removed in v7; no WDL veto for an interior-prefix win).
+    const input = verifyInput({
+      candidate: plan14Candidate(PLAN14_FEN24, 24, 'd1h5'),
+      lines: [makeLine({ uci: ['b3e6', 'd7e6', 'b2b4', 'c5b4', 'c3b4'] })],
+    });
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.tacticalObjective).toBe('winning_material');
+    expect(verified.candidateSolutionLength).toBe(5);
+    expect(verified.bestPv).toEqual(['b3e6', 'd7e6', 'b2b4', 'c5b4', 'c3b4']);
+  });
+
+  it('verifies the 14th-move quiet-defender shape (ply 26) once the mover had captured before the quiet pair', () => {
+    // The engine's own bestPv line at ply 26: Bxe6 Qxe6 b4, black answers with
+    // the quiet …g6 (defender reply that does not resolve the b4 fork), and the
+    // bishop falls a couple of plies later (…Bxb4 cxb4 → retained +2 by ply 7).
+    // The narrow §B1 relaxation keeps scanning retention past the quiet pair
+    // because the mover had already captured (b3e6) before it — this was
+    // previously rejected `no-objective` on stabilisation.
+    const input = verifyInput({
+      candidate: plan14Candidate(PLAN14_FEN26, 26, 'd3d4'),
+      lines: [makeLine({ uci: ['b3e6', 'd7e6', 'b2b4', 'g7g6', 'h5e2', 'c5b4', 'c3b4'] })],
+    });
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.tacticalObjective).toBe('winning_material');
+    expect(verified.candidateSolutionLength).toBe(7);
+  });
+
+  it('does not relax the quiet pair when the mover never captured before it', () => {
+    // Pure quiet play before the stabilisation pair (no capture in sight) must
+    // keep the strict stop: this is the "quiet positional improvement" noise
+    // the narrow relaxation is designed to avoid. The mover captures nothing,
+    // so the line nets no material and stays no-objective.
+    const input = verifyInput({
+      candidate: plan14Candidate(PLAN14_FEN26, 26, 'd3d4'),
+      lines: [makeLine({ uci: ['a2a4', 'g7g6', 'h2h4', 'h7h6'] })],
+    });
+    expectReason(input, 'no-objective');
+  });
+
+  it('surfaces a +2 fork even when the engine end-of-line WDL still shows the mover losing', () => {
+    // Ply-24 recall blocker (owner): the top line nets a retained +2 by ply 5,
+    // but the engine's full PV (30 plies, ~this game's line) ends with the
+    // mover losing — the old WDL-consistency guard vetoed it. The objective is
+    // claimed at an interior prefix (solution 5 < line length), so the terminal
+    // WDL reflects the surrounding (already-lost) game, not the tactic, and no
+    // longer vetoes (detectionVersion 8).
+    const input = verifyInput({
+      candidate: plan14Candidate(PLAN14_FEN24, 24, 'd1h5'),
+      lines: [
+        makeLine({
+          uci: [
+            'b3e6',
+            'd7e6',
+            'b2b4',
+            'c5b4',
+            'c3b4',
+            'a5c6',
+            'a2a4',
+            'e6d7',
+            'a1a3',
+            'e8g8',
+            'a4a5',
+            'b6d5',
+            'b1c3',
+            'f8d8',
+            'c3d5',
+            'd7d5',
+            'a3c3',
+            'd5d7',
+            'd1b3',
+            'd7f7',
+            'b3b1',
+            'c6d4',
+            'f1e1',
+            'd8d7',
+          ],
+          wdl: { w: 0, d: 14, l: 986 },
+        }),
+      ],
+    });
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.tacticalObjective).toBe('winning_material');
+    expect(verified.candidateSolutionLength).toBe(5);
+  });
+});

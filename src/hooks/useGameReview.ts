@@ -3,8 +3,6 @@ import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
-import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
-import { summarizeCandidateRows, type ScanPassReport } from '@/domain/tactics';
 import type { Game } from '@/domain/chess/game';
 import type { MoveAnalysis } from '@/domain/chess';
 import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
@@ -39,13 +37,6 @@ export interface ReviewData {
    * recorded progress. Rendered as a progress bar only while the pass is live.
    */
   readonly scanProgress: { readonly done: number; readonly total: number } | null;
-  /**
-   * Per-analysis scan report (plan-13 recall diagnostics, C): what the pass did
-   * with the game's candidates — examined / verified / rejected-by-reason /
-   * unresolved. `null` when the run has no candidate rows. Only meaningful once
-   * the pass has settled (completed or failed).
-   */
-  readonly scanReport: ScanPassReport | null;
   reload(): void;
 }
 
@@ -64,7 +55,6 @@ export function useGameReview(gameId: string): ReviewData {
     progress: null,
     detectionState: null,
     scanProgress: null,
-    scanReport: null,
   });
 
   const load = useCallback(() => {
@@ -77,7 +67,6 @@ export function useGameReview(gameId: string): ReviewData {
       let records: readonly MoveAnalysis[] = [];
       let detectionState: SummaryDetectionState | null = null;
       let scanProgress: { readonly done: number; readonly total: number } | null = null;
-      let scanReport: ScanPassReport | null = null;
       if (game && completed) {
         records = await analysesRepository.listForGameAndAnalysis(gameId, completed.id);
         const summary = await summariesRepository.getForAnalysis(completed.id);
@@ -86,8 +75,6 @@ export function useGameReview(gameId: string): ReviewData {
         // silent about missed tactics.
         detectionState = summary ? summary.detectionState : 'absent';
         scanProgress = summary?.scanProgress ?? null;
-        const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(gameId, completed.id);
-        scanReport = rows.length > 0 ? summarizeCandidateRows(rows) : null;
       }
       if (cancelled) {
         return;
@@ -107,7 +94,6 @@ export function useGameReview(gameId: string): ReviewData {
             : null,
         detectionState,
         scanProgress,
-        scanReport,
       });
     })().catch(() => {
       if (!cancelled) {
