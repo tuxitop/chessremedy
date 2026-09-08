@@ -58,6 +58,7 @@ import {
 import { summarizeAnalysis } from '@/domain/analysis/summary';
 import { gameAccuracy } from '@/domain/analysis/accuracy';
 import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import {
   classificationCountColor,
   missedTacticCountColor,
@@ -266,6 +267,10 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
     const detectionLive =
       (data.detectionState === 'queued' || data.detectionState === 'inProgress') &&
       detectionRunning;
+    // A completed result produced by an older pipeline version is outdated
+    // (plan 015 freshness gate): it is suppressed until a fresh scan re-runs.
+    const detectionOutdated =
+      data.detectionState === 'completed' && data.detectionVersion !== DETECTION_VERSION;
     const scanActionKind =
       data.detectionState === 'queued' || data.detectionState === 'inProgress'
         ? detectionLive
@@ -275,7 +280,9 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
           ? 'retry'
           : data.detectionState === 'absent'
             ? 'run'
-            : null;
+            : detectionOutdated
+              ? 'run'
+              : null;
     return (
       <GameReview
         pgn={data.game.pgn}
@@ -284,6 +291,7 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         records={data.records}
         obsolete={data.obsolete || serviceOutdated}
         detectionState={data.detectionState}
+        detectionVersion={data.detectionVersion}
         detectionRunning={detectionRunning}
         scanProgress={data.scanProgress}
         scanActionKind={scanActionKind}
@@ -377,6 +385,7 @@ function GameReview({
   records,
   obsolete,
   detectionState,
+  detectionVersion,
   detectionRunning,
   scanProgress,
   scanActionKind,
@@ -392,6 +401,8 @@ function GameReview({
   records: readonly MoveAnalysis[];
   obsolete: boolean;
   detectionState: SummaryDetectionState | null;
+  /** Pipeline version of the shown result (plan 015); `null` pre-detection. */
+  detectionVersion: number | null;
   /** True while this analysis's detection pass is live in this session. */
   detectionRunning: boolean;
   /**
@@ -784,12 +795,14 @@ function GameReview({
 
   // Verified-missed plies of the persisted analysis (Feature 010), keyed the
   // same way as `classificationByPly` (mainline node id) so the extra marker
-  // NAG lands on the same move as the classification glyph.
+  // NAG lands on the same move as the classification glyph. Only flags written
+  // by the **current** detection version render (plan 015 freshness gate): an
+  // outdated pass's verdict is suppressed until a fresh scan re-runs it.
   const missedTacticByPly = useMemo(() => {
     const ids = new Set<number>();
     mainline.forEach((node, ply) => {
       const record = records[ply];
-      if (record && record.missedTactic && record.detectionVersion !== null) {
+      if (record && record.missedTactic && record.detectionVersion === DETECTION_VERSION) {
         ids.add(node.id);
       }
     });
@@ -900,21 +913,31 @@ function GameReview({
   // Detection derived state (Feature 010): a completed analysis that was never
   // scanned (or whose scan is pending/failed) is never presented as a real
   // zero — the summary shows either the scanned count or an explicit note, so
-  // a game is never silently missing its missed-tactic result.
+  // a game is never silently missing its missed-tactic result. A result
+  // produced by an older pipeline version is outdated (plan 015): suppressed
+  // until a fresh scan re-runs it.
+  const detectionOutdated =
+    detectionState === 'completed' && detectionVersion !== DETECTION_VERSION;
   const detectionCompleted =
-    detectionState === 'completed' || records.some((record) => record.detectionVersion !== null);
+    !detectionOutdated &&
+    (detectionState === 'completed' ||
+      records.some(
+        (record) => record.missedTactic && record.detectionVersion === DETECTION_VERSION,
+      ));
   const missedTacticsCount = detectionCompleted ? summary.userMissedTactics : null;
-  const detectionNote = detectionCompleted
-    ? null
-    : detectionState === 'queued' || detectionState === 'inProgress'
-      ? detectionRunning
-        ? 'Tactics scan in progress…'
-        : 'Tactics scan interrupted. Resume the scan to continue.'
-      : detectionState === 'failed'
-        ? 'Tactics scan failed. Retry the scan.'
-        : detectionState === 'absent'
-          ? 'Tactics not scanned. Run the tactics scan.'
-          : null;
+  const detectionNote = detectionOutdated
+    ? 'The tactics scan used an older version. Run the scan to refresh it.'
+    : detectionCompleted
+      ? null
+      : detectionState === 'queued' || detectionState === 'inProgress'
+        ? detectionRunning
+          ? 'Tactics scan in progress…'
+          : 'Tactics scan interrupted. Resume the scan to continue.'
+        : detectionState === 'failed'
+          ? 'Tactics scan failed. Retry the scan.'
+          : detectionState === 'absent'
+            ? 'Tactics not scanned. Run the tactics scan.'
+            : null;
 
   // A scan banner under the Review header (WP-B): a running scan is visible and
   // cancellable; an interrupted/failed/never-scanned analysis offers its
@@ -926,7 +949,7 @@ function GameReview({
     : scanScanning
       ? ({ kind: 'scanning' } as const)
       : scanActionKind !== null && scanAvailable
-        ? ({ kind: scanActionKind } as const)
+        ? ({ kind: detectionOutdated ? 'refresh' : scanActionKind } as const)
         : null;
   const SCAN_BAR_COPY: Readonly<Record<string, { text: string; label: string }>> = {
     scanning: {
@@ -944,6 +967,10 @@ function GameReview({
     run: {
       text: 'This analysis was never scanned for missed tactics.',
       label: 'Run tactics scan',
+    },
+    refresh: {
+      text: 'The missed-tactic scan used an older version. Run the scan to refresh it.',
+      label: 'Refresh tactics scan',
     },
   };
 
@@ -1077,7 +1104,9 @@ function GameReview({
                   />
                 }
               />
-              {selected && selected.missedTactic && selected.detectionVersion !== null ? (
+              {selected &&
+              selected.missedTactic &&
+              selected.detectionVersion === DETECTION_VERSION ? (
                 <div
                   className={styles.missed}
                   data-testid="review-missed-tactic-label"

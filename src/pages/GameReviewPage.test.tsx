@@ -12,6 +12,7 @@ import { SETTINGS_KEYS } from '@/config/app-config';
 import { defaultGameAnalysisSettings } from '@/components/analysis/gameAnalysisSettings';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { createAnalysisJob, markCompleted, markFailed } from '@/domain/analysis';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { gameAccuracy } from '@/domain/analysis/accuracy';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
 import { blunderGameRecords } from '@/domain/analysis/fixtures/classificationScenarios';
@@ -546,11 +547,11 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
   });
 
   it('renders the classification glyph plus the missed-tactic marker for a verified miss', async () => {
-    // 2.g4 is White's blunder and a verified missed tactic (detectionVersion 1).
+    // 2.g4 is White's blunder and a verified missed tactic (current detectionVersion).
     await seedCompleted([
       undefined,
       undefined,
-      { missedTactic: true, detectionVersion: 1 },
+      { missedTactic: true, detectionVersion: DETECTION_VERSION },
       undefined,
     ]);
     renderReview(null);
@@ -584,7 +585,7 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     await seedCompleted([
       undefined,
       undefined,
-      { missedTactic: true, detectionVersion: 1 },
+      { missedTactic: true, detectionVersion: DETECTION_VERSION },
       undefined,
     ]);
     renderReview(null);
@@ -611,7 +612,7 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     await seedCompleted([
       undefined,
       undefined,
-      { missedTactic: true, detectionVersion: 1 },
+      { missedTactic: true, detectionVersion: DETECTION_VERSION },
       undefined,
     ]);
     renderReview(null);
@@ -640,7 +641,7 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     const built = buildAnalysisSummary(records, 'white', {
       detectionState: 'completed',
       missedTacticCount: 0,
-      detectionVersion: 1,
+      detectionVersion: DETECTION_VERSION,
     });
     await summariesRepository.putForAnalysis({
       analysisId: jobId,
@@ -656,6 +657,47 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     // A completed scan that found nothing is a real zero, not an absent state.
     expect(screen.getByTestId('summary-missed-tactics-value')).toHaveTextContent('0');
     expect(screen.queryByTestId('review-detection-state')).not.toBeInTheDocument();
+  });
+
+  it('suppresses an outdated completed detection and offers a refresh scan (plan 015)', async () => {
+    // A completed detection whose persisted version predates the current one is
+    // stale: never rendered as markers/count, and re-runnable with one action.
+    const jobId = await seedCompleted([
+      undefined,
+      undefined,
+      { missedTactic: true, detectionVersion: 1 },
+      undefined,
+    ]);
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const built = buildAnalysisSummary(records, 'white', {
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: 1,
+    });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...built,
+    });
+
+    const { service } = createFakeAnalysisService();
+    renderReview(service);
+    await screen.findByTestId('review-layout');
+
+    // An old-version verified miss is not trusted: no NAG-9 marker, no count.
+    const g4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!;
+    const glyphs = within(g4).getAllByTestId('nag-glyph');
+    expect(glyphs.some((glyph) => glyph.dataset.nag === '9')).toBe(false);
+    expect(screen.queryByTestId('summary-missed-tactics-value')).not.toBeInTheDocument();
+
+    // The Review says the result is out of date and offers a refresh scan.
+    expect(screen.getByTestId('review-detection-state')).toHaveTextContent('older version');
+    const bar = screen.getByTestId('review-scan-bar');
+    expect(within(bar).getByTestId('review-scan-refresh')).toHaveTextContent(
+      'Refresh tactics scan',
+    );
   });
 
   it('renders no marker for unverified records (null detectionVersion / missedTactic false)', async () => {

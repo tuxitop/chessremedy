@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { Color } from 'chessops/types';
 import type { MoveAnalysis } from '@/domain/chess';
 import { makeMove } from '../analysis/test-support';
-import { annotateVerifiedMisses } from './annotate';
+import { annotateVerifiedMisses, clearMissedTacticAnnotations } from './annotate';
 import { generateCandidates } from './stage1';
 import { DETECTION_VERSION } from './types';
 import type { VerifiedTacticalCandidate } from './types';
@@ -136,5 +136,49 @@ describe('annotateVerifiedMisses', () => {
     expect(result[1]!.missedTactic).toBe(true);
     expect(result[0]!.detectionVersion).toBe(DETECTION_VERSION);
     expect(result[1]!.detectionVersion).toBe(DETECTION_VERSION);
+  });
+});
+
+describe('clearMissedTacticAnnotations', () => {
+  it('clears only records flagged by an older detection version', () => {
+    const current = missRecord(4, 'white');
+    const annotatedCurrent = {
+      ...current,
+      missedTactic: true,
+      detectionVersion: DETECTION_VERSION,
+    };
+    const stale = missRecord(6, 'white');
+    const annotatedStale = { ...stale, missedTactic: true, detectionVersion: 1 };
+    const clean = missRecord(8, 'white');
+    const records = [annotatedCurrent, annotatedStale, clean];
+
+    const result = clearMissedTacticAnnotations(records, DETECTION_VERSION);
+
+    expect(result[0]).toBe(annotatedCurrent);
+    expect(result[0]!.missedTactic).toBe(true);
+    expect(result[1]).not.toBe(annotatedStale);
+    expect(result[1]!.missedTactic).toBe(false);
+    expect(result[1]!.detectionVersion).toBeNull();
+    expect(result[2]).toBe(clean);
+  });
+
+  it('leaves a flagged record untouched when its version is already current', () => {
+    const record = {
+      ...missRecord(4, 'white'),
+      missedTactic: true,
+      detectionVersion: DETECTION_VERSION,
+    };
+    const result = clearMissedTacticAnnotations([record], DETECTION_VERSION);
+    expect(result[0]).toBe(record);
+    expect(result[0]!.missedTactic).toBe(true);
+  });
+
+  it('clears a stale flag even when detectionVersion is null (annotated without a pass)', () => {
+    const record = missRecord(4, 'white');
+    const nullAnnotated = { ...record, missedTactic: true, detectionVersion: null };
+    const result = clearMissedTacticAnnotations([nullAnnotated], DETECTION_VERSION);
+    expect(result[0]).not.toBe(nullAnnotated);
+    expect(result[0]!.missedTactic).toBe(false);
+    expect(result[0]!.detectionVersion).toBeNull();
   });
 });

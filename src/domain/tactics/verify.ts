@@ -79,6 +79,20 @@
  * it cannot veto the surface (owner decision: surfacing "if I missed it" wins,
  * even in an already-lost game).
  *
+ * ## Lost-position material floor (detectionVersion 10, plan 015)
+ *
+ * Because an interior `winning_material` cannot be vetoed by the terminal WDL,
+ * the mover's start evaluation is the discriminator that keeps that surfacing
+ * honest: `winning_material` is suppressed when the candidate position is
+ * already decisively lost for the mover (`startEvalCp <
+ * WINNING_MATERIAL_MAX_LOST_START_CP`). The retention delta is a relative
+ * within-window measure — a dead-lost mover can net two points inside the
+ * window (grabbing loose pawns inside an even trade) while remaining dead lost
+ * before and after, and at those depths the engine's "top" losing line is one
+ * of many near-equivalent continuations (owner decision). Forced mate and the
+ * defensive objectives still surface from lost positions; only the material
+ * objective is floored.
+ *
  * ## `>8-plies` vs `no-objective` (precise rule)
  *
  * Prefixes are scanned inside the `MAX_TACTIC_PLIES` window. If none reaches
@@ -124,7 +138,7 @@ import type { Wdl } from '@/domain/chess';
 import { estimateDifficulty } from './difficulty';
 import { forcingness, isTerminalDraw, materialDelta, walkLine } from './line';
 import type { LineWalk } from './line';
-import { classifyObjective, WINNING_MATERIAL_MIN_DELTA } from './objective';
+import { classifyObjective, isMaterialStartLost, WINNING_MATERIAL_MIN_DELTA } from './objective';
 import type { TacticalObjective } from './types';
 import { DETECTION_VERSION } from './types';
 import type { RawCandidate, VerifiedTacticalCandidate } from './types';
@@ -406,7 +420,7 @@ export function prefixScan(
       ? materials
       : materials.slice(0, stop);
   const irreversible = earliestIrreversibleWin(windowMaterials, WINNING_MATERIAL_MIN_DELTA);
-  if (irreversible !== null) {
+  if (irreversible !== null && !isMaterialStartLost(startEvalCp)) {
     return {
       objective: 'winning_material',
       plies: irreversible,

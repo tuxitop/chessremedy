@@ -208,6 +208,13 @@ Stage 2 rejects a raw candidate when (guards run in this order):
    engine line's terminal prefix; an interior-prefix retained
    `winning_material` (line continues past the tactic) is not vetoed by a
    terminal WDL that reflects an already-lost surrounding game.
+4. **The mover's start position is already decisively lost** (guard 1,
+   `detectionVersion` 10): an interior `winning_material` is a
+   within-window retained fact that no terminal WDL can veto, so the start
+   evaluation is the discriminator — retention netting `>= 2` from a
+   position with `startEvalCp < −350` is engine-resistance noise in a
+   dead-lost position, not a missed tactic, and yields `no-objective`.
+   Forced-mate and defensive objectives are unaffected.
 
 There is **no unicity / "best-move-not-unique" guard** (the plan-013 W2
 gate was removed in `detectionVersion` 7): a tactic the user missed is a
@@ -342,8 +349,22 @@ extended into a full puzzle.
 Implement the V1 tactical-detection pipeline as described. Pair it
 with the puzzle-generation pipeline in Feature 011. Persist the
 detection version on every candidate so the pipeline is
-reproducible across engine upgrades (ADR-020). See ADR-026 (Tactical
-Verification Pipeline).
+reproducible across engine upgrades (ADR-020). That persisted version
+is also the **freshness key** (detectionVersion 9, plan 015, owner
+decision): a completed result whose version no longer equals the
+current `DETECTION_VERSION` is outdated, suppressed in Review/Library,
+and wiped + re-derived on the next scan of its analysis — so any future
+Stage-1/Stage-2 change must bump `DETECTION_VERSION`, never just the
+code. The `winning_material` objective additionally carries a
+**lost-position floor** (detectionVersion 10, plan 015, owner decision):
+the retention delta is a relative within-window measure, so in a
+start-already-lost position the engine's best losing line (one of many
+near-equivalent continuations) can mechanically net the two-point floor
+without the mover ever being anything but lost — engine-resistance
+noise, not a missed tactic. The objective is therefore suppressed when
+`startEvalCp < WINNING_MATERIAL_MAX_LOST_START_CP` (−350); forced mate
+and the defensive objectives still surface from lost positions. See
+ADR-026 (Tactical Verification Pipeline).
 
 ## Sources
 

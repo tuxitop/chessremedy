@@ -19,8 +19,10 @@ import {
 import { makeEngine, TEST_ENGINE } from '@/domain/analysis/test-support';
 import type { EngineMetadata } from '@/domain/chess';
 import type { Game } from '@/domain/chess/game';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
+import { createFakeAnalysisService } from '@/components/games/test-support/fakeAnalysisService';
 import { renderWithProviders } from '@/test/test-utils';
 import { GameLibrary } from './GameLibrary';
 
@@ -114,7 +116,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
       accuracyMoves: 9,
       detectionState: 'completed',
       missedTacticCount: 1,
-      detectionVersion: 1,
+      detectionVersion: DETECTION_VERSION,
     });
     renderLibrary();
 
@@ -147,7 +149,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
         accuracyMoves: 6,
         detectionState: 'completed',
         missedTacticCount: 0,
-        detectionVersion: 1,
+        detectionVersion: DETECTION_VERSION,
       }),
     );
     renderLibrary();
@@ -189,7 +191,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
         accuracy: 72,
         detectionState: 'completed',
         missedTacticCount: 1,
-        detectionVersion: 1,
+        detectionVersion: DETECTION_VERSION,
       }),
     );
     await seedJob(game.id, 'queued');
@@ -221,7 +223,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
       accuracy: 55,
       detectionState: 'completed',
       missedTacticCount: 0,
-      detectionVersion: 1,
+      detectionVersion: DETECTION_VERSION,
     });
     renderLibrary();
 
@@ -281,7 +283,7 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
       accuracy: null,
       detectionState: 'completed',
       missedTacticCount: 0,
-      detectionVersion: 1,
+      detectionVersion: DETECTION_VERSION,
     });
     renderLibrary();
 
@@ -305,7 +307,7 @@ describe('GameLibrary analysis-result filters (Feature 010)', () => {
       accuracy: 70,
       detectionState: 'completed',
       missedTacticCount: 1,
-      detectionVersion: 1,
+      detectionVersion: DETECTION_VERSION,
     });
     const pending = fixtureGame('li-rapid-clean');
     await gamesRepository.saveGame(pending);
@@ -550,6 +552,32 @@ describe('GameLibrary resumable scans + persistent engine activity (plan 012, WP
     expect(await screen.findByTestId(`row-scan-retry-${failed.id}`)).toBeInTheDocument();
   });
 
+  it('offers a Refresh scan for a completed detection from an older version (plan 015)', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: 1,
+    });
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    // A stale completed result is never presented as a real missed-tactic
+    // count; the strip explains it is out of date instead.
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-detection-outdated')).toHaveTextContent(
+      'Tactics scan out of date',
+    );
+    expect(within(strip).queryByTestId('row-insights-missed-tactics')).not.toBeInTheDocument();
+
+    const refresh = await screen.findByTestId(`row-scan-refresh-${game.id}`);
+    fireEvent.click(refresh);
+    await waitFor(() => expect(service.scanCalls).toEqual([game.id]));
+  });
+
   it('marks a persisted queued analysis job from an earlier session as paused (no auto-run)', async () => {
     const game = fixtureGame('cc-bullet-blunder');
     await gamesRepository.saveGame(game);
@@ -684,7 +712,7 @@ describe('GameLibrary summary backfill (Feature 010 polish)', () => {
       accuracy: 80,
       detectionState: 'completed',
       missedTacticCount: 0,
-      detectionVersion: 1,
+      detectionVersion: DETECTION_VERSION,
     });
     const service = serviceWithBackfill();
 
@@ -694,5 +722,93 @@ describe('GameLibrary summary backfill (Feature 010 polish)', () => {
 
     await waitFor(() => expect(screen.getByTestId(`row-insights-${game.id}`)).toBeInTheDocument());
     expect(service.backfillCalls).toEqual([]);
+  });
+});
+
+describe('GameLibrary bulk Analyze routing (selected games always queue)', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.puzzleCandidates.clear();
+    await db.positionAnalysisCache.clear();
+  });
+
+  it('re-analyzes an already-analyzed selection instead of silently dropping it', async () => {
+    const game = fixtureGame('cc-bullet-blunder');
+    await gamesRepository.saveGame(game);
+    const { service, engine } = createFakeAnalysisService();
+    await service.analyzeGames([game.id]);
+
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+        'data-status',
+        'completed',
+      ),
+    );
+
+    const before = engine.requests.length;
+    expect(before).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId(`game-select-${game.id}`));
+    fireEvent.click(screen.getByTestId('library-analyze'));
+
+    // A completed run under the current settings is force re-analyzed: the
+    // selection must not be silently skipped (the engine is used again).
+    await waitFor(() => expect(engine.requests.length).toBeGreaterThan(before), {
+      timeout: 10_000,
+    });
+    await waitFor(
+      () =>
+        expect(screen.getByTestId(`game-analysis-${game.id}`)).toHaveAttribute(
+          'data-status',
+          'completed',
+        ),
+      { timeout: 10_000 },
+    );
+  });
+
+  it('analyzes a mixed selection (unanalyzed + already-analyzed) end to end', async () => {
+    const analyzed = fixtureGame('cc-bullet-blunder');
+    const unanalyzed = fixtureGame('li-blitz-blunder');
+    await gamesRepository.saveGame(analyzed);
+    await gamesRepository.saveGame(unanalyzed);
+    const { service, engine } = createFakeAnalysisService();
+    await service.analyzeGames([analyzed.id]);
+
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+    await waitFor(() => expect(screen.getAllByTestId(/^game-analysis-/)).toHaveLength(2));
+    await waitFor(() =>
+      expect(screen.getByTestId(`game-analysis-${analyzed.id}`)).toHaveAttribute(
+        'data-status',
+        'completed',
+      ),
+    );
+
+    const before = engine.requests.length;
+
+    fireEvent.click(screen.getByTestId(`game-select-${analyzed.id}`));
+    fireEvent.click(screen.getByTestId(`game-select-${unanalyzed.id}`));
+    fireEvent.click(screen.getByTestId('library-analyze'));
+
+    await waitFor(() => expect(engine.requests.length).toBeGreaterThan(before), {
+      timeout: 10_000,
+    });
+    for (const id of [analyzed.id, unanalyzed.id]) {
+      await waitFor(
+        () =>
+          expect(screen.getByTestId(`game-analysis-${id}`)).toHaveAttribute(
+            'data-status',
+            'completed',
+          ),
+        { timeout: 10_000 },
+      );
+    }
   });
 });

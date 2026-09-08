@@ -84,6 +84,29 @@ A re-analysis produces a new analysis identity; its detection state
 starts absent again until its own pass completes (Stage 2 reuses the
 ADR-018 position cache where possible).
 
+**Freshness gate (plan 015, owner decision):** a `completed` summary is
+only trusted when its `detectionVersion` equals the current
+`DETECTION_VERSION`. A result persisted by an older version is
+**outdated**: Review and the Library suppress it (no markers, no count,
+no missed-tactic filter match) and offer a refresh scan instead. The
+next pass over the analysis — however it is triggered (a fresh analysis
+run, the on-demand scan entry point, or a library/review refresh
+action) — detects the mismatch, wipes the stale candidate rows and move
+annotations, and re-derives the result from the current rules. An
+outdated marker can therefore never survive a re-scan.
+
+**Lost-position material floor (plan 015, owner decision, detectionVersion
+10):** `winning_material` is suppressed when the mover's start position is
+already decisively lost (`startEvalCp < WINNING_MATERIAL_MAX_LOST_START_CP`,
+currently −350). The retention delta is a relative within-window measure: a
+dead-lost mover can net two points inside the window (grabbing loose pawns
+inside an even trade) while remaining dead lost before and after, and at
+those depths the engine's "best" losing line is one of many near-equivalent
+continuations — engine-resistance noise, not a missed tactic. Forced mate
+and the defensive objectives still surface from lost positions; only the
+material objective is floored. Genuine recall forks from slightly-lost
+positions (≈ −200cp) still verify.
+
 ## Persisted candidate shape
 
 A verified tactical candidate is persisted game-scoped with natural key
@@ -103,11 +126,13 @@ identity that produced it:
 
 Candidates are derived data owned by their source game and removed with
 it (ARCHITECTURE.md §7). Guard/threshold/verification-source changes bump
-`DETECTION_VERSION` (currently 8; v5 dropped the ADR-025 difficulty
+`DETECTION_VERSION` (currently 10; v5 dropped the ADR-025 difficulty
 rejection floor, v6 lowered `winning_material` to 2 points, v7 removed the
-unicity gate, and v8 relaxed the stabilisation stop and scoped the WDL veto
-to terminal-prefix objectives — mechanics in ADR-026 and
-`research/tactical-detection.md` §5) and candidate-rule changes bump
+unicity gate, v8 relaxed the stabilisation stop and scoped the WDL veto
+to terminal-prefix objectives, v9 introduced the freshness gate above
+without changing any rule, v10 added the lost-position material floor —
+mechanics in ADR-026 and `research/tactical-detection.md` §5) and
+candidate-rule changes bump
 `CANDIDATE_GENERATION_VERSION` (currently 2 after the plan-013
 position-centric rules); existing records retain theirs (ARCHITECTURE.md
 §9).

@@ -129,6 +129,16 @@ surfaced even when the surrounding game is already lost. Guard semantics and
 the exact relaxations live in ADR-026 §Stage 2 (see
 `research/tactical-detection.md` §5 for the guard mechanics).
 
+The recall-first relaxations are bounded by a **lost-position material
+floor** (`detectionVersion` 10): `winning_material` does not surface when the
+mover's start position is already decisively lost (start eval below −350cp).
+Because the retention delta is relative to the walked window, a dead-lost
+mover can appear to gain two points inside it while remaining dead lost
+before and after; at such depths the engine's "best" losing line is one of
+many near-equivalent continuations, so the apparent gain is not a tactic the
+user missed. Forced mate and the defensive objectives still surface from
+lost positions.
+
 Only verified candidates receive the `missedTactic` annotation.
 
 ## Relationship to Move Classification
@@ -351,6 +361,16 @@ re-analysis produces a new analysis identity, so its detection state
 starts absent again until the new pass completes (Stage 2 reuses the
 ADR-018 position cache where possible).
 
+**Freshness gate (plan 015, owner decision):** a completed detection
+result is consumed — rendered in Review, shown as a Library strip item,
+matched by the missed-tactics filters — only while its persisted
+`detectionVersion` equals the current `DETECTION_VERSION`. A result
+persisted by an older version is **outdated**: it is suppressed
+everywhere and a refresh scan is offered instead. The next pass over the
+same analysis detects the mismatch, wipes the stale candidate rows and
+move annotations, and re-derives the result from the current rules, so
+an outdated marker or count can never survive a re-scan.
+
 ### Analysis-result filters
 
 The Library filter bar gains three single-select dimensions. They
@@ -468,6 +488,15 @@ Feature 011 can consume the verified candidate and transform it into a training 
 * Unanalyzed / queued / in-progress / cancelled / failed games show no
   strip.
 * Absent missed-tactic data is never rendered or filtered as zero.
+* An outdated completed result (older `detectionVersion`) is never
+  rendered or filtered as current: the row shows an out-of-date note and
+  a refresh-scan action instead of the missed-tactics strip.
+* `winning_material` never surfaces from a mover start position already
+  decisively lost (start eval below −350cp, `detectionVersion` 10): such
+  "gains" are relative-window noise in a dead-lost position, not tactics
+  the user missed; Review therefore shows no missed-tactic marker for
+  them while still surfacing genuine recall forks from slightly-lost
+  starts and all forced-mate / defensive objectives.
 * The Analysis, Has blunders and Has missed tactics filters default to
   All, combine (AND) with the other filters and search, round-trip
   through the URL, and clear selection on change.

@@ -8,8 +8,9 @@
  * until an owner feature supplies values. The Library renders present
  * values read-only and never computes them.
  *
- * The analysis-result fields (`analysisStatus`, `accuracy`,
- * `classificationCounts`, `missedTactics`, `hasCompletedDetection`) are
+ *  The analysis-result fields (`analysisStatus`, `accuracy`,
+ *  `classificationCounts`, `detectionState`, `detectionVersion`,
+ *  `missedTactics`, `hasCompletedDetection`) are
  * supplied by the Feature-010 Game Library milestone over persisted
  * analysis jobs + per-analysis summaries (specs/domain/game-library.md §7):
  * values are user-side, derive from the latest completed analysis, and
@@ -47,6 +48,14 @@ export interface GameRowInsights {
    * instead of silently showing nothing.
    */
   readonly detectionState?: SummaryDetectionState;
+  /**
+   * Detection-pipeline version that produced the row's completed pass
+   * (Feature 010, plan 015). Absent until a pass completed. A completed
+   * `detectionState` whose version differs from the current constant is
+   * **outdated**: its missed-tactic result must not be rendered/counted and
+   * the row should offer a refresh scan.
+   */
+  readonly detectionVersion?: number | null;
   /** True once a Feature-010 detection pass completed for the analysis. */
   readonly hasCompletedDetection?: boolean;
   /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { markCompleted, markInProgress } from '@/domain/analysis';
 import { makeEngine, makeJob } from '@/domain/analysis/test-support';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { DEFAULT_LIBRARY_FILTERS } from '@/domain/gameLibrary/filters';
 import type { AnalysisSummaryRow } from './summaries-repository';
 import {
@@ -70,7 +71,7 @@ function fixtureJobsAndSummaries(): {
         classificationCounts: { best: 8, good: 1, inaccuracy: 1, mistake: 0, blunder: 0 },
         detectionState: 'completed',
         missedTacticCount: 0,
-        detectionVersion: 1,
+        detectionVersion: DETECTION_VERSION,
       }),
       summaryFor(blunderJob.id, G_BLUNDER, {
         classificationCounts: { best: 5, good: 2, inaccuracy: 1, mistake: 0, blunder: 2 },
@@ -79,7 +80,7 @@ function fixtureJobsAndSummaries(): {
         classificationCounts: { best: 6, good: 0, inaccuracy: 1, mistake: 0, blunder: 3 },
         detectionState: 'completed',
         missedTacticCount: 1,
-        detectionVersion: 1,
+        detectionVersion: DETECTION_VERSION,
       }),
       summaryFor(absentJob.id, G_DETECTION_ABSENT, {
         classificationCounts: { best: 9, good: 1, inaccuracy: 0, mistake: 0, blunder: 0 },
@@ -154,6 +155,7 @@ describe('analysisInsightsForGame', () => {
       accuracy: 80,
       classificationCounts: { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
       detectionState: 'absent',
+      detectionVersion: null,
       hasCompletedDetection: false,
       missedTactics: null,
       scanProgress: null,
@@ -179,7 +181,7 @@ describe('analysisInsightsForGame', () => {
         summaryFor(job.id, G_CLEAN, {
           detectionState: 'completed',
           missedTacticCount: 0,
-          detectionVersion: 1,
+          detectionVersion: DETECTION_VERSION,
         }),
       ],
     );
@@ -195,11 +197,29 @@ describe('analysisInsightsForGame', () => {
         summaryFor(job.id, G_MISSED, {
           detectionState: 'completed',
           missedTacticCount: 1,
-          detectionVersion: 1,
+          detectionVersion: DETECTION_VERSION,
         }),
       ],
     );
     expect(insights.missedTactics).toBe(1);
+  });
+
+  it('suppresses an outdated detection result produced by an older version (plan 015)', () => {
+    const job = completedJob(G_MISSED, 10);
+    const insights = analysisInsightsForGame(
+      [job],
+      [
+        summaryFor(job.id, G_MISSED, {
+          detectionState: 'completed',
+          missedTacticCount: 1,
+          detectionVersion: 1,
+        }),
+      ],
+    );
+    expect(insights.detectionState).toBe('completed');
+    expect(insights.detectionVersion).toBe(1);
+    expect(insights.hasCompletedDetection).toBe(false);
+    expect(insights.missedTactics).toBeNull();
   });
 
   it('surfaces the live scan progress while a pass is running (plan 013 W3)', () => {

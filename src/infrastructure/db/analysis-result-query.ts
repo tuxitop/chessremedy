@@ -22,6 +22,7 @@ import {
   type AnalysisJob,
   type GameAnalysisStatus,
 } from '@/domain/analysis';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import type { GameId } from '@/domain/chess/game';
 import type { GameLibraryFilters } from '@/domain/gameLibrary/filters';
 import { matchesAnalysisResultFilters } from '@/domain/gameLibrary/predicates';
@@ -96,12 +97,17 @@ export function analysisInsightsForGame(
   if (summary === null) {
     return { analysisStatus: status };
   }
-  const detectionCompleted = summary.detectionState === 'completed';
+  // A detection pass is only "completed" when it was produced by the current
+  // pipeline version (plan 015 freshness gate): an older completed result is
+  // outdated — its count is suppressed and the row offers a refresh scan.
+  const detectionCompleted =
+    summary.detectionState === 'completed' && summary.detectionVersion === DETECTION_VERSION;
   return {
     analysisStatus: status,
     accuracy: summary.accuracy,
     classificationCounts: summary.classificationCounts,
     detectionState: summary.detectionState,
+    detectionVersion: summary.detectionVersion,
     hasCompletedDetection: detectionCompleted,
     missedTactics: detectionCompleted ? summary.missedTacticCount : null,
     scanProgress: summary.scanProgress ?? null,

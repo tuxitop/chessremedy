@@ -184,7 +184,26 @@ Full evaluation: `specs/research/tactical-detection.md`.
   exist.
 - The `detectionVersion` field is incremented whenever the pipeline
   thresholds, guards or verification sources change. Existing candidates
-  retain their original detection version. Version 2 introduced the
+  retain their original detection version — but since version 9 that
+  persisted version is the **freshness key** (plan 015, owner decision):
+  a `completed` result whose version no longer equals the current
+  `DETECTION_VERSION` is *outdated*, is suppressed in Review/Library
+  (no markers, count or filter match) and is wiped and re-derived on the
+  next scan of its analysis, so a stale marker can never survive a
+  re-scan. Version 9 itself carries no rule change. Version 10 (plan 015,
+  owner decision) adds a rule change: the **lost-position material floor** —
+  `winning_material` is suppressed when the mover's start position is
+  already decisively lost (`startEvalCp < WINNING_MATERIAL_MAX_LOST_START_CP`,
+  currently −350). The retention delta is relative to the walk window, so a
+  dead-lost mover can net two points inside it while remaining dead lost
+  before and after; at such depths the engine's "best" losing line is one of
+  many near-equivalent continuations and the apparent gain is
+  engine-resistance noise, not a tactic the user missed. Because an interior
+  `winning_material` is never vetoed by the terminal WDL (v8), the mover's
+  start evaluation is the discriminator that keeps that surfacing honest.
+  Forced mate and the defensive objectives still surface from lost
+  positions; genuine recall forks from slightly-lost starts (≈ −200cp) still
+  verify. Version 2 introduced the
   stored-analysis fast path above; candidates verified from stored
   analysis carry `verificationSource: 'stored-analysis'` (fresh tactical
   runs carry `'tactical-search'`). Version 3 added the Stage-2 **unicity

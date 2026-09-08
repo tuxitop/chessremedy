@@ -886,6 +886,40 @@ describe('AnalysisService — resumable scans & orphan reconciliation (plan 012,
     expect(await service.activeDetectionGames()).toEqual([]);
   });
 
+  it('scanGame re-runs the detection pass when the completed result is from an older version (plan 015)', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));
+    if (!plan.ok) throw new Error(plan.message);
+    const mateFen = plan.plan.moves[MISSED_PLY]!.positionFen;
+
+    const rig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    const service = serviceWithDetectionOf(rig);
+    const jobs = await service.analyzeGames([gameId]);
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(jobs[0]!.id);
+      return summary?.detectionState === 'completed';
+    });
+    const summary = (await summariesRepository.getForAnalysis(jobs[0]!.id))!;
+    expect(summary.detectionVersion).toBe(DETECTION_VERSION);
+
+    // The plan-015 symptom: a completed detection persisted by an older build
+    // carries an older detectionVersion. scanGame must not call it done — it
+    // re-runs the pass so stale rows/annotations are wiped and re-derived.
+    await summariesRepository.putForAnalysis({ ...summary, detectionVersion: 1 });
+    expect(await service.scanGame(gameId)).toBe('started');
+
+    await waitFor(async () => {
+      const refreshed = await summariesRepository.getForAnalysis(jobs[0]!.id);
+      return (
+        refreshed?.detectionState === 'completed' &&
+        refreshed.detectionVersion === DETECTION_VERSION
+      );
+    });
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(gameId, jobs[0]!.id);
+    expect(rows.some((row) => row.verificationStatus === 'verified')).toBe(true);
+    expect(await service.activeDetectionGames()).toEqual([]);
+  });
+
   it('scanGame refuses when there is no completed analysis or a live analysis', async () => {
     const clean = await seedFixture('cc-blitz-clean');
     const service = serviceWithDetectionOf(createFakeEngine());

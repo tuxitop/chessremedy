@@ -9,10 +9,12 @@ import {
   classifyObjective,
   DECISIVE_WP_SWING,
   FORCING_MATE_MAX_DISTANCE,
+  isMaterialStartLost,
   NEUTRALIZING_FINE_END_CP,
   NEUTRALIZING_FINE_END_WDL_L,
   NEUTRALIZING_LOST_BEFORE_CP,
   NEUTRALIZING_LOST_BEFORE_WDL_L,
+  WINNING_MATERIAL_MAX_LOST_START_CP,
   WINNING_MATERIAL_MIN_DELTA,
 } from './objective';
 import type { ObjectiveInputs } from './objective';
@@ -34,6 +36,7 @@ describe('objective thresholds & constants', () => {
     // Owner decision: a 2-point net material gain already qualifies as a
     // missed tactical win (a won exchange / quiet fork), not only >= 3.
     expect(WINNING_MATERIAL_MIN_DELTA).toBe(2);
+    expect(WINNING_MATERIAL_MAX_LOST_START_CP).toBe(-350);
     expect(FORCING_MATE_MAX_DISTANCE).toBe(8);
     expect(DECISIVE_WP_SWING).toBe(30);
     expect(NEUTRALIZING_LOST_BEFORE_WDL_L).toBe(800);
@@ -52,6 +55,40 @@ describe('classifyObjective — winning material', () => {
 
   it('does not classify a sub-threshold material gain', () => {
     expect(classifyObjective(inputs({ lineMaterialDelta: 1.9 }))).toBeNull();
+  });
+
+  it('suppresses winning material when the mover starts already lost (plan 015)', () => {
+    // Owner's 28.Rd1 shape (detectionVersion 10): the mover nets +2 inside the
+    // window (grabbing two loose pawns in an even trade) but is dead lost before
+    // (-648cp, ~8% win) AND after; no other objective may fire (the line does
+    // not mate, does not remove a forced loss and barely moves the win %).
+    const lost = inputs({
+      lineMaterialDelta: 2,
+      startEvalCp: -648,
+      endEvalCp: -825,
+      endWdl: { w: 0, d: 0, l: 1000 },
+      endEvalMate: null,
+      wdlBefore: null,
+    });
+    expect(classifyObjective(lost)).toBeNull();
+  });
+
+  it('still surfaces winning material from a lost-but-not-decisive start', () => {
+    // Plan-14 genuine forks surface from ~-200cp positions (owner decision):
+    // only a start below the floor suppresses the objective.
+    expect(classifyObjective(inputs({ lineMaterialDelta: 2, startEvalCp: -218 }))).toBe(
+      'winning_material',
+    );
+  });
+
+  it('floors strictly below -350 (the boundary value still qualifies)', () => {
+    expect(isMaterialStartLost(-351)).toBe(true);
+    expect(isMaterialStartLost(-350)).toBe(false);
+    expect(isMaterialStartLost(-218)).toBe(false);
+    expect(isMaterialStartLost(null)).toBe(false);
+    expect(classifyObjective(inputs({ lineMaterialDelta: 2, startEvalCp: -350 }))).toBe(
+      'winning_material',
+    );
   });
 });
 

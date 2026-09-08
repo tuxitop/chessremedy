@@ -34,6 +34,7 @@ import { gameClocks } from '@/domain/chess';
 import type { EngineMetadata, AnalysisProfile, EvalCpMate, MoveAnalysis } from '@/domain/chess';
 import type { Game, GameId } from '@/domain/chess/game';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { latestCompletedJob } from '@/domain/analysis';
 import type { AnalysisSummariesRepository } from '@/infrastructure/db/summaries-repository';
 import type { PuzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
@@ -355,7 +356,14 @@ export class AnalysisService {
     }
     if (this.summaries) {
       const existing = await this.summaries.getForAnalysis(latest.id);
-      if (existing?.detectionState === 'completed') {
+      // A scan is only a no-op when the detection result was produced by the
+      // current pipeline version. A completed summary from an older version is
+      // outdated (plan 015 freshness gate): fall through so the pass re-runs
+      // and wipes the stale result.
+      if (
+        existing?.detectionState === 'completed' &&
+        existing.detectionVersion === DETECTION_VERSION
+      ) {
         return 'already-completed';
       }
     }

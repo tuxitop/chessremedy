@@ -21,6 +21,7 @@ import {
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { GameAnalysisProgress } from '@/infrastructure/analysis';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { formatAccuracy } from '@/domain/analysis/classificationMeta';
 import {
   classificationCountColor,
@@ -440,7 +441,32 @@ export function GameLibrary({
         onToggleImport={() => setImportOpen((open) => !open)}
         onAnalyze={() => {
           if (analysis) {
-            analysis.analyze([...library.selected.ids]);
+            // Route every actionable selected game through the analysis queue:
+            // a game without a current run is analyzed, and a game whose run is
+            // completed/outdated is force re-analyzed (the per-row Re-analyze
+            // behaviour). A silent no-op for already-analyzed selections would
+            // otherwise drop the selection without queueing anything. Games
+            // already queued or running in this session are left alone.
+            const selected = [...library.selected.ids];
+            const reanalyze: string[] = [];
+            const analyze: string[] = [];
+            for (const id of selected) {
+              if (analysis.inQueue.has(id)) {
+                continue;
+              }
+              const status = analysis.statuses[id];
+              if (status === 'completed' || status === 'outdated') {
+                reanalyze.push(id);
+              } else {
+                analyze.push(id);
+              }
+            }
+            if (analyze.length > 0) {
+              analysis.analyze(analyze);
+            }
+            if (reanalyze.length > 0) {
+              analysis.reanalyzeMany(reanalyze);
+            }
           }
         }}
         onReanalyze={() => {
@@ -953,6 +979,18 @@ function rowInsightItemsFor(
         spoken: 'Tactics not scanned',
         color: muted,
       });
+    } else if (detection === 'completed') {
+      // A completed result from an older pipeline version is outdated (plan 015
+      // freshness gate): its count is suppressed and the strip says so.
+      items.push({
+        key: 'detection',
+        testId: 'row-insights-detection-outdated',
+        text: 'Tactics scan out of date',
+        spoken: 'Tactics scan out of date',
+        title:
+          'This tactics scan used an older version. Use Refresh tactics scan below to update it.',
+        color: 'var(--color-warning, #b7791f)',
+      });
     }
   }
   return items;
@@ -1024,7 +1062,7 @@ function DetectionScanAction({
     return null;
   }
   const detection = row.detectionState;
-  let kind: 'resume' | 'retry' | 'run' | null = null;
+  let kind: 'resume' | 'retry' | 'run' | 'refresh' | null = null;
   let label = '';
   if (detection === 'queued' || detection === 'inProgress') {
     if (live) {
@@ -1038,6 +1076,11 @@ function DetectionScanAction({
   } else if (detection === 'absent') {
     kind = 'run';
     label = 'Run tactics scan';
+  } else if (detection === 'completed' && row.detectionVersion !== DETECTION_VERSION) {
+    // Outdated result from an older pipeline version (plan 015): offer a
+    // refresh scan that re-runs detection without re-analyzing the game.
+    kind = 'refresh';
+    label = 'Refresh tactics scan';
   } else {
     return null;
   }

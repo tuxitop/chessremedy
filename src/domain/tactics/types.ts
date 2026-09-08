@@ -17,7 +17,10 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
 
 /**
  * Detection-pipeline version. Incremented when verification thresholds,
- * guards or verification sources change (ADR-026). Version 2 added the
+ * guards or verification sources change (ADR-026) — and, since version 9, when
+ * the versioned verification semantics change in any way (the persisted
+ * version is the freshness key that triggers an outdated-result re-scan).
+ * Version 2 added the
  * stored-analysis fast path (WP-C): candidates verified from a decisive
  * stored mate line without a fresh tactical-profile engine run. Version 3
  * adds the Stage-2 unicity gate (plan 013, W2): for non-mate objectives the
@@ -49,8 +52,23 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  *   `winning_material` secured at an interior prefix (the engine line continues
  *   past the tactic) is not vetoed by a terminal WDL that reflects the
  *   surrounding — possibly already-lost — game rather than the tactic.
+ * Version 10 (plan 015, owner decision) adds a rule change: **lost-position
+ * material floor**. `winning_material` is suppressed when the mover's start
+ * position is already decisively lost (`startEvalCp <
+ * WINNING_MATERIAL_MAX_LOST_START_CP`, objective.ts): the retention delta is a
+ * relative within-window measure, so a dead-lost mover minimising the loss can
+ * net two points inside the window while remaining dead lost before and after —
+ * engine-resistance noise, not a missed tactic. Forced mate and the defensive
+ * objectives still surface from lost positions.
+ * Version 9 (plan 015, owner decision) carries no rule change: it marks the
+ * **detection-freshness gate**. A completed detection result is only trusted
+ * (rendered, counted, reused) when its persisted `detectionVersion` equals the
+ * current constant; a bump makes every older completed result "outdated" so the
+ * service wipes and re-runs it on the next scan trigger. Bumping is therefore
+ * mandatory whenever any Stage-1/Stage-2 rule, guard or versioned constant in
+ * this file changes.
  */
-export const DETECTION_VERSION = 8;
+export const DETECTION_VERSION = 10;
 
 /**
  * Candidate-generation version. Incremented when the Stage-1 candidate rules

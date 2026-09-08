@@ -228,6 +228,76 @@ describe('TacticalDetectionService — pass orchestration', () => {
     expect(summary?.detectionState).toBe('completed');
   });
 
+  it('wipes and re-derives a completed detection persisted by an older version (plan 015)', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    const service = serviceOf(rig.service);
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+
+    // First run under the current version: completed summary, verified row,
+    // owning record annotated.
+    await service.runPassForCompletedJob(job, game, records);
+    expect((await summariesRepository.getForAnalysis(job.id))?.detectionVersion).toBe(
+      DETECTION_VERSION,
+    );
+
+    // Replay the plan-015 symptom: an older build's completed result. The
+    // verified row AND the summary carry an older detectionVersion, and a
+    // ghost annotation lingers on a ply that the current Stage-1 no longer
+    // emits as a candidate (the 28.Rd1 case: never re-verified, never pruned).
+    const storedRows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
+    const staleVerified = storedRows.filter(
+      (row): row is VerifiedTacticalCandidate => row.verificationStatus === 'verified',
+    );
+    await puzzleCandidatesRepository.bulkPutForAnalysis(
+      staleVerified.map((row) => ({ ...row, detectionVersion: 1 })),
+    );
+    const summary = (await summariesRepository.getForAnalysis(job.id))!;
+    await summariesRepository.putForAnalysis({ ...summary, detectionVersion: 1 });
+    const ghostPly = plan.moves.length - 1;
+    const staleRecords = (await analysesRepository.listForGameAndAnalysis(game.id, job.id)).map(
+      (record) =>
+        record.ply === missedPly || record.ply === ghostPly
+          ? { ...record, missedTactic: true, detectionVersion: 1 }
+          : record,
+    );
+
+    // A fresh pass on that stale state must NOT trust the old-version result:
+    // it wipes the stale row/annotation and re-runs Stage 2 from scratch.
+    const rig2 = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    const service2 = serviceOf(rig2.service);
+    await service2.runPassForCompletedJob(job, game, staleRecords);
+
+    const refreshed = await summariesRepository.getForAnalysis(job.id);
+    expect(refreshed?.detectionState).toBe('completed');
+    expect(refreshed?.detectionVersion).toBe(DETECTION_VERSION);
+    expect(refreshed?.missedTacticCount).toBe(1);
+
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
+    expect(rows).toHaveLength(1);
+    const verified = rows[0] as VerifiedTacticalCandidate;
+    expect(verified.verificationStatus).toBe('verified');
+    expect(verified.sourcePly).toBe(missedPly);
+    expect(verified.detectionVersion).toBe(DETECTION_VERSION);
+
+    // The genuine miss is re-annotated under the current version…
+    const stored = await analysesRepository.listForGameAndAnalysis(game.id, job.id);
+    const owning = stored.find((record) => record.ply === missedPly);
+    expect(owning?.missedTactic).toBe(true);
+    expect(owning?.detectionVersion).toBe(DETECTION_VERSION);
+    // …and the ghost marker on the no-longer-candidate ply is cleared.
+    const ghost = stored.find((record) => record.ply === ghostPly);
+    expect(ghost?.missedTactic).toBe(false);
+    expect(ghost?.detectionVersion).toBeNull();
+  });
+
   it('verifies a genuine missed tactic end-to-end and annotates the owning move', async () => {
     const game = fixtureGame(BULLET_ID);
     const job = completedJobFor(game);

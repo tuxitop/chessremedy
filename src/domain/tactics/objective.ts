@@ -42,6 +42,25 @@ import type { TacticalObjective } from './types';
  * nets two points surface instead of being hidden). */
 export const WINNING_MATERIAL_MIN_DELTA = 2;
 
+/** Mover centipawn evaluation at the candidate position below which the mover
+ * counts as already decisively lost for `winning_material` purposes. The
+ * material delta is a relative within-window measure: a dead-lost mover can
+ * still net two points inside the window (grabbing loose pawns in an
+ * even trade) while remaining dead lost before and after. In such positions
+ * the "gain" is engine-resistance noise, not a missed tactic (plan 015,
+ * owner decision, detectionVersion 10). Only `winning_material` is gated:
+ * forced mate and the defensive objectives still surface from lost positions.
+ * Calibration constant; threshold changes must bump `DETECTION_VERSION`. */
+export const WINNING_MATERIAL_MAX_LOST_START_CP = -350;
+
+/** True when the mover's start position is already decisively lost
+ * (`startEvalCp` below `WINNING_MATERIAL_MAX_LOST_START_CP`), so a relative
+ * material gain inside the line is not a trustworthy `winning_material`
+ * objective. A `null` start eval (mate reported instead) is never "lost". */
+export function isMaterialStartLost(startEvalCp: number | null): boolean {
+  return startEvalCp !== null && startEvalCp < WINNING_MATERIAL_MAX_LOST_START_CP;
+}
+
 /** Longest end-of-line mate distance (mover to mate) still classified
  * `forcing_mate` (research §3 step 3). */
 export const FORCING_MATE_MAX_DISTANCE = 8;
@@ -126,7 +145,10 @@ function hasDecisiveSwing(inputs: ObjectiveInputs): boolean {
  * header for the mover-perspective input conventions and the fixed precedence.
  */
 export function classifyObjective(inputs: ObjectiveInputs): TacticalObjective | null {
-  if (inputs.lineMaterialDelta >= WINNING_MATERIAL_MIN_DELTA) {
+  if (
+    inputs.lineMaterialDelta >= WINNING_MATERIAL_MIN_DELTA &&
+    !isMaterialStartLost(inputs.startEvalCp)
+  ) {
     return 'winning_material';
   }
   const { endEvalMate } = inputs;

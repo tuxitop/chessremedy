@@ -47,7 +47,12 @@
  * absorbs positions verified by earlier attempts).
  *
  * The pass is idempotent per analysis identity: an invocation whose summary is
- * already `completed` returns without touching anything.
+ * already `completed` by the **current** detection version returns without
+ * touching anything. A `completed` summary (or `verified` rows / `missedTactic`
+ * annotations) written by an older `DETECTION_VERSION` is stale: the pass wipes
+ * those artifacts and re-derives detection from scratch (plan 015 freshness
+ * gate), so a verdict produced under superseded rules never survives a version
+ * bump until a fresh scan replaces it.
  *
  * `ensureSummariesForRows` is the Milestone-B lazy-backfill entrypoint: for
  * games that have a completed/latest analysis but no summary row it derives
@@ -71,6 +76,7 @@ import type {
 } from '@/domain/analysis/summaryDerivation';
 import {
   annotateVerifiedMisses,
+  clearMissedTacticAnnotations,
   DETECTION_VERSION,
   fastPathVerifiedCandidate,
   generateCandidates,
@@ -86,6 +92,7 @@ import type { AnalysisRepository } from '@/infrastructure/db/analysis-repository
 import type { AnalysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import type {
   PuzzleCandidatesRepository,
+  PuzzleCandidateRow,
   UnverifiedPuzzleCandidateRow,
   CandidateVerificationLine,
 } from '@/infrastructure/db/candidates-repository';
@@ -197,8 +204,55 @@ export class TacticalDetectionService {
       return;
     }
     const existing = await this.summaries.getForAnalysis(job.id);
-    if (existing?.detectionState === 'completed') {
+    // Idempotency: an invocation whose summary is already completed **by the
+    // current pipeline version** returns without touching anything. A completed
+    // summary written by an older DETECTION_VERSION is NOT trusted: its verdicts
+    // were produced under rules that no longer apply, so the pass re-runs and
+    // wipes its artifacts (plan 015 freshness gate).
+    if (
+      existing?.detectionState === 'completed' &&
+      existing.detectionVersion === DETECTION_VERSION
+    ) {
       return;
+    }
+    if (signal?.aborted) {
+      return;
+    }
+
+    // Reaching here means the pass will (re)derive detection. If an older
+    // pipeline version already wrote detection artifacts, they are stale and
+    // must be wiped so this run starts clean — in particular a ply that no
+    // longer surfaces as a Stage-1 candidate (or no longer verifies) must lose
+    // its old `verified` row and `missedTactic` annotation instead of surviving
+    // forever (plan 015). The wipe also runs for an empty pass: a game that
+    // re-detects to zero candidates can still carry a stale marker that has to
+    // go.
+    const storedRows = await this.candidates.listForGameAndAnalysis(game.id, job.id);
+    let stored: readonly PuzzleCandidateRow[] = storedRows;
+    const hasStaleRows = storedRows.some(
+      (row) => row.verificationStatus === 'verified' && row.detectionVersion !== DETECTION_VERSION,
+    );
+    const hasStaleCompleted =
+      existing?.detectionState === 'completed' && existing.detectionVersion !== DETECTION_VERSION;
+    const hasStaleAnnotations = records.some(
+      (record) => record.missedTactic && record.detectionVersion !== DETECTION_VERSION,
+    );
+    if (hasStaleCompleted || hasStaleRows || hasStaleAnnotations) {
+      await this.candidates.deleteForAnalysis(job.id);
+      const cleared = clearMissedTacticAnnotations(records, DETECTION_VERSION);
+      if (cleared !== records) {
+        // Persist the de-annotated records so the MoveAnalysis table no longer
+        // carries flags this pass will not re-derive.
+        await this.analyses.replaceAnalysis(cleared);
+      }
+      // The rest of the pass derives summaries and annotations from the cleared
+      // base, never from the stale-annotated input.
+      records = cleared;
+      // The candidate table is empty now: the snapshot above referenced rows
+      // this wipe just deleted, so the reuse map below must not resurrect them
+      // without re-persisting (plan 015). Start the resumability map from the
+      // empty post-wipe table.
+      stored = [];
     }
 
     // Stage-1 output is already capped per game and ordered by swing size
@@ -220,14 +274,15 @@ export class TacticalDetectionService {
       return;
     }
 
-    // Resumability: candidates that already carry a `verified` row (an earlier,
-    // interrupted or failed pass) are reused without an engine run; every other
-    // candidate is (re)persisted as `raw` BEFORE Stage 2 so an interruption
-    // never loses the candidate set.
-    const stored = await this.candidates.listForGameAndAnalysis(game.id, job.id);
+    // Resumability: candidates that already carry a `verified` row written by
+    // the **current** detection version (an earlier, interrupted or failed pass)
+    // are reused without an engine run; every other candidate is (re)persisted
+    // as `raw` BEFORE Stage 2 so an interruption never loses the candidate set.
+    // Rows from older versions are wiped above and filtered here as a defensive
+    // backstop.
     const verifiedByPly = new Map<number, VerifiedTacticalCandidate>();
     for (const row of stored) {
-      if (row.verificationStatus === 'verified') {
+      if (row.verificationStatus === 'verified' && row.detectionVersion === DETECTION_VERSION) {
         verifiedByPly.set(row.sourcePly, row);
       }
     }

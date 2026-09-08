@@ -32,6 +32,13 @@ export interface ReviewData {
    */
   readonly detectionState: SummaryDetectionState | null;
   /**
+   * Detection-pipeline version of the shown analysis's persisted result
+   * (Feature 010, plan 015): the version that produced a `'completed'` pass,
+   * or `null` while none exists. A completed result whose version differs
+   * from the current constant is outdated and is not rendered/counted.
+   */
+  readonly detectionVersion: number | null;
+  /**
    * Live Stage-2 scan progress (`done`/`total` settled candidates) of the shown
    * analysis's detection pass (plan 013 W3); `null` when the pass has not
    * recorded progress. Rendered as a progress bar only while the pass is live.
@@ -54,6 +61,7 @@ export function useGameReview(gameId: string): ReviewData {
     obsolete: false,
     progress: null,
     detectionState: null,
+    detectionVersion: null,
     scanProgress: null,
   });
 
@@ -66,6 +74,7 @@ export function useGameReview(gameId: string): ReviewData {
       const completed = latestCompletedJob(jobs);
       let records: readonly MoveAnalysis[] = [];
       let detectionState: SummaryDetectionState | null = null;
+      let detectionVersion: number | null = null;
       let scanProgress: { readonly done: number; readonly total: number } | null = null;
       if (game && completed) {
         records = await analysesRepository.listForGameAndAnalysis(gameId, completed.id);
@@ -74,6 +83,7 @@ export function useGameReview(gameId: string): ReviewData {
         // real state so the Review can say "not scanned" instead of staying
         // silent about missed tactics.
         detectionState = summary ? summary.detectionState : 'absent';
+        detectionVersion = summary?.detectionVersion ?? null;
         scanProgress = summary?.scanProgress ?? null;
       }
       if (cancelled) {
@@ -93,6 +103,7 @@ export function useGameReview(gameId: string): ReviewData {
             ? { done: active.completedPositions, total: active.totalPositions }
             : null,
         detectionState,
+        detectionVersion,
         scanProgress,
       });
     })().catch(() => {

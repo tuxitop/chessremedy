@@ -609,3 +609,60 @@ describe('verifyCandidate — plan-14 b4/Bxe6 fork recall (real game FENs)', () 
     expect(verified.candidateSolutionLength).toBe(5);
   });
 });
+
+// Owner game (plan 015): the false-positive 28.Rd1 position. White (the mover)
+// is already dead lost at this point — the engine's "best" losing line is one
+// of many near-equivalent continuations, and on the owner's machine it happened
+// to be a line that nets a retained +2 inside the window (grabbing the loose
+// b4/d2 pawns inside an even rook trade) while remaining dead lost throughout.
+const PLAN15_FEN54 = '7r/3k2pp/4bp2/1p6/1p2N3/2P5/1r1p1PPP/5RK1 w - - 0 28'; // before 28.Rd1 (0-based ply 54)
+const PLAN15_LINE = ['c3b4', 'h8c8', 'g1h1', 'c8c1', 'e4d2', 'c1f1', 'd2f1'] as const;
+
+function plan15Candidate(evalCpBefore: number): RawCandidate {
+  return makeCandidate({
+    id: 'plan15:54',
+    sourceGameId: 'plan15:game',
+    sourcePly: 54,
+    startingFen: PLAN15_FEN54,
+    userMovePlayed: 'f1d1',
+    bestMove: 'c3b4',
+    bestPv: [],
+    evalCpBefore,
+  });
+}
+
+describe('verifyCandidate — plan-015 lost-position material floor', () => {
+  it('rejects the owner ply-54 "winning_material" (start -648cp) as no-objective', () => {
+    // The retention scan nets a relative +2 by ply 7 (b4 pawn + d2 pawn captured,
+    // rook-for-rook trade), but the mover is dead lost before (-648cp, ~8% win)
+    // and the engine "top" line is just the least-bad losing try. From
+    // detectionVersion 10 the start-eval floor suppresses the material
+    // objective; the quiet pair mid-line leaves nothing else to reach.
+    const input = verifyInput({
+      candidate: plan15Candidate(-648),
+      lines: [makeLine({ uci: [...PLAN15_LINE], wdl: { w: 0, d: 0, l: 1000 } })],
+    });
+    expectReason(input, 'no-objective');
+  });
+
+  it('still verifies the identical line from a genuinely contestable start', () => {
+    // Same board + same engine line, but the mover is only slightly worse
+    // (-218cp, ~31% win): a retained +2 is now a real resource the user missed.
+    // The engine top line runs one ply past the 7-ply solution, so the win is
+    // claimed at an interior prefix and the terminal (dead-lost) WDL must not
+    // veto it — the mover's start eval is the discriminator instead.
+    const input = verifyInput({
+      candidate: plan15Candidate(-218),
+      lines: [
+        makeLine({
+          uci: [...PLAN15_LINE, 'd7d8'],
+          wdl: { w: 0, d: 0, l: 1000 },
+        }),
+      ],
+    });
+    const verified = asVerified(verifyCandidate(input));
+    expect(verified.tacticalObjective).toBe('winning_material');
+    expect(verified.candidateSolutionLength).toBe(7);
+    expect(verified.bestPv).toEqual([...PLAN15_LINE]);
+  });
+});
