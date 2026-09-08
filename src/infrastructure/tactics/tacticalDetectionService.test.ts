@@ -41,6 +41,7 @@ import { fixtureGame } from '@/domain/chess/fixtures';
 import type { EngineMetadata, MoveAnalysis } from '@/domain/chess';
 import type { Game } from '@/domain/chess/game';
 import { DETECTION_VERSION } from '@/domain/tactics';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
 import {
   createFakeEngine,
@@ -296,6 +297,57 @@ describe('TacticalDetectionService — pass orchestration', () => {
     const ghost = stored.find((record) => record.ply === ghostPly);
     expect(ghost?.missedTactic).toBe(false);
     expect(ghost?.detectionVersion).toBeNull();
+  });
+
+  it('resets puzzle-generation fields when it starts a fresh (re)derivation and never resurrects them (R-2)', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    const service = serviceOf(rig.service);
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+
+    // First run completes detection at the current version.
+    await service.runPassForCompletedJob(job, game, records);
+    expect((await summariesRepository.getForAnalysis(job.id))?.detectionState).toBe('completed');
+
+    // Simulate an already-generated analysis (Feature 011): the summary carries
+    // a completed puzzle pass… persisted under an older detection version. The
+    // old puzzle verdict is stale, so a fresh detection pass must reset the
+    // puzzle fields at its first write and never carry the pre-pass values
+    // through its later writes (plan R-2).
+    const completed = (await summariesRepository.getForAnalysis(job.id))!;
+    await summariesRepository.putForAnalysis({
+      ...completed,
+      detectionVersion: 1,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 1, total: 1 },
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
+    });
+    const rig2 = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    await serviceOf(rig2.service).runPassForCompletedJob(job, game, records);
+
+    const refreshed = (await summariesRepository.getForAnalysis(job.id))!;
+    expect(refreshed.detectionState).toBe('completed');
+    expect(refreshed.detectionVersion).toBe(DETECTION_VERSION);
+    expect(refreshed.missedTacticCount).toBe(1);
+    // The stale pre-pass puzzle verdict was reset at the (re)derivation start:
+    // `absent`/`null`, never the pre-pass `completed` values (the next
+    // generation pass — auto-triggered once detection settles — restarts from
+    // absent).
+    expect(refreshed.puzzleState).toBe('absent');
+    expect(refreshed.puzzleProgress).toBeNull();
+    expect(refreshed.puzzleGeneratorVersion).toBeNull();
+    // The verified row was re-derived under the current version.
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
+    expect(rows).toHaveLength(1);
+    const verified = rows.filter((row) => row.verificationStatus === 'verified');
+    expect(verified[0]?.detectionVersion).toBe(DETECTION_VERSION);
   });
 
   it('verifies a genuine missed tactic end-to-end and annotates the owning move', async () => {

@@ -29,6 +29,12 @@ const GameReviewPage = lazy(() =>
   import('@/pages/GameReviewPage').then((m) => ({ default: m.GameReviewPage })),
 );
 
+// The read-only per-game puzzle list/preview (Feature 011) mounts a chessboard
+// per puzzle; keep it out of the initial bundle like Game Review.
+const GamePuzzlesPage = lazy(() =>
+  import('@/pages/GamePuzzlesPage').then((m) => ({ default: m.GamePuzzlesPage })),
+);
+
 // react-router-dom@7 enables v7 future flags by default; no `future` option
 // is needed (and the option is no longer accepted in v7).
 export const router = createBrowserRouter([
@@ -43,6 +49,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <GameReviewPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'games/:id/puzzles',
+        element: (
+          <Suspense fallback={null}>
+            <GamePuzzlesPage />
           </Suspense>
         ),
       },

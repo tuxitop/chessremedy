@@ -5,6 +5,7 @@ import type { AnalysisProfile } from '@/domain/chess';
 import type {
   AnalysisRunOptions,
   GameAnalysisProgress,
+  PuzzleGenerationOutcome,
   ReconcileResult,
   ScanGameOutcome,
 } from '@/infrastructure/analysis';
@@ -55,6 +56,23 @@ export interface AnalysisServiceLike {
   scanGame?(gameId: string): Promise<ScanGameOutcome>;
   /** Cancel a game's live tactics scan. Optional — fakes may omit it. */
   cancelScan?(gameId: string): Promise<void>;
+  /**
+   * Game ids whose Feature-011 puzzle-generation pass is running right now in
+   * this session. A persisted `queued`/`inProgress` puzzle summary whose game
+   * id is not returned here is an *interrupted* pass (from an earlier
+   * session), not a live generation — the UI must not say "generating" for
+   * it. Optional: when absent the UI treats no generation as live.
+   */
+  activeGenerationGames?(): Promise<ReadonlySet<string>>;
+  /**
+   * Generate/resume/retry the Feature-011 puzzle-generation pass for a game's
+   * latest completed analysis whose detection pass has completed at the
+   * current version (engine-free — pure assembly + batched writes). Mirrors
+   * `scanGame`. Optional — fakes may omit it.
+   */
+  generatePuzzles?(gameId: string): Promise<PuzzleGenerationOutcome>;
+  /** Cancel a game's live puzzle-generation pass. Optional — fakes may omit it. */
+  cancelGeneration?(gameId: string): Promise<void>;
   /**
    * Reconcile orphaned work once per session (pause owner-less in-progress
    * detection summaries; analysis orphans are left paused, never auto-run).

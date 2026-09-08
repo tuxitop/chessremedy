@@ -5,8 +5,10 @@ import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
+import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import type { AnalysisSummaryRow } from '@/infrastructure/db/summaries-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
+import { puzzleFixtures } from '@/domain/puzzle/test-support';
 import {
   analysisJobId,
   createAnalysisJob,
@@ -130,9 +132,14 @@ describe('GameLibrary row insights strip (Feature 010)', () => {
     expect(within(strip).getByTestId('row-insights-missed-tactics')).toHaveTextContent(
       'Missed tactics 1',
     );
+    // A current completed detection with no generation pass yet truthfully says
+    // the puzzles were never generated (absent ≠ zero — Feature 011).
+    expect(within(strip).getByTestId('row-insights-puzzles-absent')).toHaveTextContent(
+      'Puzzles not generated',
+    );
     expect(strip).toHaveAttribute(
       'aria-label',
-      'Accuracy 78.0 per cent, 2 blunders, 3 mistakes, 4 inaccuracies, 1 missed tactic',
+      'Accuracy 78.0 per cent, 2 blunders, 3 mistakes, 4 inaccuracies, 1 missed tactic, Puzzles not generated',
     );
   });
 
@@ -440,6 +447,77 @@ function serviceWithScan(): AnalysisServiceLike & {
   };
 }
 
+/** Scriptable fake with the Feature-011 on-demand generation surface + live set. */
+function serviceWithGeneration(): AnalysisServiceLike & {
+  generationCalls: string[];
+  generationCancels: string[];
+  generating: Set<string>;
+} {
+  const generationCalls: string[] = [];
+  const generationCancels: string[] = [];
+  const generating = new Set<string>();
+  return {
+    generationCalls,
+    generationCancels,
+    generating,
+    async statusesOf(gameIds): Promise<Readonly<Record<string, GameAnalysisStatus>>> {
+      const out: Record<string, GameAnalysisStatus> = {};
+      for (const id of gameIds) {
+        const jobs = await analysisJobsRepository.listByGame(id);
+        const state = jobs.map((job) => job.state);
+        out[id] = state.includes('completed')
+          ? 'completed'
+          : state.includes('queued')
+            ? 'queued'
+            : state.includes('inProgress')
+              ? 'inProgress'
+              : 'unanalyzed';
+      }
+      return out;
+    },
+    async listActiveJobs() {
+      return [];
+    },
+    async analyzeGames(gameIds) {
+      return gameIds.map((gameId) =>
+        markCompleted(createAnalysisJob(gameId, TEST_ENGINE, 0, 1), 2),
+      );
+    },
+    async jobProgress(gameIds) {
+      const out: Record<string, undefined> = {};
+      for (const id of gameIds) out[id] = undefined;
+      return out;
+    },
+    async cancelGame() {},
+    async activeGenerationGames() {
+      return new Set(generating);
+    },
+    async liveAnalysisGames() {
+      return [];
+    },
+    async generatePuzzles(gameId) {
+      generationCalls.push(gameId);
+      generating.add(gameId);
+      return 'started';
+    },
+    async cancelGeneration(gameId) {
+      generationCancels.push(gameId);
+      generating.delete(gameId);
+    },
+  };
+}
+
+/** Seed `count` immutable puzzle rows owned by `gameId` (distinct plies). */
+async function seedPuzzlesForGame(gameId: string, count: number): Promise<void> {
+  const base = puzzleFixtures['mate-one'];
+  const rows = Array.from({ length: count }, (_, index) => ({
+    ...base,
+    sourceGameId: gameId,
+    sourcePly: index,
+  }));
+  await puzzlesRepository.addIfAbsent(rows);
+}
+
 describe('GameLibrary resumable scans + persistent engine activity (plan 012, WP-B)', () => {
   beforeEach(async () => {
     await db.games.clear();
@@ -722,6 +800,227 @@ describe('GameLibrary summary backfill (Feature 010 polish)', () => {
 
     await waitFor(() => expect(screen.getByTestId(`row-insights-${game.id}`)).toBeInTheDocument());
     expect(service.backfillCalls).toEqual([]);
+  });
+});
+
+describe('GameLibrary puzzle insight + generation actions (Feature 011, Stage D)', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.puzzles.clear();
+  });
+
+  it('renders Puzzles N for a completed generation pass and a real zero otherwise', async () => {
+    const withPuzzles = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 2, total: 2 },
+      puzzleGeneratorVersion: 1,
+    });
+    const zero = await seedAnalyzedGame('li-blitz-blunder', {
+      classificationCounts: { best: 8, good: 1, inaccuracy: 1, mistake: 0, blunder: 0 },
+      accuracy: 55,
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 0, total: 0 },
+      puzzleGeneratorVersion: 1,
+    });
+    await seedPuzzlesForGame(withPuzzles.id, 2);
+    renderLibrary();
+
+    const withPuzzlesStrip = await screen.findByTestId(`row-insights-${withPuzzles.id}`);
+    expect(within(withPuzzlesStrip).getByTestId('row-insights-puzzles')).toHaveTextContent(
+      'Puzzles 2',
+    );
+    const zeroStrip = await screen.findByTestId(`row-insights-${zero.id}`);
+    expect(within(zeroStrip).getByTestId('row-insights-puzzles')).toHaveTextContent('Puzzles 0');
+  });
+
+  it('shows "Puzzles not generated" with a Generate action that flips to live then completes', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'absent',
+    });
+    const service = serviceWithGeneration();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-puzzles-absent')).toHaveTextContent(
+      'Puzzles not generated',
+    );
+    const generate = await screen.findByTestId(`row-puzzles-generate-${game.id}`);
+    fireEvent.click(generate);
+    await waitFor(() => expect(service.generationCalls).toEqual([game.id]));
+
+    // Optimistic live registry: the strip reads "generating" and the action is gone.
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId(`row-insights-${game.id}`)).getByTestId(
+          'row-insights-puzzles-pending',
+        ),
+      ).toHaveTextContent('Generating puzzles…'),
+    );
+    expect(screen.queryByTestId(`row-puzzles-generate-${game.id}`)).not.toBeInTheDocument();
+
+    // Simulate the pass settling: one immutable row written, the summary
+    // completed and the live registry emptied — the poll reloads the count.
+    const job = (await analysisJobsRepository.listByGame(game.id)).find(
+      (candidate) => candidate.state === 'completed',
+    )!;
+    await summariesRepository.patchForAnalysis(job.id, {
+      puzzleState: 'completed',
+      puzzleProgress: { done: 1, total: 1 },
+      puzzleGeneratorVersion: 1,
+    });
+    await seedPuzzlesForGame(game.id, 1);
+    service.generating.delete(game.id);
+    await waitFor(
+      () =>
+        expect(
+          within(screen.getByTestId(`row-insights-${game.id}`)).getByTestId('row-insights-puzzles'),
+        ).toHaveTextContent('Puzzles 1'),
+      { timeout: 5000 },
+    );
+  });
+
+  it('labels an interrupted generation pass and offers Resume', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'inProgress',
+      puzzleProgress: { done: 1, total: 4 },
+    });
+    const service = serviceWithGeneration();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-puzzles-interrupted')).toHaveTextContent(
+      'Puzzle generation interrupted',
+    );
+    // An interrupted pass never claims progress.
+    expect(screen.queryByTestId(`game-puzzle-progress-${game.id}`)).not.toBeInTheDocument();
+    expect(await screen.findByTestId(`row-puzzles-resume-${game.id}`)).toBeInTheDocument();
+  });
+
+  it('labels a failed generation pass and offers Retry', async () => {
+    const game = await seedAnalyzedGame('li-blitz-blunder', {
+      classificationCounts: { best: 2, good: 1, inaccuracy: 0, mistake: 0, blunder: 0 },
+      accuracy: 64,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'failed',
+    });
+    const service = serviceWithGeneration();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-puzzles-failed')).toHaveTextContent(
+      'Puzzle generation failed',
+    );
+    expect(await screen.findByTestId(`row-puzzles-retry-${game.id}`)).toBeInTheDocument();
+  });
+
+  it('shows the live generation progress bar only while the pass is live', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'inProgress',
+      puzzleProgress: { done: 1, total: 4 },
+    });
+    const service = serviceWithGeneration();
+    service.generating.add(game.id);
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const progress = await screen.findByTestId(`game-puzzle-progress-${game.id}`);
+    expect(progress).toHaveAttribute('role', 'progressbar');
+    expect(progress).toHaveAttribute('aria-valuenow', '25');
+    expect(progress).toHaveAttribute('aria-label', 'Generating puzzle 1 of 4, 25 per cent');
+    expect(within(progress).getByTestId(`game-puzzle-progress-text-${game.id}`)).toHaveTextContent(
+      'Generating puzzle 1 of 4 · 25%',
+    );
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-puzzles-pending')).toHaveTextContent(
+      'Generating puzzles…',
+    );
+  });
+
+  it('links completed/outdated rows to the per-game puzzle view', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 1, total: 1 },
+      puzzleGeneratorVersion: 1,
+    });
+    await seedPuzzlesForGame(game.id, 1);
+    const service = serviceWithGeneration();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    const link = await screen.findByTestId(`game-puzzles-${game.id}`);
+    expect(link).toHaveAttribute('href', `/games/${game.id}/puzzles`);
+    expect(link).toHaveAttribute('aria-label', 'Puzzles from this game');
+  });
+
+  it('suppresses the puzzle count/notes for a stale completed detection (plan R-6)', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: 1,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 1, total: 1 },
+      puzzleGeneratorVersion: 1,
+    });
+    await seedPuzzlesForGame(game.id, 2);
+    const service = serviceWithGeneration();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    // The Feature-010 "out of date" note governs; no puzzle count or state note.
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-detection-outdated')).toHaveTextContent(
+      'Tactics scan out of date',
+    );
+    expect(within(strip).queryByTestId('row-insights-puzzles')).not.toBeInTheDocument();
+    expect(within(strip).queryByTestId('row-insights-puzzles-absent')).not.toBeInTheDocument();
+    // The immutable rows stay inspectable via the per-game action.
+    expect(await screen.findByTestId(`game-puzzles-${game.id}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`row-puzzles-generate-${game.id}`)).not.toBeInTheDocument();
   });
 });
 

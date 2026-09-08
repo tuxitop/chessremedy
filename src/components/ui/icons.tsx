@@ -94,3 +94,6 @@ export const ANALYSIS_GLYPH = '\u{1F52C}';
 
 /** The game-review glyph (opens the Review surface) — distinct from analysis. */
 export const REVIEW_GLYPH = '\u{1F4DD}';
+
+/** The per-game puzzle-list glyph (opens the read-only puzzle view, Feature 011). */
+export const PUZZLES_GLYPH = '\u{1F9E9}';

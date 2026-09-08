@@ -8,20 +8,37 @@
  * until an owner feature supplies values. The Library renders present
  * values read-only and never computes them.
  *
- *  The analysis-result fields (`analysisStatus`, `accuracy`,
+ * The analysis-result fields (`analysisStatus`, `accuracy`,
  *  `classificationCounts`, `detectionState`, `detectionVersion`,
- *  `missedTactics`, `hasCompletedDetection`) are
- * supplied by the Feature-010 Game Library milestone over persisted
- * analysis jobs + per-analysis summaries (specs/domain/game-library.md §7):
- * values are user-side, derive from the latest completed analysis, and
- * follow the absent-vs-zero contract (`missedTactics` is `null` until a
- * detection pass completed and `undefined` when no completed analysis
- * exists; `0` is a real zero).
+ *  `missedTactics`, `hasCompletedDetection`, `scanProgress`) are
+ *  supplied by the Feature-010 Game Library milestone over persisted
+ *  analysis jobs + per-analysis summaries (specs/domain/game-library.md §7):
+ *  values are user-side, derive from the latest completed analysis, and
+ *  follow the absent-vs-zero contract (`missedTactics` is `null` until a
+ *  detection pass completed and `undefined` when no completed analysis
+ *  exists; `0` is a real zero).
+ *
+ *  The puzzle fields (`puzzleState`, `puzzleProgress`, `puzzleCount`) are
+ *  Feature-011's addition (features/011-puzzle-generation.md "Game Library
+ *  integration"). They follow the same absent-vs-zero discipline as the
+ *  missed-tactic fields and are only meaningful once the latest completed
+ *  analysis's detection pass is `completed` at the current pipeline version
+ *  (plan-015 freshness gate): a stale completed detection suppresses the
+ *  puzzle count/state notes with the Feature-010 "out of date" note.
+ *  `puzzleCount` is the persisted `puzzles`-table row count of the game and
+ *  is exposed **only** when the generation pass `completed` (a real `0`
+ *  reads green); every other state exposes no number, only the state note.
+ *  `puzzleState`/`puzzleProgress` let the row render the truthful note and
+ *  the live "generating…" bar while a pass is genuinely running.
  */
 
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { ClassificationCounts } from '@/domain/analysis/summary';
-import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
+import type {
+  ScanProgress,
+  SummaryDetectionState,
+  SummaryPuzzleState,
+} from '@/domain/analysis/summaryDerivation';
 
 export type GameActionCapability = 'liveAnalysis' | 'review' | 'puzzles' | 'delete';
 
@@ -71,6 +88,32 @@ export interface GameRowInsights {
    * live — it never claims progress for an interrupted pass.
    */
   readonly scanProgress?: { readonly done: number; readonly total: number } | null;
+  /**
+   * Puzzle-generation state of the latest completed analysis's generation pass
+   * (Feature 011): `'completed'` means `puzzleCount` is a real number (zero
+   * included); `'absent'` = never generated, `'queued'`/`'inProgress'` =
+   * generating, `'failed'` = a generation attempt ended. Exposed so a row can
+   * say "Puzzles not generated" instead of silently showing nothing. Only
+   * rendered once the analysis's detection pass completed at the current
+   * version (see the module header).
+   */
+  readonly puzzleState?: SummaryPuzzleState;
+  /**
+   * Live generation progress (`done`/`total` puzzles assembled/written) of the
+   * latest completed analysis's generation pass. Absent/`null` on rows whose
+   * pass has not recorded progress. The Library renders a progress bar from
+   * this value only while the shared service reports the game as live — it
+   * never claims progress for an interrupted pass.
+   */
+  readonly puzzleProgress?: ScanProgress | null;
+  /**
+   * The game's persisted `puzzles`-table row count (Feature 011) — a
+   * repository count over the game-scoped index, never a `MoveAnalysis`/
+   * candidate scan. Exposed **only** when the latest completed analysis's
+   * generation pass `completed` (with a current detection pass): `0` is a real
+   * zero, every other state exposes no value so the row renders the state note
+   * instead (absent ≠ zero, mirror of `missedTactics`).
+   */
   readonly puzzleCount?: number;
   readonly masteredPuzzleCount?: number;
 }

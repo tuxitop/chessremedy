@@ -21,9 +21,17 @@
  * data: it never fails an analysis batch and it never holds the analysis queue
  * open — a game's job is `completed` (and the next queued game/batch starts)
  * as soon as its analysis is persisted, while detection runs in the background
- * (abort-aware, idempotent, resumable, sharing the single engine FIFO). A
- * forced re-analysis also clears the superseded run's summary and
- * puzzle-candidate rows so the new run starts from an absent detection state.
+ *  (abort-aware, idempotent, resumable, sharing the single engine FIFO). A
+ *  forced re-analysis also clears the superseded run's summary and
+ *  puzzle-candidate rows so the new run starts from an absent detection state.
+ *
+ * Feature-011 completion hook (optional dependency): when a detection pass
+ * settles `completed` at the current `DETECTION_VERSION`, the engine-free
+ * puzzle-generation pass is scheduled for the completed run (detached, never
+ * blocking the analysis queue or the engine FIFO). Generation is derived data:
+ * abort-aware, idempotent and resumable like detection, superseded on a forced
+ * re-analysis (its live pass is cancelled first) and reconciled with orphaned
+ * `inProgress` states on the session scan.
  */
 
 import type { EngineService, EngineAnalysisResult } from '@/infrastructure/engine/types';
@@ -39,6 +47,7 @@ import { latestCompletedJob } from '@/domain/analysis';
 import type { AnalysisSummariesRepository } from '@/infrastructure/db/summaries-repository';
 import type { PuzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
 import type { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
+import type { PuzzleGenerationService } from '@/infrastructure/puzzles/puzzleGenerationService';
 import {
   analysisJobId,
   analysisLibraryStatus,
@@ -71,6 +80,16 @@ export type ScanGameOutcome =
   | 'game-missing'
   | 'unavailable';
 
+export type PuzzleGenerationOutcome =
+  | 'started'
+  | 'already-running'
+  | 'already-completed'
+  | 'analysis-in-progress'
+  | 'no-completed-analysis'
+  | 'game-missing'
+  | 'detection-not-ready'
+  | 'unavailable';
+
 export interface ReconcileResult {
   /**
    * Owner-less `queued`/`inProgress` analysis jobs auto-resumed. Always `0`:
@@ -80,6 +99,12 @@ export interface ReconcileResult {
   readonly resumedAnalysisJobs: number;
   /** Owner-less `inProgress` detection summaries relabelled `queued` (paused). */
   readonly pausedDetections: number;
+  /**
+   * Owner-less `inProgress` puzzle-generation summaries relabelled `queued`
+   * (paused). Like detection, a generation pass is only genuinely running
+   * while its game id is live in this session (Feature 011, Stage C).
+   */
+  readonly pausedGenerations: number;
 }
 
 export interface AnalysisRunOptions {
@@ -111,6 +136,8 @@ export interface AnalysisServiceOptions {
   readonly candidates?: PuzzleCandidatesRepository | null;
   /** Feature-010 two-stage detection service (optional completion hook). */
   readonly detection?: TacticalDetectionService | null;
+  /** Feature-011 engine-free puzzle-generation service (optional completion hook). */
+  readonly generation?: PuzzleGenerationService | null;
   readonly now?: () => number;
 }
 
@@ -120,6 +147,12 @@ type PositionOutcome =
 
 /** One live detection pass: its cancellation handle + settled promise. */
 interface ScanEntry {
+  readonly controller: AbortController;
+  readonly done: Promise<void>;
+}
+
+/** One live puzzle-generation pass: its cancellation handle + settled promise. */
+interface GenerationEntry {
   readonly controller: AbortController;
   readonly done: Promise<void>;
 }
@@ -143,6 +176,7 @@ export class AnalysisService {
   private readonly summaries: AnalysisSummariesRepository | null;
   private readonly candidates: PuzzleCandidatesRepository | null;
   private readonly detection: TacticalDetectionService | null;
+  private readonly generation: PuzzleGenerationService | null;
   private readonly now: () => number;
   private readonly currentEngine: EngineIdentity | null;
   /**
@@ -176,6 +210,18 @@ export class AnalysisService {
    */
   private readonly scans = new Map<GameId, ScanEntry>();
 
+  /**
+   * Live Feature-011 puzzle-generation passes **in this session**, keyed by
+   * game id (mirror of `scans`). A persisted summary row with
+   * `puzzleState: 'queued'/'inProgress'` only means a generation pass is
+   * genuinely running while its game id is in this registry — a queued /
+   * in-progress summary whose game id is absent was left by an earlier session
+   * (or an interrupted run) and is *not* actually generating. The UI uses this
+   * to never show "generating…" when no pass is running, and the entry is
+   * removed by the pass itself when it settles.
+   */
+  private readonly generations = new Map<GameId, GenerationEntry>();
+
   /** Session guard: orphan analysis jobs are auto-resumed at most once. */
   private reconciledOnce = false;
   private reconcileRun: Promise<ReconcileResult> | null = null;
@@ -190,6 +236,7 @@ export class AnalysisService {
     this.summaries = options.summaries ?? null;
     this.candidates = options.candidates ?? null;
     this.detection = options.detection ?? null;
+    this.generation = options.generation ?? null;
     this.now = options.now ?? (() => Date.now());
     this.currentEngine = this.resolveCurrentEngine();
   }
@@ -395,6 +442,76 @@ export class AnalysisService {
   }
 
   /**
+   * Generate / resume / retry the Feature-011 puzzle-generation pass for a
+   * game's latest completed analysis (on-demand entry, mirror of `scanGame`).
+   * Engine-free by construction: the pass does pure assembly + batched
+   * IndexedDB writes over the analysis's verified candidates (Feature 011) and
+   * is registered live through `startGeneration` so the Library/per-game view
+   * can show it and cancel it. Only meaningful when the analysis's detection
+   * pass already `completed` at the current `DETECTION_VERSION` — any other
+   * state leaves the puzzle fields `absent` (the Library renders the
+   * Feature-010 note) and is reported as `'detection-not-ready'`.
+   */
+  async generatePuzzles(gameId: GameId): Promise<PuzzleGenerationOutcome> {
+    if (!this.generation) {
+      return 'unavailable';
+    }
+    if (this.generations.has(gameId)) {
+      return 'already-running';
+    }
+    const jobs = await this.jobs.listByGame(gameId);
+    // A live analysis supersedes any pass of an older completed run.
+    if (jobs.some((job) => job.state === 'queued' || job.state === 'inProgress')) {
+      return 'analysis-in-progress';
+    }
+    const latest = latestCompletedJob(jobs);
+    if (!latest) {
+      return 'no-completed-analysis';
+    }
+    const game = await this.games.getGame(gameId);
+    if (!game) {
+      return 'game-missing';
+    }
+    if (this.summaries) {
+      const existing = await this.summaries.getForAnalysis(latest.id);
+      // A completed generation pass for this analysis identity is final (rows
+      // are add-only); a stale detection result leaves generation `absent`
+      // until a fresh refresh scan re-completes (plan R-6).
+      if (existing?.puzzleState === 'completed') {
+        return 'already-completed';
+      }
+      if (
+        existing &&
+        (existing.detectionState !== 'completed' || existing.detectionVersion !== DETECTION_VERSION)
+      ) {
+        return 'detection-not-ready';
+      }
+    }
+    this.startGeneration(latest, game);
+    return 'started';
+  }
+
+  /**
+   * Game ids whose Feature-011 puzzle-generation pass is running right now in
+   * this session (the in-memory registry, mirror of `activeDetectionGames`). A
+   * persisted `queued`/`inProgress` puzzle summary without a matching live id
+   * is an interrupted pass, not a running one.
+   */
+  async activeGenerationGames(): Promise<ReadonlySet<GameId>> {
+    return new Set(this.generations.keys());
+  }
+
+  /**
+   * Cancel a game's live puzzle-generation pass (Library/Review Cancel). The
+   * pass stops at the next candidate boundary and leaves the summary resumable
+   * (`queued`) with already-written puzzle rows persisted. Stage D wires the
+   * UI; a forced re-analysis cancels + settles internally regardless.
+   */
+  async cancelGeneration(gameId: GameId): Promise<void> {
+    this.generations.get(gameId)?.controller.abort();
+  }
+
+  /**
    * Game ids whose analysis job is being processed right now in this session
    * (the in-memory live-run registry). A persisted `queued`/`inProgress` job
    * whose game id is absent was left by an earlier session and is **paused** —
@@ -406,7 +523,8 @@ export class AnalysisService {
 
   /**
    * Reconcile orphaned work once per session. This is a **cheap, engine-free**
-   * pass: owner-less `inProgress` detection summaries are relabelled `queued`
+   * pass: owner-less `inProgress` detection summaries and owner-less
+   * `inProgress` puzzle-generation summaries are relabelled `queued`
    * (resumable-paused) so nothing is ever silently "in progress" without a
    * live pass. Owner-less `queued`/`inProgress` **analysis** jobs are left
    * paused (never auto-resumed): silently replaying them on the shared,
@@ -422,12 +540,18 @@ export class AnalysisService {
     this.reconciledOnce = true;
     const run = (async (): Promise<ReconcileResult> => {
       let pausedDetections = 0;
+      let pausedGenerations = 0;
       try {
         pausedDetections = await this.pauseOrphanedDetections();
       } catch {
         // Best-effort; the next session re-runs the relabel.
       }
-      return { resumedAnalysisJobs: 0, pausedDetections };
+      try {
+        pausedGenerations = await this.pauseOrphanedPuzzleGenerations();
+      } catch {
+        // Best-effort; the next session re-runs the relabel.
+      }
+      return { resumedAnalysisJobs: 0, pausedDetections, pausedGenerations };
     })();
     this.reconcileRun = run;
     return run;
@@ -451,6 +575,32 @@ export class AnalysisService {
       await this.summaries.putForAnalysis({
         ...summary,
         detectionState: 'queued',
+        updatedAt: this.now(),
+      });
+      paused += 1;
+    }
+    return paused;
+  }
+
+  /** Relabel owner-less `inProgress` puzzle-generation summaries to `queued`. */
+  private async pauseOrphanedPuzzleGenerations(): Promise<number> {
+    if (!this.summaries) {
+      return 0;
+    }
+    let paused = 0;
+    const all = await this.summaries.listAll();
+    for (const summary of all) {
+      const orphaned =
+        summary.puzzleState === 'inProgress' &&
+        !this.generations.has(summary.gameId) &&
+        !this.scans.has(summary.gameId) &&
+        !this.activeRuns.has(summary.gameId);
+      if (!orphaned) {
+        continue;
+      }
+      await this.summaries.putForAnalysis({
+        ...summary,
+        puzzleState: 'queued',
         updatedAt: this.now(),
       });
       paused += 1;
@@ -597,8 +747,12 @@ export class AnalysisService {
         // the same analysis identity under the current engine configuration. A
         // live/queued scan of that run is dropped first (its engine jobs
         // cancelled) so no ghost pass is left ahead in the engine FIFO, and its
-        // abort path cannot resurrect the rows this cleanup deletes.
+        // abort path cannot resurrect the rows this cleanup deletes. A live
+        // puzzle-generation pass of the same game is cancelled + settled for
+        // the same reason (Feature 011 supersede: already-created puzzle rows
+        // persist — the add-only repository never deletes them).
         await this.cancelScanAndSettle(gameId);
+        await this.cancelGenerationAndSettle(gameId);
         await this.analyses.deleteForAnalysis(stored.id);
         await this.clearDetectionState(stored.id);
         stored = undefined;
@@ -840,6 +994,15 @@ export class AnalysisService {
           records,
           controller.signal,
         );
+        // Feature-011 Stage C: when the settled detection verdict is
+        // `completed` at the current DETECTION_VERSION, schedule the
+        // engine-free puzzle-generation pass for the same completed run
+        // (detached — generation never blocks the analysis queue or touches the
+        // engine FIFO). Both trigger paths (the post-analysis auto-scan and the
+        // on-demand `scanGame`) run through this continuation, so both
+        // auto-trigger generation (plan R-1). Generation is idempotent per
+        // analysis identity, so re-scheduling is harmless.
+        await this.maybeAutoStartGeneration(job, game);
       } catch (err) {
         // Detection is derived data: a crash never fails the completed job,
         // but it must NEVER be swallowed silently — that left scans stuck at
@@ -885,6 +1048,107 @@ export class AnalysisService {
     }
     entry.controller.abort();
     this.scans.delete(gameId);
+    try {
+      await entry.done;
+    } catch {
+      // The pass is abort-aware; a failure here is already contained.
+    }
+  }
+
+  /**
+   * Schedule the Feature-011 puzzle-generation pass for a completed run whose
+   * detection has settled `completed` at the current version (plan R-1). The
+   * pass is engine-free and runs detached under its own `AbortSignal`; it is
+   * registered live for its whole duration so the UI can tell a
+   * genuinely-running generation pass from a persisted-but-interrupted one and
+   * can cancel it. Guarded per game: an already-live pass is returned as-is.
+   */
+  private startGeneration(job: AnalysisJob, game: Game): GenerationEntry | null {
+    if (!this.generation) {
+      return null;
+    }
+    const existing = this.generations.get(game.id);
+    if (existing) {
+      return existing;
+    }
+    const controller = new AbortController();
+    const done = (async () => {
+      try {
+        await this.generation!.runPassForAnalysis(
+          job.id,
+          { id: game.id, userColor: game.userColor },
+          controller.signal,
+        );
+      } catch (err) {
+        // Generation is derived data: a crash never fails the completed
+        // analysis, but it must NEVER be swallowed silently — log the real
+        // error and surface the pass as `failed` so the user can retry it
+        // (the service itself contains write/assembly failures into `failed`,
+        // so this only fires for a failure it could not even record).
+        console.error('[ChessRemedy] Puzzle generation crashed:', err);
+        if (this.summaries) {
+          try {
+            const existing = await this.summaries.getForAnalysis(job.id);
+            if (existing && existing.puzzleState !== 'completed') {
+              await this.summaries.putForAnalysis({
+                ...existing,
+                puzzleState: 'failed',
+                updatedAt: this.now(),
+              });
+            }
+          } catch {
+            // Best-effort; the pass stays resumable either way.
+          }
+        }
+      } finally {
+        // Drop only our own pass: a newer generation may have replaced it.
+        if (this.generations.get(game.id)?.controller === controller) {
+          this.generations.delete(game.id);
+        }
+      }
+    })();
+    const entry: GenerationEntry = { controller, done };
+    this.generations.set(game.id, entry);
+    return entry;
+  }
+
+  /**
+   * After a detection pass settles, auto-trigger puzzle generation for the same
+   * run when the settled verdict is `completed` at the current
+   * `DETECTION_VERSION` (the generation service re-checks freshness itself, so
+   * this gate only avoids scheduling a pass that would immediately no-op).
+   * Best-effort: a scheduling failure never fails the scan's settlement.
+   */
+  private async maybeAutoStartGeneration(job: AnalysisJob, game: Game): Promise<void> {
+    if (!this.generation || !this.summaries) {
+      return;
+    }
+    try {
+      const summary = await this.summaries.getForAnalysis(job.id);
+      if (
+        summary?.detectionState === 'completed' &&
+        summary.detectionVersion === DETECTION_VERSION
+      ) {
+        this.startGeneration(job, game);
+      }
+    } catch {
+      // Best-effort; generation is resumable on demand.
+    }
+  }
+
+  /**
+   * Abort a game's live puzzle-generation pass and await its settlement (used
+   * ahead of a forced re-analysis so the superseded pass cannot write its
+   * `queued`/`failed` state over the summary the cleanup below deletes). Puzzle
+   * rows already created persist — the add-only repository never deletes them.
+   */
+  private async cancelGenerationAndSettle(gameId: GameId): Promise<void> {
+    const entry = this.generations.get(gameId);
+    if (!entry) {
+      return;
+    }
+    entry.controller.abort();
+    this.generations.delete(gameId);
     try {
       await entry.done;
     } catch {

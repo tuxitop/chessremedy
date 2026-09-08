@@ -6,6 +6,7 @@ import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-reposi
 import { DexieEngineAnalysisCache } from '@/infrastructure/db/engine-cache-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
+import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import {
   analysisJobId,
@@ -15,9 +16,12 @@ import {
 } from '@/domain/analysis';
 import { DETECTION_VERSION } from '@/domain/tactics';
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
+import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import type { Color } from 'chessops/types';
 import type { MoveAnalysis } from '@/domain/chess';
 import { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
+import { PuzzleGenerationService } from '@/infrastructure/puzzles';
 import { AnalysisService } from './analysisService';
 import {
   createFakeEngine,
@@ -967,6 +971,44 @@ describe('AnalysisService — resumable scans & orphan reconciliation (plan 012,
     expect(await service.reconcileOrphans()).toEqual(result);
   });
 
+  it('reconcile relabels an owner-less inProgress puzzle generation to queued', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));
+    if (!plan.ok) throw new Error(plan.message);
+    const mateFen = plan.plan.moves[MISSED_PLY]!.positionFen;
+
+    // A completed analysis whose detection pass settled (no generation wired —
+    // an earlier session with a generation service vanished mid-pass).
+    const rig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    await serviceWithDetectionOf(rig).analyzeGames([gameId]);
+    const jobs = await analysisJobsRepository.listByGame(gameId);
+    const latest = [...jobs].sort((x, y) => y.updatedAt - x.updatedAt)[0]!;
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(latest.id);
+      return summary?.detectionState === 'completed';
+    });
+    const completed = (await summariesRepository.getForAnalysis(latest.id))!;
+    await summariesRepository.putForAnalysis({
+      ...completed,
+      puzzleState: 'inProgress',
+      puzzleProgress: { done: 1, total: 2 },
+    });
+
+    const service = serviceWithDetectionOf(createFakeEngine(), noopDetection);
+    const result = await service.reconcileOrphans();
+    expect(result.resumedAnalysisJobs).toBe(0);
+    expect(result.pausedDetections).toBe(0);
+    expect(result.pausedGenerations).toBe(1);
+
+    const summary = (await summariesRepository.getForAnalysis(latest.id))!;
+    expect(summary.puzzleState).toBe('queued');
+    expect(summary.puzzleProgress).toEqual({ done: 1, total: 2 });
+    // Detection fields are untouched by the generation-state relabel.
+    expect(summary.detectionState).toBe('completed');
+    expect(summary.detectionVersion).toBe(DETECTION_VERSION);
+    expect(summary.missedTacticCount).toBe(1);
+  });
+
   it('clearPausedAnalysisJobs removes stuck runs without touching games or completed analyses', async () => {
     // A healthy completed run that must survive.
     const done = await seedFixture(MISSED_MATE_ID);
@@ -1063,5 +1105,198 @@ describe('AnalysisService — resumable scans & orphan reconciliation (plan 012,
     expect(refreshed?.detectionVersion).toBeNull();
     expect(await puzzleCandidatesRepository.listForGameAndAnalysis(gameId, job.id)).toEqual([]);
     expect(await analysisJobsRepository.listByGame(gameId)).toHaveLength(before);
+  });
+});
+
+describe('AnalysisService — Feature-011 puzzle-generation hook (Stage C)', () => {
+  const MISSED_MATE_ID = 'li-bullet-missed-mate';
+  const MISSED_PLY = 6;
+
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.puzzleCandidates.clear();
+    await db.puzzles.clear();
+    await db.positionAnalysisCache.clear();
+    sequence = 0;
+  });
+
+  /** An engine result that verifies the 4.Qxf7# mate White missed at `fen`. */
+  function mateResult(fen: string): EngineAnalysisResult {
+    return {
+      jobId: 'job-tactical',
+      position: fen,
+      profile: 'tactical',
+      lines: [
+        {
+          multipv: 1,
+          evaluation: { mate: 1 },
+          principalVariation: [{ uci: 'h5f7' }],
+          wdl: { w: 1000, d: 0, l: 0 },
+        },
+      ],
+      engine: { ...FAKE_ENGINE_META, profile: 'tactical' },
+      timeMs: 5,
+    };
+  }
+
+  /** Real detection + real engine-free generation over the shared repos. */
+  function serviceWithDetectionAndGenerationOf(rig: FakeEngineRig): AnalysisService {
+    const engineCache = new DexieEngineAnalysisCache();
+    const detection = new TacticalDetectionService({
+      engine: rig.service,
+      engineCache,
+      analyses: analysesRepository,
+      candidates: puzzleCandidatesRepository,
+      summaries: summariesRepository,
+      now,
+    });
+    const generation = new PuzzleGenerationService({
+      puzzles: puzzlesRepository,
+      candidates: puzzleCandidatesRepository,
+      summaries: summariesRepository,
+      now,
+    });
+    return new AnalysisService({
+      games: gamesRepository,
+      analyses: analysesRepository,
+      jobs: analysisJobsRepository,
+      engine: rig.service,
+      engineCache,
+      engineMetadata: (profile: AnalysisProfile): EngineMetadata => ({
+        ...FAKE_ENGINE_META,
+        profile,
+      }),
+      now,
+      summaries: summariesRepository,
+      candidates: puzzleCandidatesRepository,
+      detection,
+      generation,
+    });
+  }
+
+  it('auto-triggers generation once a detection pass settles completed and persists puzzles', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));
+    if (!plan.ok) throw new Error(plan.message);
+    const mateFen = plan.plan.moves[MISSED_PLY]!.positionFen;
+    const rig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    const service = serviceWithDetectionAndGenerationOf(rig);
+
+    const jobs = await service.analyzeGames([gameId]);
+    const job = jobs[0]!;
+    expect(job.state).toBe('completed');
+
+    // Detection is detached; generation is detached behind it — wait for the
+    // generation pass to settle `completed` (its freshness gate requires the
+    // detection verdict it auto-triggered from).
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(job.id);
+      return summary?.puzzleState === 'completed';
+    });
+    const summary = (await summariesRepository.getForAnalysis(job.id))!;
+    expect(summary.puzzleState).toBe('completed');
+    expect(summary.puzzleProgress).toEqual({ done: 1, total: 1 });
+    expect(summary.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
+    // Detection fields were never clobbered by the generation writes.
+    expect(summary.detectionState).toBe('completed');
+    expect(summary.missedTacticCount).toBe(1);
+    expect(summary.detectionVersion).toBe(DETECTION_VERSION);
+
+    // The verified candidate became one durable, immutable puzzle row.
+    expect(await puzzlesRepository.countForGame(gameId)).toBe(1);
+    const row = await puzzlesRepository.getPuzzle(gameId, MISSED_PLY);
+    expect(row?.analysisId).toBe(job.id);
+    expect(row?.startingFen).toBe(mateFen);
+    expect(row?.bestMove).toBe('h5f7');
+    expect(row?.sideToMove).toBe('white');
+    expect(row?.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
+    expect(row?.detectionVersion).toBe(DETECTION_VERSION);
+    // The settled pass left no live entry behind.
+    expect(await service.activeGenerationGames()).toEqual(new Set());
+  });
+
+  it('a forced re-analysis cancels a live generation pass and existing puzzles survive', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    // An immutable puzzle already generated for the game (must survive the
+    // forced re-analysis — the add-only repository never deletes rows).
+    await puzzlesRepository.addIfAbsent([
+      { ...puzzleRowFixture('mate-one'), sourceGameId: gameId, sourcePly: MISSED_PLY },
+    ]);
+
+    let invocations = 0;
+    const aborted = vi.fn();
+    const gatedGeneration = {
+      runPassForAnalysis: (
+        _analysisId: string,
+        _game: { id: string; userColor: Color },
+        signal?: AbortSignal,
+      ): Promise<void> =>
+        new Promise((resolve) => {
+          invocations += 1;
+          if (!signal) {
+            resolve();
+            return;
+          }
+          const onAbort = (): void => {
+            signal?.removeEventListener('abort', onAbort);
+            aborted();
+            resolve();
+          };
+          if (signal.aborted) {
+            aborted();
+            resolve();
+          } else {
+            signal.addEventListener('abort', onAbort);
+          }
+        }),
+    } as unknown as PuzzleGenerationService;
+
+    const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));
+    if (!plan.ok) throw new Error(plan.message);
+    const mateFen = plan.plan.moves[MISSED_PLY]!.positionFen;
+    const rig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    const engineCache = new DexieEngineAnalysisCache();
+    const detection = new TacticalDetectionService({
+      engine: rig.service,
+      engineCache,
+      analyses: analysesRepository,
+      candidates: puzzleCandidatesRepository,
+      summaries: summariesRepository,
+      now,
+    });
+    const service = new AnalysisService({
+      games: gamesRepository,
+      analyses: analysesRepository,
+      jobs: analysisJobsRepository,
+      engine: rig.service,
+      engineCache,
+      engineMetadata: (profile: AnalysisProfile): EngineMetadata => ({
+        ...FAKE_ENGINE_META,
+        profile,
+      }),
+      now,
+      summaries: summariesRepository,
+      candidates: puzzleCandidatesRepository,
+      detection,
+      generation: gatedGeneration,
+    });
+
+    // First analysis: detection completes → the gated generation pass starts
+    // (live) and stays pending until the forced re-analysis cancels it.
+    await service.analyzeGames([gameId]);
+    await waitFor(() => invocations === 1);
+    expect(await service.activeGenerationGames()).toEqual(new Set([gameId]));
+
+    const forced = await service.analyzeGames([gameId], 'normal', { force: true });
+    expect(forced[0]!.state).toBe('completed');
+    // The live generation pass was aborted + settled ahead of the cleanup.
+    expect(aborted).toHaveBeenCalledTimes(1);
+    expect(await service.activeGenerationGames()).toEqual(new Set());
+    // Existing puzzle rows survive the forced re-analysis (supersede never
+    // deletes them); the new run starts its own pass from absent instead.
+    expect(await puzzlesRepository.countForGame(gameId)).toBe(1);
   });
 });

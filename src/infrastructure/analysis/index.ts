@@ -7,6 +7,7 @@ export type {
   AnalysisRunOptions,
   AnalysisServiceOptions,
   GameAnalysisProgress,
+  PuzzleGenerationOutcome,
   ReconcileResult,
   ScanGameOutcome,
 } from './analysisService';

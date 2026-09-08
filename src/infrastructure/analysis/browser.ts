@@ -22,6 +22,7 @@ import { engineAnalysisCacheRepository } from '@/infrastructure/db/engine-cache-
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
 import { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
+import { getBrowserPuzzleGenerationService } from '@/infrastructure/puzzles';
 import type { EngineMetadata, AnalysisProfile } from '@/domain/chess';
 import { AnalysisService } from './analysisService';
 
@@ -53,6 +54,9 @@ export async function createBrowserAnalysisService(): Promise<AnalysisService> {
     summaries: summariesRepository,
     candidates: puzzleCandidatesRepository,
     detection,
+    // Feature-011 Stage C: engine-free puzzle generation, auto-triggered when a
+    // detection pass settles `completed` at the current DETECTION_VERSION.
+    generation: getBrowserPuzzleGenerationService(),
   });
 }
 

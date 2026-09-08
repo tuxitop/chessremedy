@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
+import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import {
   analysisInsightsForGame,
   groupJobsByGame,
@@ -71,8 +72,8 @@ interface LibraryLoad {
  * games query; when an analysis-result dimension is active it is resolved
  * from persisted jobs + per-analysis summaries (never a `MoveAnalysis` scan)
  * into an id restriction pushed into the same query. Listed rows are then
- * enriched with their per-game analysis insights before the in-memory
- * filter/search pass.
+ * enriched with their per-game analysis insights (Feature 010) and per-game
+ * `puzzles`-row counts (Feature 011) before the in-memory filter/search pass.
  */
 async function loadLibraryRows(
   filters: GameLibraryFilters,
@@ -103,6 +104,13 @@ async function loadLibraryRows(
     ]);
   }
 
+  // Feature-011 Stage D: the game-scoped `puzzles` row count of every listed
+  // row (one query over the `sourceGameId` index). The map is threaded into
+  // the insight overlay, which exposes a count only for a `completed`
+  // generation pass (absent ≠ zero — see analysis-result-query.ts).
+  const ids = gameRows.map((summary) => summary.id);
+  const puzzleCountsByGame = await puzzlesRepository.countForGames(ids);
+
   const jobsByGame = groupJobsByGame(jobs);
   const summariesByGame = groupSummariesByGame(summaries);
   const enriched = gameRows.map((summary) => {
@@ -110,6 +118,7 @@ async function loadLibraryRows(
     const insights = analysisInsightsForGame(
       jobsByGame.get(row.id) ?? [],
       summariesByGame.get(row.id) ?? [],
+      puzzleCountsByGame,
     );
     return withRowInsights(row, insights);
   });

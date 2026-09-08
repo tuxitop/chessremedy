@@ -263,11 +263,19 @@ export class TacticalDetectionService {
     // An empty pass still completes: a real zero is written with the detection
     // version so the Library never renders this analysis as absent-detection.
     if (total === 0) {
-      await this.writeSummary(job, game, records, 'completed', {
-        missedTacticCount: 0,
-        detectionVersion: DETECTION_VERSION,
-        scanProgress: { done: 0, total: 0 },
-      });
+      await this.writeSummary(
+        job,
+        game,
+        records,
+        'completed',
+        {
+          missedTacticCount: 0,
+          detectionVersion: DETECTION_VERSION,
+          scanProgress: { done: 0, total: 0 },
+        },
+        // This write STARTS a fresh (re)derivation: reset any puzzle fields.
+        { carryPuzzleFields: false },
+      );
       return;
     }
     if (signal?.aborted) {
@@ -296,9 +304,15 @@ export class TacticalDetectionService {
 
     // Progress starts from the already-verified rows of a resumed pass.
     let settledCount = Math.min(total, verifiedByPly.size);
-    await this.writeSummary(job, game, records, 'inProgress', {
-      scanProgress: { done: settledCount, total },
-    });
+    await this.writeSummary(
+      job,
+      game,
+      records,
+      'inProgress',
+      { scanProgress: { done: settledCount, total } },
+      // This write STARTS a fresh (re)derivation: reset any puzzle fields.
+      { carryPuzzleFields: false },
+    );
 
     const engineIdentity = this.resolveEngineIdentity(job);
     // A completed run's Game-analysis settings (job.config) may carry a threads
@@ -533,8 +547,9 @@ export class TacticalDetectionService {
       readonly detectionVersion?: number | null;
       readonly scanProgress?: ScanProgress | null;
     } = {},
+    options: { readonly carryPuzzleFields?: boolean } = {},
   ): Promise<void> {
-    const options: BuildAnalysisSummaryOptions =
+    const summaryOptions: BuildAnalysisSummaryOptions =
       state === 'completed'
         ? {
             detectionState: state,
@@ -550,13 +565,33 @@ export class TacticalDetectionService {
             detectionState: state,
             ...(extras.scanProgress !== undefined ? { scanProgress: extras.scanProgress } : {}),
           };
-    const built = buildAnalysisSummary(records, game.userColor, options);
+    const built = buildAnalysisSummary(records, game.userColor, summaryOptions);
+    // Feature-011 coexistence (plan R-2): the full-row rebuild from
+    // `buildAnalysisSummary` defaults the puzzle-generation fields to absent,
+    // which would clobber them on every write. The pass explicitly resets them
+    // only when it STARTS a fresh (re)derivation (the empty-pass / first
+    // `inProgress` writes below pass `carryPuzzleFields: false`); every later
+    // write in the same pass carries the current row's puzzle fields through
+    // (read-modify-write), so the two state machines can only ever overlap —
+    // during a detection refresh of an already-generated analysis — with a
+    // deterministic reset.
+    let existing: AnalysisSummaryRow | undefined;
+    if (options.carryPuzzleFields !== false) {
+      existing = await this.summaries.getForAnalysis(job.id);
+    }
     const row: AnalysisSummaryRow = {
       analysisId: job.id,
       gameId: game.id,
       userColor: game.userColor,
       updatedAt: this.now(),
       ...built,
+      ...(existing?.puzzleState !== undefined ? { puzzleState: existing.puzzleState } : {}),
+      ...(existing?.puzzleProgress !== undefined
+        ? { puzzleProgress: existing.puzzleProgress }
+        : {}),
+      ...(existing?.puzzleGeneratorVersion !== undefined
+        ? { puzzleGeneratorVersion: existing.puzzleGeneratorVersion }
+        : {}),
     };
     await this.summaries.putForAnalysis(row);
   }

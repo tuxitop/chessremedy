@@ -598,6 +598,20 @@
   border-top-color: #c2185b;
 }
 
+/* Feature-011 Stage D: the puzzle-generation progress fill uses an amber so a
+   live generation pass (pure derived-data writes, never engine work) is
+   visually distinct from an analysis run (accent) and a tactics scan
+   (magenta). */
+.puzzleProgressFill {
+  background: #b7791f;
+}
+
+/* Feature-011 Stage D: a live puzzle-generation row strip. Same bar shape as
+   the scan strip with an amber top rule. */
+.puzzleProgressBar {
+  border-top-color: #b7791f;
+}
+
 .rowProgressText {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;

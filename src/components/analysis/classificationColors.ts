@@ -59,3 +59,13 @@ export function classificationCountColor(
 export function missedTacticCountColor(count: number): string {
   return count > 0 ? MISSED_TACTIC_COLOR : ZERO_COUNT_COLOR;
 }
+
+/**
+ * Puzzle-count colour (Feature 011 Library row): a real zero reads green
+ * (nothing generated / nothing missed), a positive count is neutral — the
+ * count itself carries no praise or blame. Canonical helper so Feature-013/014
+ * puzzle surfaces reuse the same rule.
+ */
+export function puzzleCountColor(count: number): string {
+  return count > 0 ? NEUTRAL_COUNT_COLOR : ZERO_COUNT_COLOR;
+}

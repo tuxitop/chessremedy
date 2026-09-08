@@ -26,12 +26,14 @@ import { formatAccuracy } from '@/domain/analysis/classificationMeta';
 import {
   classificationCountColor,
   missedTacticCountColor,
+  puzzleCountColor,
 } from '@/components/analysis/classificationColors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import {
   ANALYSIS_GLYPH,
   CloseIcon,
+  PUZZLES_GLYPH,
   RefreshIcon,
   REVIEW_GLYPH,
   TrashIcon,
@@ -179,10 +181,18 @@ export function GameLibrary({
   // cancelled run) and the strip says so instead of lying about a running scan.
   const [activeDetectionIds, setActiveDetectionIds] = useState<Readonly<Set<string>>>(new Set());
   const [liveAnalysisIds, setLiveAnalysisIds] = useState<Readonly<Set<string>>>(new Set());
+  // Live Feature-011 puzzle-generation registry (mirror of the scan registry):
+  // a persisted `queued`/`inProgress` puzzle summary only reads "generating…"
+  // while the service reports the game live; otherwise it is interrupted.
+  const [activeGenerationIds, setActiveGenerationIds] = useState<Readonly<Set<string>>>(new Set());
   const activeDetectionRef = useRef<ReadonlySet<string>>(new Set());
+  const activeGenerationRef = useRef<ReadonlySet<string>>(new Set());
   /** Game ids whose scan was started from this page but may finish before the
    *  poll observes them live (short passes): their settle still reloads rows. */
   const justStartedScans = useRef<ReadonlySet<string>>(new Set());
+  /** Game ids whose generation pass was started from this page but may finish
+   *  before the poll observes it live (short passes): settle still reloads. */
+  const justStartedGenerations = useRef<ReadonlySet<string>>(new Set());
   // Latest rows/reload for the always-on detection poll (kept out of its deps
   // so a reload never restarts the loop into a busy cycle).
   const libraryRef = useRef(library);
@@ -199,15 +209,17 @@ export function GameLibrary({
     const canPoll =
       service &&
       (typeof service.activeDetectionGames === 'function' ||
+        typeof service.activeGenerationGames === 'function' ||
         typeof service.liveAnalysisGames === 'function');
     if (!service || !canPoll) {
       return;
     }
     let disposed = false;
-    // Plan-013 W3: while a scan is live, refresh rows at a slow cadence so the
-    // persisted scanProgress advances the row's bar; never more often than
-    // every few seconds, and never while a reload is already in flight.
-    let lastScanReload = 0;
+    // Plan-013 W3 / Feature-011 Stage D: while a scan or a generation pass is
+    // live, refresh rows at a slow cadence so the persisted progress (scan or
+    // puzzle `done/total`) advances the row's bar; never more often than every
+    // few seconds, and never while a reload is already in flight.
+    let lastLiveReload = 0;
     const tick = async (): Promise<void> => {
       if (disposed) {
         return;
@@ -218,6 +230,14 @@ export function GameLibrary({
           active = new Set(await service.activeDetectionGames!());
         } catch {
           active = new Set();
+        }
+      }
+      let generating = new Set<string>();
+      if (typeof service.activeGenerationGames === 'function') {
+        try {
+          generating = new Set(await service.activeGenerationGames!());
+        } catch {
+          generating = new Set();
         }
       }
       let live = new Set<string>();
@@ -242,7 +262,21 @@ export function GameLibrary({
           libraryRef.current.reload();
         }
       }
+      // Same for a generation pass started on this page (Feature 011): its
+      // settle must still reload the row so the real puzzle count/note appears.
+      const genJustFinished = [...justStartedGenerations.current].filter(
+        (id) => !generating.has(id),
+      );
+      if (genJustFinished.length > 0) {
+        justStartedGenerations.current = new Set(
+          [...justStartedGenerations.current].filter((id) => generating.has(id)),
+        );
+        if (libraryRef.current.rows.some((row) => row.id === genJustFinished[0])) {
+          libraryRef.current.reload();
+        }
+      }
       setActiveDetectionIds(active);
+      setActiveGenerationIds(generating);
       setLiveAnalysisIds(live);
       // A scan that was live and is no longer live just finished (or was
       // interrupted mid-session): reload once so the strip shows its real
@@ -253,18 +287,28 @@ export function GameLibrary({
           break;
         }
       }
-      // Live scan progress refresh (plan 013 W3): while a displayed game's scan
-      // is genuinely running, reload at a throttled cadence so its persisted
-      // `done/total` advances the distinct-colour progress bar.
-      const liveOnRows = [...active].some((id) =>
+      // A generation pass that was live and is no longer live just settled (or
+      // was interrupted mid-session): reload once so the row shows its real
+      // puzzle count/state note.
+      for (const id of activeGenerationRef.current) {
+        if (!generating.has(id) && libraryRef.current.rows.some((row) => row.id === id)) {
+          libraryRef.current.reload();
+          break;
+        }
+      }
+      // Live scan/generation progress refresh: while a displayed game's scan or
+      // generation pass is genuinely running, reload at a throttled cadence so
+      // its persisted `done/total` advances the distinct-colour progress bar.
+      const liveOnRows = [...active, ...generating].some((id) =>
         libraryRef.current.rows.some((row) => row.id === id),
       );
       const nowMs = Date.now();
-      if (liveOnRows && !libraryRef.current.loading && nowMs - lastScanReload > 2_500) {
-        lastScanReload = nowMs;
+      if (liveOnRows && !libraryRef.current.loading && nowMs - lastLiveReload > 2_500) {
+        lastLiveReload = nowMs;
         libraryRef.current.reload();
       }
       activeDetectionRef.current = active;
+      activeGenerationRef.current = generating;
     };
     const timer = setInterval(() => void tick(), 2000);
     void tick();
@@ -272,7 +316,9 @@ export function GameLibrary({
       disposed = true;
       clearInterval(timer);
       activeDetectionRef.current = new Set();
+      activeGenerationRef.current = new Set();
       justStartedScans.current = new Set();
+      justStartedGenerations.current = new Set();
     };
   }, [analysisService]);
 
@@ -337,6 +383,56 @@ export function GameLibrary({
   const canScan = analysisService !== null && typeof analysisService.scanGame === 'function';
   const canCancelScan =
     analysisService !== null && typeof analysisService.cancelScan === 'function';
+
+  /** Run/resume/retry the Feature-011 puzzle-generation pass of one game
+   *  (engine-free derived data; mirrors `runScan` optimistically). */
+  const runGeneration = useCallback(
+    (gameId: string) => {
+      const service = analysisService;
+      if (!service || typeof service.generatePuzzles !== 'function') {
+        return;
+      }
+      void (async () => {
+        try {
+          const outcome = await service.generatePuzzles!(gameId);
+          if (outcome === 'started') {
+            setActiveGenerationIds((previous) => {
+              if (previous.has(gameId)) {
+                return previous;
+              }
+              const next = new Set(previous);
+              next.add(gameId);
+              return next;
+            });
+            justStartedGenerations.current = new Set(justStartedGenerations.current).add(gameId);
+          } else {
+            // Not (or no longer) running: drop the optimistic state; when the
+            // pass already completed the next rows reload shows its real count.
+            setActiveGenerationIds((previous) => {
+              if (!previous.has(gameId)) {
+                return previous;
+              }
+              const next = new Set(previous);
+              next.delete(gameId);
+              return next;
+            });
+            justStartedGenerations.current = new Set(
+              [...justStartedGenerations.current].filter((id) => id !== gameId),
+            );
+            if (outcome === 'already-completed') {
+              library.reload();
+            }
+          }
+        } catch {
+          // The next poll reconciles the real registry state.
+        }
+      })();
+    },
+    [analysisService, library],
+  );
+
+  const canGenerate =
+    analysisService !== null && typeof analysisService.generatePuzzles === 'function';
 
   /** Whole-library engine activity that survives navigation: live analysis
    *  jobs (this session) plus live tactics scans. Paused jobs (earlier
@@ -591,9 +687,12 @@ export function GameLibrary({
             analysis={analysis.enabled ? analysis : null}
             statuses={analysis.statuses}
             activeDetectionIds={activeDetectionIds}
+            activeGenerationIds={activeGenerationIds}
             liveAnalysisIds={liveAnalysisIds}
             scanEnabled={canScan && analysis.enabled}
             onScan={runScan}
+            generationEnabled={canGenerate && analysis.enabled}
+            onGeneratePuzzles={runGeneration}
           />
           <Pagination
             totalCount={totalCount}
@@ -632,9 +731,12 @@ function GameRows({
   analysis,
   statuses,
   activeDetectionIds,
+  activeGenerationIds,
   liveAnalysisIds,
   scanEnabled,
   onScan,
+  generationEnabled,
+  onGeneratePuzzles,
   onDeleteGame,
 }: {
   rows: readonly LibraryGameRow[];
@@ -644,11 +746,16 @@ function GameRows({
   statuses: Readonly<Record<string, GameAnalysisStatus>>;
   /** Game ids whose Feature-010 detection pass is live in this session. */
   activeDetectionIds: ReadonlySet<string>;
+  /** Game ids whose Feature-011 puzzle-generation pass is live in this session. */
+  activeGenerationIds: ReadonlySet<string>;
   /** Game ids whose analysis job is live in this session (not paused). */
   liveAnalysisIds: ReadonlySet<string>;
   /** Whether the shared service exposes the on-demand scan entry point. */
   scanEnabled: boolean;
   onScan: (gameId: string) => void;
+  /** Whether the shared service exposes the on-demand generation entry point. */
+  generationEnabled: boolean;
+  onGeneratePuzzles: (gameId: string) => void;
   onDeleteGame: (id: string) => void;
 }): React.JSX.Element {
   return (
@@ -730,15 +837,28 @@ function GameRows({
               />
             </span>
           ) : null}
-          <GameRowInsights row={row} detectionRunning={activeDetectionIds.has(row.id)} />
+          <GameRowInsights
+            row={row}
+            detectionRunning={activeDetectionIds.has(row.id)}
+            generationRunning={activeGenerationIds.has(row.id)}
+          />
           <DetectionScanAction
             row={row}
             live={activeDetectionIds.has(row.id)}
             enabled={scanEnabled}
             onScan={onScan}
           />
+          <PuzzleGenerationAction
+            row={row}
+            live={activeGenerationIds.has(row.id)}
+            enabled={generationEnabled}
+            onGenerate={onGeneratePuzzles}
+          />
           {scanProgressVisible(row, activeDetectionIds.has(row.id)) ? (
             <RowScanProgressBar gameId={row.id} progress={row.scanProgress!} />
+          ) : null}
+          {puzzleProgressVisible(row, activeGenerationIds.has(row.id)) ? (
+            <RowPuzzleProgressBar gameId={row.id} progress={row.puzzleProgress!} />
           ) : null}
           {analysis?.perGameProgress[row.id] ? (
             <RowProgressBar gameId={row.id} progress={analysis.perGameProgress[row.id]!} />
@@ -895,11 +1015,17 @@ function spokenCount(count: number, singular: string, plural: string): string {
  * only for a completed/outdated run and only when the owning data exists —
  * absent data is never rendered as a zero (specs/domain/game-library.md §7).
  * Accuracy is shown with one decimal; counts are tinted by classification
- * (zero → green for the negative classes, neutral for best/good).
+ * (zero → green for the negative classes, neutral for best/good). Feature-011
+ * puzzle data follows the same absent-vs-zero discipline and is rendered only
+ * once the detection pass completed at the current version: a stale completed
+ * detection (plan-015 freshness gate / plan R-6) suppresses the puzzle notes
+ * with the Feature-010 "out of date" note, and an interrupted pass never reads
+ * as "generating…" (`generationRunning` = live in this session).
  */
 function rowInsightItemsFor(
   row: LibraryGameRow,
   detectionRunning: boolean,
+  generationRunning: boolean,
 ): readonly RowInsightItem[] {
   if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
     return [];
@@ -993,23 +1119,87 @@ function rowInsightItemsFor(
       });
     }
   }
+  // Feature-011 puzzle surface (absent-vs-zero contract). Runs only for a
+  // current completed detection (`hasCompletedDetection`): a stale completed
+  // detection (plan R-6) or a detection pass that has not completed leaves the
+  // Feature-010 detection note above as the sole truth — no puzzle item.
+  if (row.hasCompletedDetection === true) {
+    const muted = 'var(--color-fg-muted, #6b7280)';
+    const puzzle = row.puzzleState ?? 'absent';
+    if (puzzle === 'completed') {
+      // A completed generation pass always carries a real count (zero reads
+      // green via the canonical zero-rule palette) — never exposed otherwise.
+      if (typeof row.puzzleCount === 'number') {
+        const count = row.puzzleCount;
+        items.push({
+          key: 'puzzles',
+          testId: 'row-insights-puzzles',
+          text: `Puzzles ${count}`,
+          spoken: spokenCount(count, 'puzzle', 'puzzles'),
+          color: puzzleCountColor(count),
+        });
+      }
+    } else if (generationRunning) {
+      // A pass that is live in this session — even one whose persisted state
+      // has not yet advanced past `absent` (the pass just started) — reads
+      // "generating", never a stale/not-yet-written note.
+      items.push({
+        key: 'puzzles',
+        testId: 'row-insights-puzzles-pending',
+        text: 'Generating puzzles…',
+        spoken: 'Generating puzzles',
+        color: muted,
+      });
+    } else if (puzzle === 'absent') {
+      items.push({
+        key: 'puzzles',
+        testId: 'row-insights-puzzles-absent',
+        text: 'Puzzles not generated',
+        spoken: 'Puzzles not generated',
+        title:
+          'No puzzle-generation pass has run for this analysis. Use Generate puzzles below to create them.',
+        color: muted,
+      });
+    } else if (puzzle === 'queued' || puzzle === 'inProgress') {
+      items.push({
+        key: 'puzzles',
+        testId: 'row-insights-puzzles-interrupted',
+        text: 'Puzzle generation interrupted',
+        spoken: 'Puzzle generation interrupted',
+        title:
+          'A puzzle-generation pass was started but never finished. Use Resume puzzle generation below to continue it.',
+        color: 'var(--color-danger, #c4261c)',
+      });
+    } else if (puzzle === 'failed') {
+      items.push({
+        key: 'puzzles',
+        testId: 'row-insights-puzzles-failed',
+        text: 'Puzzle generation failed',
+        spoken: 'Puzzle generation failed',
+        color: 'var(--color-danger, #c4261c)',
+      });
+    }
+  }
   return items;
 }
 
 /**
  * Full-width insights line under a row's meta: Accuracy · Blunders ·
- * Mistakes · Inaccuracies · Missed tactics for the user's latest completed
- * analysis. One labelled region per row whose screen-reader text spells out
- * every value.
+ * Mistakes · Inaccuracies · Missed tactics · Puzzles for the user's latest
+ * completed analysis. One labelled region per row whose screen-reader text
+ * spells out every value.
  */
 function GameRowInsights({
   row,
   detectionRunning,
+  generationRunning,
 }: {
   row: LibraryGameRow;
   detectionRunning: boolean;
+  /** True while the row's Feature-011 generation pass is live this session. */
+  generationRunning: boolean;
 }): React.JSX.Element | null {
-  const items = rowInsightItemsFor(row, detectionRunning);
+  const items = rowInsightItemsFor(row, detectionRunning, generationRunning);
   if (items.length === 0) {
     return null;
   }
@@ -1094,6 +1284,67 @@ function DetectionScanAction({
         className={styles.detectionScanButton}
         data-testid={`row-scan-${kind}-${row.id}`}
         onClick={() => onScan(row.id)}
+      >
+        {label}
+      </button>
+    </span>
+  );
+}
+
+/**
+ * On-demand puzzle-generation affordance under a row (Feature 011, mirror of
+ * `DetectionScanAction`): run the first generation pass of an analysis whose
+ * detection completed at the current version but whose puzzles were never
+ * generated, resume an interrupted pass, or retry a failed one. Rendered only
+ * while detection is completed/fresh — a stale completed detection offers the
+ * Feature-010 refresh-scan instead. Absent (never "generating" twice) while
+ * the pass is live; the live strip note governs.
+ */
+function PuzzleGenerationAction({
+  row,
+  live,
+  enabled,
+  onGenerate,
+}: {
+  row: LibraryGameRow;
+  live: boolean;
+  enabled: boolean;
+  onGenerate: (gameId: string) => void;
+}): React.JSX.Element | null {
+  if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
+    return null;
+  }
+  if (row.hasCompletedDetection !== true) {
+    return null;
+  }
+  if (live) {
+    return null; // The strip already shows "Generating puzzles…".
+  }
+  const puzzle = row.puzzleState ?? 'absent';
+  let kind: 'generate' | 'resume' | 'retry' | null = null;
+  let label = '';
+  if (puzzle === 'queued' || puzzle === 'inProgress') {
+    kind = 'resume';
+    label = 'Resume puzzle generation';
+  } else if (puzzle === 'failed') {
+    kind = 'retry';
+    label = 'Retry puzzle generation';
+  } else if (puzzle === 'absent') {
+    kind = 'generate';
+    label = 'Generate puzzles';
+  } else {
+    return null;
+  }
+  if (!enabled || !kind) {
+    return null;
+  }
+  return (
+    <span className={styles.detectionScan}>
+      <button
+        type="button"
+        className={styles.detectionScanButton}
+        data-testid={`row-puzzles-${kind}-${row.id}`}
+        onClick={() => onGenerate(row.id)}
       >
         {label}
       </button>
@@ -1270,6 +1521,17 @@ function AnalysisCell({
           >
             <span aria-hidden="true" className={styles.reviewGlyph}>
               {REVIEW_GLYPH}
+            </span>
+          </Link>
+          <Link
+            className={styles.rowReviewLink}
+            data-testid={`game-puzzles-${gameId}`}
+            to={`/games/${gameId}/puzzles`}
+            aria-label="Puzzles from this game"
+            title="Puzzles from this game"
+          >
+            <span aria-hidden="true" className={styles.reviewGlyph}>
+              {PUZZLES_GLYPH}
             </span>
           </Link>
           <IconButton
@@ -1459,6 +1721,61 @@ function RowScanProgressBar({
       </span>
       <span className={styles.rowProgressText} data-testid={`game-scan-progress-text-${gameId}`}>
         Verifying tactic {progress.done} of {progress.total} · {percent}%
+      </span>
+    </div>
+  );
+}
+
+/**
+ * True when a row should show the Feature-011 puzzle-generation progress bar:
+ * the pass is genuinely running **in this session** and the persisted summary
+ * has recorded a total. An interrupted pass never claims progress (spec
+ * Accessibility: interrupted passes never announce progress).
+ */
+function puzzleProgressVisible(row: LibraryGameRow, live: boolean): boolean {
+  if (!live) {
+    return false;
+  }
+  if (row.puzzleState !== 'queued' && row.puzzleState !== 'inProgress') {
+    return false;
+  }
+  const progress = row.puzzleProgress;
+  return progress !== null && progress !== undefined && progress.total > 0;
+}
+
+/**
+ * Feature-011 Stage D: full-width generation-progress strip under a row whose
+ * puzzle-generation pass is running right now. Same bar shape as the scan
+ * strip, visually distinct (amber rule/fill — derived data, not engine work),
+ * with the numbers spelled out for assistive tech ("Generating puzzle X of Y").
+ */
+function RowPuzzleProgressBar({
+  gameId,
+  progress,
+}: {
+  gameId: string;
+  progress: { readonly done: number; readonly total: number };
+}): React.JSX.Element {
+  const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  return (
+    <div
+      className={`${styles.rowProgressBar} ${styles.puzzleProgressBar}`}
+      data-testid={`game-puzzle-progress-${gameId}`}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-label={`Generating puzzle ${progress.done} of ${progress.total}, ${percent} per cent`}
+    >
+      <span className={styles.rowProgressTrack}>
+        <span
+          className={`${styles.rowProgressFill} ${styles.puzzleProgressFill}`}
+          style={{ width: `${percent}%` }}
+          data-testid={`game-puzzle-progress-fill-${gameId}`}
+        />
+      </span>
+      <span className={styles.rowProgressText} data-testid={`game-puzzle-progress-text-${gameId}`}>
+        Generating puzzle {progress.done} of {progress.total} · {percent}%
       </span>
     </div>
   );
