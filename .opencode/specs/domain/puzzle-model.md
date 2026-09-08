@@ -26,6 +26,36 @@ The puzzle should preserve enough provenance to explain:
 - what the solution was
 - why the sequence mattered
 
+## Immutable natural key
+
+A puzzle is identified by `[sourceGameId, sourcePly]` — at most one puzzle
+per game and ply. The row is immutable once written: re-analysis never
+replaces or deletes an existing puzzle (it only adds keys that are absent),
+so puzzles and any later practice/attempts stay stable across engine or
+detection upgrades. Cross-game FEN merging/dedup is out of scope in V1.
+
+## Puzzle generation pass
+
+Puzzles are produced by an engine-free generation pass that promotes the
+verified tactical candidates (Feature 010) of an analysis. Per analysis the
+pass state holder on the analysis summary moves through
+`absent → queued → inProgress → completed | failed`:
+
+- `absent` — detection not complete, or generation never run for this
+  analysis. The Library/view shows a note, never a zero.
+- `queued` — pass interrupted/aborted; resumable (resume skips rows already
+  persisted).
+- `inProgress` — a pass is running; progress `done/total` counts the verified
+  candidates already promoted.
+- `completed` — the pass finished; `0` promoted candidates is a real zero and
+  is shown as `Puzzles 0`/`No puzzles`.
+- `failed` — a write error occurred; retry resumes from the persisted rows.
+
+A completed detection result whose stored `detectionVersion` differs from the
+current constant is treated as outdated: puzzle state/counts are suppressed
+until a fresh scan re-derives candidates. Generation never does engine work,
+never runs on the UI thread, and is resumable on demand.
+
 ## No scheduling state
 
 A Puzzle is an immutable definition and carries **no scheduling or
