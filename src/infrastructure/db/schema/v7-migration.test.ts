@@ -63,7 +63,9 @@ describe('v6 → v7 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(7);
+      // The real schema now lands on v8 (Feature-011 puzzles); this test proves
+      // the v6→v7 additive tables survive the later v8 milestone untouched.
+      expect(migrated.verno).toBe(8);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -73,11 +75,13 @@ describe('v6 → v7 schema migration', () => {
         'positionAnalysisCache',
         'analysisSummaries',
         'puzzleCandidates',
+        'puzzles',
       ]);
 
-      // The two new tables exist and are empty.
+      // The new tables exist and are empty.
       expect(await migrated.analysisSummaries.count()).toBe(0);
       expect(await migrated.puzzleCandidates.count()).toBe(0);
+      expect(await migrated.puzzles.count()).toBe(0);
 
       // Pre-v7 rows (games, settings, analyses) are untouched.
       const stored = await migrated.games.get(game.id);

@@ -159,6 +159,8 @@ describe('analysisInsightsForGame', () => {
       hasCompletedDetection: false,
       missedTactics: null,
       scanProgress: null,
+      puzzleState: 'absent',
+      puzzleProgress: null,
     });
   });
 
@@ -236,6 +238,71 @@ describe('analysisInsightsForGame', () => {
     expect(insights.detectionState).toBe('inProgress');
     expect(insights.scanProgress).toEqual({ done: 2, total: 4 });
     expect(insights.missedTactics).toBeNull();
+  });
+
+  describe('puzzle insights (Feature 011 absent-vs-zero)', () => {
+    const job = completedJob(G_CLEAN, 10);
+    const gameId = G_CLEAN;
+    const completedSummary = (extra: Partial<AnalysisSummaryRow> = {}): AnalysisSummaryRow =>
+      summaryFor(job.id, gameId, {
+        detectionState: 'completed',
+        missedTacticCount: 0,
+        detectionVersion: DETECTION_VERSION,
+        puzzleState: 'completed',
+        puzzleProgress: { done: 1, total: 1 },
+        puzzleGeneratorVersion: 1,
+        ...extra,
+      });
+
+    it('exposes the state note but never a count before the pass completed', () => {
+      const insights = analysisInsightsForGame(
+        [job],
+        [
+          completedSummary({
+            puzzleState: 'queued',
+            puzzleProgress: { done: 1, total: 4 },
+          }),
+        ],
+        { [gameId]: 3 },
+      );
+      expect(insights.puzzleState).toBe('queued');
+      expect(insights.puzzleProgress).toEqual({ done: 1, total: 4 });
+      expect(insights.puzzleCount).toBeUndefined();
+    });
+
+    it('treats a completed pass over zero rows as a real zero count', () => {
+      const insights = analysisInsightsForGame([job], [completedSummary()], { [gameId]: 0 });
+      expect(insights.puzzleState).toBe('completed');
+      expect(insights.puzzleCount).toBe(0);
+    });
+
+    it('exposes the persisted puzzles-table count only for a completed pass', () => {
+      const insights = analysisInsightsForGame([job], [completedSummary()], { [gameId]: 4 });
+      expect(insights.puzzleCount).toBe(4);
+    });
+
+    it('omits the count when the game is absent from the counts map', () => {
+      const insights = analysisInsightsForGame([job], [completedSummary()], {});
+      expect(insights.puzzleState).toBe('completed');
+      expect(insights.puzzleCount).toBeUndefined();
+    });
+
+    it('suppresses the count for a stale completed detection (plan R-6)', () => {
+      const insights = analysisInsightsForGame(
+        [job],
+        [
+          completedSummary({
+            detectionVersion: 1,
+            missedTacticCount: 1,
+          }),
+        ],
+        { [gameId]: 4 },
+      );
+      expect(insights.detectionState).toBe('completed');
+      expect(insights.hasCompletedDetection).toBe(false);
+      expect(insights.puzzleState).toBe('completed');
+      expect(insights.puzzleCount).toBeUndefined();
+    });
   });
 });
 

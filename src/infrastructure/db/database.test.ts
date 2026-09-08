@@ -11,7 +11,7 @@ describe('ChessRemedyDatabase', () => {
     expect(db.isOpen()).toBe(true);
   });
 
-  it('exposes the game-analysis tables at schema version 7', () => {
+  it('exposes the game-analysis tables at schema version 8', () => {
     expect(db.tables.map((t) => t.name)).toEqual([
       'settings',
       'games',
@@ -21,8 +21,9 @@ describe('ChessRemedyDatabase', () => {
       'positionAnalysisCache',
       'analysisSummaries',
       'puzzleCandidates',
+      'puzzles',
     ]);
-    expect(db.verno).toBe(7);
+    expect(db.verno).toBe(8);
   });
 
   it('round-trips a primitive setting', async () => {

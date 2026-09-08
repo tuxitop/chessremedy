@@ -24,6 +24,7 @@
 
 import type { Color } from 'chessops/types';
 import type { MoveAnalysis } from '@/domain/chess';
+import { PUZZLE_GENERATOR_VERSION, type PuzzleGenerationState } from '@/domain/puzzle';
 import type { DetectionPassState } from '@/domain/tactics';
 import { gameAccuracy } from './accuracy';
 import type { ClassificationCounts } from './summary';
@@ -31,6 +32,9 @@ import { summarizeAnalysis } from './summary';
 
 /** Detection-pass state of an analysis: `'absent'` until Feature 010 schedules a pass. */
 export type SummaryDetectionState = DetectionPassState | 'absent';
+
+/** Puzzle-generation state of an analysis: `'absent'` until Feature 011 schedules a pass. */
+export type SummaryPuzzleState = PuzzleGenerationState | 'absent';
 
 /**
  * Live two-stage scan progress of a detection pass (plan 013 W3): how many of
@@ -73,6 +77,28 @@ export interface BuildAnalysisSummaryOptions {
    * once settled) so a resumed pass restores its totals.
    */
   readonly scanProgress?: ScanProgress | null;
+  /**
+   * Puzzle-generation state of the analysis (Feature 011). Defaults to
+   * `'absent'` (no generation pass has been scheduled or run for this
+   * analysis). The generation service passes `'queued'` when its pass starts
+   * and `'completed'`/`'failed'` when it settles.
+   */
+  readonly puzzleState?: SummaryPuzzleState;
+  /**
+   * Puzzle-generation version of the completed pass (Feature 011 writes
+   * `PUZZLE_GENERATOR_VERSION`). Only retained for the `'completed'` state
+   * (defaults to `PUZZLE_GENERATOR_VERSION`); otherwise the stored version is
+   * `null`. A puzzle *count* is never derived here — the Library reads the
+   * live row count of the `puzzles` table (absent ≠ zero).
+   */
+  readonly puzzleGeneratorVersion?: number | null;
+  /**
+   * Live generation progress (puzzles assembled/written over total). Optional
+   * — absent rows default to `null` (older passes). Written by the generation
+   * service as rows settle and retained for every state so a resumed pass
+   * restores its totals.
+   */
+  readonly puzzleProgress?: ScanProgress | null;
 }
 
 export interface PerAnalysisSummary {
@@ -109,6 +135,22 @@ export interface PerAnalysisSummary {
    * reports the game as live.
    */
   readonly scanProgress: ScanProgress | null;
+  /** Puzzle-generation state for this analysis; `'absent'` until a pass is scheduled. */
+  readonly puzzleState: SummaryPuzzleState;
+  /**
+   * Puzzle-generator version of the completed generation pass, or `null` until
+   * one completes (only a `'completed'` pass may carry a version). A puzzle
+   * count is never derived here — the Library reads the live `puzzles` row
+   * count of the game (absent ≠ zero).
+   */
+  readonly puzzleGeneratorVersion: number | null;
+  /**
+   * Live generation progress (puzzles settled over total), or `null` when no
+   * progress has been recorded (older rows / a pass not yet started). Never
+   * used to claim a running pass: the UI shows progress only while the service
+   * reports the game as live.
+   */
+  readonly puzzleProgress: ScanProgress | null;
 }
 
 function detectionHolderFor(
@@ -124,6 +166,24 @@ function detectionHolderFor(
     missedTacticCount: typeof explicitCount === 'number' ? explicitCount : persistedMissedTactics,
     detectionVersion: explicitVersion ?? null,
   };
+}
+
+/**
+ * Puzzle-state holder mirroring `detectionHolderFor`: `puzzleGeneratorVersion`
+ * is non-null only for a `'completed'` generation pass. A completed pass runs
+ * at the current generator semantics, so the version defaults to
+ * `PUZZLE_GENERATOR_VERSION` when the caller does not supply one; `puzzleProgress`
+ * is carried like `scanProgress` (for every state) and wired directly in
+ * `buildAnalysisSummary`.
+ */
+function puzzleHolderFor(
+  state: SummaryPuzzleState,
+  explicitVersion: number | null | undefined,
+): { readonly puzzleGeneratorVersion: number | null } {
+  if (state !== 'completed') {
+    return { puzzleGeneratorVersion: null };
+  }
+  return { puzzleGeneratorVersion: explicitVersion ?? PUZZLE_GENERATOR_VERSION };
 }
 
 /**
@@ -145,6 +205,8 @@ export function buildAnalysisSummary(
     options.missedTacticCount,
     options.detectionVersion,
   );
+  const puzzleState: SummaryPuzzleState = options.puzzleState ?? 'absent';
+  const puzzleHolder = puzzleHolderFor(puzzleState, options.puzzleGeneratorVersion);
   return {
     classificationCounts: analysis.user,
     userMoves: analysis.userMoves,
@@ -155,5 +217,8 @@ export function buildAnalysisSummary(
     missedTacticCount: holder.missedTacticCount,
     detectionVersion: holder.detectionVersion,
     scanProgress: options.scanProgress ?? null,
+    puzzleState,
+    puzzleProgress: options.puzzleProgress ?? null,
+    puzzleGeneratorVersion: puzzleHolder.puzzleGeneratorVersion,
   };
 }

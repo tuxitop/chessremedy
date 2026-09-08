@@ -87,11 +87,19 @@ export function resolveGameAnalysis(
  * The read-only insights overlay for a row from its game's jobs + summaries:
  * the analysis status always; accuracy/counts only when a completed run's
  * summary exists; missed tactics follow absent-vs-zero (`null` until the
- * detection pass completed, `0` a real zero).
+ * detection pass completed, `0` a real zero). Feature-011 puzzle data follows
+ * the same discipline: `puzzleState`/`puzzleProgress` are carried for the row
+ * note whenever a summary exists, while `puzzleCount` (the live `puzzles`-row
+ * count of the game, from the optional per-game counts map) is exposed only
+ * when the generation pass `completed` **and** the detection result is
+ * `completed` at the current pipeline version (plan-015 freshness gate / plan
+ * R-6: a stale detection suppresses the count with the Feature-010 note). The
+ * function stays pure — counts are a parameter, never a repository import.
  */
 export function analysisInsightsForGame(
   jobs: readonly AnalysisJob[],
   summaries: readonly AnalysisSummaryRow[],
+  puzzleCountsByGame?: Readonly<Record<GameId, number>>,
 ): GameRowInsights {
   const { status, summary } = resolveGameAnalysis(jobs, summaries);
   if (summary === null) {
@@ -102,6 +110,16 @@ export function analysisInsightsForGame(
   // outdated — its count is suppressed and the row offers a refresh scan.
   const detectionCompleted =
     summary.detectionState === 'completed' && summary.detectionVersion === DETECTION_VERSION;
+  const puzzleState = summary.puzzleState ?? 'absent';
+  const puzzleProgress = summary.puzzleProgress ?? null;
+  // Absent ≠ zero: a puzzle count is only ever the live row count of a
+  // `completed` generation pass over a current completed detection (R-6). The
+  // per-game counts map always carries a key for every listed row; a missing
+  // key (a row whose count was not loaded) exposes no count either.
+  const puzzleCount =
+    detectionCompleted && puzzleState === 'completed'
+      ? puzzleCountsByGame?.[summary.gameId]
+      : undefined;
   return {
     analysisStatus: status,
     accuracy: summary.accuracy,
@@ -111,6 +129,9 @@ export function analysisInsightsForGame(
     hasCompletedDetection: detectionCompleted,
     missedTactics: detectionCompleted ? summary.missedTacticCount : null,
     scanProgress: summary.scanProgress ?? null,
+    puzzleState,
+    puzzleProgress,
+    ...(puzzleCount !== undefined ? { puzzleCount } : {}),
   };
 }
 

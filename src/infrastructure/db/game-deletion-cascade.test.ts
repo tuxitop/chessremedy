@@ -5,11 +5,13 @@ import { analysesRepository } from './analysis-repository';
 import { analysisJobsRepository } from './analysis-jobs-repository';
 import { summariesRepository } from './summaries-repository';
 import { puzzleCandidatesRepository } from './candidates-repository';
+import { puzzlesRepository } from './puzzles-repository';
 import { DexieEngineAnalysisCache } from './engine-cache-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { makeRecords, TEST_ENGINE } from '@/domain/analysis/test-support';
 import { createAnalysisJob } from '@/domain/analysis';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
+import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from '@/domain/tactics';
 
 function candidateRow(gameId: string, analysisId: string, sourcePly: number) {
@@ -43,6 +45,16 @@ function candidateRow(gameId: string, analysisId: string, sourcePly: number) {
   } as const;
 }
 
+/** A Feature-011 puzzle row at the given `(sourceGameId, sourcePly)` key. */
+function puzzleRow(sourceGameId: string, analysisId: string, sourcePly: number) {
+  return {
+    ...puzzleRowFixture('material-combination'),
+    sourceGameId,
+    sourcePly,
+    analysisId,
+  };
+}
+
 describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
   beforeEach(async () => {
     await db.games.clear();
@@ -51,9 +63,10 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     await db.positionAnalysisCache.clear();
     await db.analysisSummaries.clear();
     await db.puzzleCandidates.clear();
+    await db.puzzles.clear();
   });
 
-  it('removes game-scoped MoveAnalysis, jobs, summaries and candidates but retains the engine cache', async () => {
+  it('removes game-scoped MoveAnalysis, jobs, summaries, candidates and puzzles but retains the engine cache', async () => {
     const game = fixtureGame('cc-blitz-clean');
     await gamesRepository.saveGame(game);
     const other = fixtureGame('li-rapid-clean');
@@ -80,6 +93,10 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
       candidateRow(game.id, job.id, 7),
       candidateRow(game.id, job.id, 9),
     ]);
+    await puzzlesRepository.addIfAbsent([
+      puzzleRow(game.id, job.id, 7),
+      puzzleRow(game.id, job.id, 9),
+    ]);
 
     // …and identical rows for a different game that must survive.
     const otherJob = createAnalysisJob(other.id, TEST_ENGINE, 6, 1);
@@ -96,6 +113,7 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
       ...otherSummary,
     });
     await puzzleCandidatesRepository.bulkPutForAnalysis([candidateRow(other.id, otherJob.id, 1)]);
+    await puzzlesRepository.addIfAbsent([puzzleRow(other.id, otherJob.id, 1)]);
 
     const cache = new DexieEngineAnalysisCache();
     await cache.put('shared-fen-key', {
@@ -116,6 +134,7 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     expect(await analysisJobsRepository.listByGame(game.id)).toHaveLength(0);
     expect(await summariesRepository.getForAnalysis(job.id)).toBeUndefined();
     expect(await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id)).toEqual([]);
+    expect(await puzzlesRepository.countForGame(game.id)).toBe(0);
     // The engine cache is position-keyed and shared — never purged.
     expect(await cache.count()).toBe(1);
     // Another game's derived rows are untouched.
@@ -124,5 +143,6 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     expect(
       await puzzleCandidatesRepository.listForGameAndAnalysis(other.id, otherJob.id),
     ).toHaveLength(1);
+    expect(await puzzlesRepository.countForGame(other.id)).toBe(1);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MoveAnalysis } from '@/domain/chess';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import { makeMove } from './test-support';
 import { summarizeAnalysis } from './summary';
 import { gameAccuracy } from './accuracy';
@@ -260,6 +261,45 @@ describe('buildAnalysisSummary (scan progress, plan 013 W3)', () => {
     expect(built.scanProgress).toEqual({ done: 3, total: 5 });
     expect(built.missedTacticCount).toBeNull();
     expect(built.detectionVersion).toBeNull();
+  });
+});
+
+describe('buildAnalysisSummary (puzzle-generation holder, Feature 011)', () => {
+  it('defaults to an absent puzzle holder (absent state, null version and progress)', () => {
+    const built = buildAnalysisSummary(missedTacticRecords(), 'white');
+    expect(built.puzzleState).toBe('absent');
+    expect(built.puzzleGeneratorVersion).toBeNull();
+    expect(built.puzzleProgress).toBeNull();
+  });
+
+  it('keeps a non-completed puzzle state absent of a generator version but retains progress', () => {
+    for (const state of ['queued', 'inProgress', 'failed'] as const) {
+      const built = buildAnalysisSummary(missedTacticRecords(), 'white', {
+        puzzleState: state,
+        puzzleGeneratorVersion: 9,
+        puzzleProgress: { done: 1, total: 3 },
+      });
+      expect(built.puzzleState, `state ${state}`).toBe(state);
+      expect(built.puzzleProgress, `state ${state}`).toEqual({ done: 1, total: 3 });
+      expect(built.puzzleGeneratorVersion, `state ${state}`).toBeNull();
+    }
+  });
+
+  it('stores a generator version only for a completed pass, defaulting to PUZZLE_GENERATOR_VERSION', () => {
+    const explicit = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      puzzleState: 'completed',
+      puzzleGeneratorVersion: 9,
+      puzzleProgress: { done: 4, total: 4 },
+    });
+    expect(explicit.puzzleState).toBe('completed');
+    expect(explicit.puzzleGeneratorVersion).toBe(9);
+    expect(explicit.puzzleProgress).toEqual({ done: 4, total: 4 });
+
+    const defaulted = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      puzzleState: 'completed',
+    });
+    expect(defaulted.puzzleState).toBe('completed');
+    expect(defaulted.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
   });
 });
 

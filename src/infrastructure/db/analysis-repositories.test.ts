@@ -9,9 +9,11 @@ import {
   type UnverifiedPuzzleCandidateRow,
 } from './candidates-repository';
 import type { AnalysisSummaryRow } from './summaries-repository';
+import { puzzlesRepository } from './puzzles-repository';
 import { makeJob, makeRecords, TEST_ENGINE } from '@/domain/analysis/test-support';
 import { markCompleted, markFailed, markInProgress } from '@/domain/analysis';
 import { buildAnalysisSummary, type PerAnalysisSummary } from '@/domain/analysis/summaryDerivation';
+import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
 import { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from '@/domain/tactics';
 import type { Color } from 'chessops/types';
@@ -226,6 +228,40 @@ describe('analysis summaries repository', () => {
     expect(await summariesRepository.getForAnalysis(ANALYSIS_A)).toBeUndefined();
   });
 
+  it('patchForAnalysis merges only the given fields and never clobbers the other fields', async () => {
+    const row = summaryRowFor(GAME, ANALYSIS_A, 'white', makeRecords(GAME, ANALYSIS_A, 6), {
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: DETECTION_VERSION,
+    });
+    await summariesRepository.putForAnalysis(row);
+
+    // A puzzle-state patch updates only the puzzle fields…
+    await summariesRepository.patchForAnalysis(ANALYSIS_A, {
+      puzzleState: 'inProgress',
+      puzzleProgress: { done: 1, total: 2 },
+    });
+    let stored = await summariesRepository.getForAnalysis(ANALYSIS_A);
+    expect(stored?.puzzleState).toBe('inProgress');
+    expect(stored?.puzzleProgress).toEqual({ done: 1, total: 2 });
+    // …and preserves the detection machine's fields untouched.
+    expect(stored?.detectionState).toBe('completed');
+    expect(stored?.missedTacticCount).toBe(0);
+    expect(stored?.detectionVersion).toBe(DETECTION_VERSION);
+    expect(stored?.puzzleGeneratorVersion).toBeNull();
+
+    // A later patch to the completed puzzle state lands on the same row.
+    await summariesRepository.patchForAnalysis(ANALYSIS_A, { puzzleState: 'completed' });
+    stored = await summariesRepository.getForAnalysis(ANALYSIS_A);
+    expect(stored?.puzzleState).toBe('completed');
+    expect(stored?.detectionState).toBe('completed');
+    expect(stored?.missedTacticCount).toBe(0);
+
+    // Patching an absent analysis is a silent no-op.
+    await summariesRepository.patchForAnalysis('missing', { puzzleState: 'completed' });
+    expect(await summariesRepository.getForAnalysis('missing')).toBeUndefined();
+  });
+
   it('keeps a non-completed detection holder absent (null count/version)', async () => {
     const row = summaryRowFor(GAME, ANALYSIS_A, 'white', makeRecords(GAME, ANALYSIS_A, 6), {
       detectionState: 'queued',
@@ -374,5 +410,88 @@ describe('puzzle candidates repository', () => {
     expect(
       await puzzleCandidatesRepository.listForGameAndAnalysis(OTHER_GAME, OTHER_ANALYSIS),
     ).toEqual([verifiedRow(OTHER_GAME, OTHER_ANALYSIS, 1)]);
+  });
+});
+
+describe('puzzles repository', () => {
+  beforeEach(async () => {
+    await db.puzzles.clear();
+  });
+
+  /** A Feature-011 puzzle row at the given `(sourceGameId, sourcePly)` key. */
+  function puzzleRow(sourceGameId: string, analysisId: string, sourcePly: number) {
+    return {
+      ...puzzleRowFixture('material-combination'),
+      sourceGameId,
+      sourcePly,
+      analysisId,
+    };
+  }
+
+  it('addIfAbsent is first-wins and idempotent over the natural key', async () => {
+    const original = puzzleRow(GAME, ANALYSIS_A, 2);
+    expect(await puzzlesRepository.addIfAbsent([original])).toBe(1);
+    // Re-adding the identical row is a no-op …
+    expect(await puzzlesRepository.addIfAbsent([original])).toBe(0);
+    // … and so is a different row at an already-present (game, sourcePly) key:
+    // the original immutable row is never overwritten.
+    const different = {
+      ...puzzleRowFixture('mate-one'),
+      sourceGameId: GAME,
+      sourcePly: 2,
+      analysisId: ANALYSIS_A,
+    };
+    expect(await puzzlesRepository.addIfAbsent([different])).toBe(0);
+    expect(await puzzlesRepository.getPuzzle(GAME, 2)).toEqual(original);
+    expect(await puzzlesRepository.countForGame(GAME)).toBe(1);
+    // An empty batch is a no-op.
+    expect(await puzzlesRepository.addIfAbsent([])).toBe(0);
+  });
+
+  it('round-trips by natural key and lists a game ordered by sourcePly', async () => {
+    await puzzlesRepository.addIfAbsent([
+      puzzleRow(GAME, ANALYSIS_A, 6),
+      puzzleRow(GAME, ANALYSIS_A, 0),
+      puzzleRow(GAME, ANALYSIS_A, 3),
+    ]);
+
+    expect((await puzzlesRepository.listForGame(GAME)).map((r) => r.sourcePly)).toEqual([0, 3, 6]);
+    expect((await puzzlesRepository.getPuzzle(GAME, 3))?.sourcePly).toBe(3);
+    expect(await puzzlesRepository.getPuzzle(GAME, 99)).toBeUndefined();
+    // listForGame is scoped to one game.
+    expect(await puzzlesRepository.listForGame(OTHER_GAME)).toEqual([]);
+  });
+
+  it('counts per game, per set of games and absent games as zero', async () => {
+    await puzzlesRepository.addIfAbsent([
+      puzzleRow(GAME, ANALYSIS_A, 0),
+      puzzleRow(GAME, ANALYSIS_A, 2),
+      puzzleRow(OTHER_GAME, OTHER_ANALYSIS, 4),
+    ]);
+
+    expect(await puzzlesRepository.countForGame(GAME)).toBe(2);
+    expect(await puzzlesRepository.countForGame('lichess:none')).toBe(0);
+    expect(await puzzlesRepository.countForGames([])).toEqual({});
+    expect(await puzzlesRepository.countForGames([GAME, OTHER_GAME, 'lichess:none'])).toEqual({
+      [GAME]: 2,
+      [OTHER_GAME]: 1,
+      'lichess:none': 0,
+    });
+  });
+
+  it('deletes puzzles per game, keeping other games rows', async () => {
+    await puzzlesRepository.addIfAbsent([
+      puzzleRow(GAME, ANALYSIS_A, 0),
+      puzzleRow(GAME, ANALYSIS_A, 2),
+      puzzleRow(OTHER_GAME, OTHER_ANALYSIS, 4),
+    ]);
+
+    await puzzlesRepository.deleteForGames([GAME]);
+    expect(await puzzlesRepository.listForGame(GAME)).toEqual([]);
+    expect(await puzzlesRepository.countForGame(GAME)).toBe(0);
+    expect((await puzzlesRepository.listForGame(OTHER_GAME)).map((r) => r.sourcePly)).toEqual([4]);
+    // An empty game set is a no-op.
+    await puzzlesRepository.deleteForGames([]);
+    expect(await db.puzzles.count()).toBe(1);
   });
 });

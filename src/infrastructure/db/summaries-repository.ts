@@ -16,7 +16,11 @@
 
 import type { Color } from 'chessops/types';
 import type { ClassificationCounts } from '@/domain/analysis/summary';
-import type { ScanProgress, SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
+import type {
+  ScanProgress,
+  SummaryDetectionState,
+  SummaryPuzzleState,
+} from '@/domain/analysis/summaryDerivation';
 import type { GameId } from '@/domain/chess/game';
 import { db, type ChessRemedyDatabase } from './database';
 
@@ -52,6 +56,26 @@ export interface AnalysisSummaryRow {
    * treat `undefined` as "no progress recorded".
    */
   readonly scanProgress?: ScanProgress | null;
+  /**
+   * Puzzle-generation state for the analysis (Feature 011, Stage B); absent on
+   * older rows (the field is additive — no schema bump). `undefined` means "no
+   * generation pass exists" — absent ≠ zero (the `puzzles` table row count of
+   * the game is the only real-zero source). Readers must treat `undefined` as
+   * `'absent'`.
+   */
+  readonly puzzleState?: SummaryPuzzleState;
+  /**
+   * Puzzle-generator version of a completed generation pass; absent/`null`
+   * until one completes (only a `'completed'` pass may carry a version).
+   * Readers must treat `undefined` as `null`.
+   */
+  readonly puzzleGeneratorVersion?: number | null;
+  /**
+   * Live generation progress (puzzles settled over total); absent on older
+   * rows or before the pass writes progress. Readers must treat `undefined` as
+   * "no progress recorded".
+   */
+  readonly puzzleProgress?: ScanProgress | null;
   /** Unix epoch millis of the last write. */
   readonly updatedAt: number;
 }
@@ -59,6 +83,14 @@ export interface AnalysisSummaryRow {
 export interface AnalysisSummariesRepository {
   /** Insert or overwrite the summary of one analysis identity. */
   putForAnalysis(summary: AnalysisSummaryRow): Promise<void>;
+  /**
+   * Merge `patch` into the summary of one analysis identity without rebuilding
+   * the row, so one state machine (detection or Feature-011 generation) can
+   * update **only its own fields** on the shared row and never clobbers the
+   * other machine's fields. A silent no-op when no row exists; the row's
+   * `updatedAt` is bumped and its `analysisId` is preserved.
+   */
+  patchForAnalysis(analysisId: string, patch: Partial<AnalysisSummaryRow>): Promise<void>;
   /** The summary of one analysis identity; `undefined` when absent. */
   getForAnalysis(analysisId: string): Promise<AnalysisSummaryRow | undefined>;
   /** Summaries of the given analysis identities (Library pushdown). */
@@ -82,6 +114,19 @@ export class DexieAnalysisSummariesRepository implements AnalysisSummariesReposi
 
   async putForAnalysis(summary: AnalysisSummaryRow): Promise<void> {
     await this.database.analysisSummaries.put(summary);
+  }
+
+  async patchForAnalysis(analysisId: string, patch: Partial<AnalysisSummaryRow>): Promise<void> {
+    const existing = await this.database.analysisSummaries.get(analysisId);
+    if (!existing) {
+      return;
+    }
+    await this.database.analysisSummaries.put({
+      ...existing,
+      ...patch,
+      analysisId,
+      updatedAt: Date.now(),
+    });
   }
 
   async getForAnalysis(analysisId: string): Promise<AnalysisSummaryRow | undefined> {
