@@ -28,6 +28,8 @@ export interface AnalysisPanelProps {
   /** When given, the panel renders this cached data while the engine is off
    * (Game Review stored mode) instead of the idle "off" state. */
   readonly stored?: StoredPanelData | null;
+  /** Override the engine toggle's test id (puzzle solving surfaces). */
+  readonly toggleTestId?: string;
 }
 
 interface DisplayLine {
@@ -50,6 +52,7 @@ export function AnalysisPanel({
   fen,
   rightSlot,
   stored = null,
+  toggleTestId = 'engine-toggle',
 }: AnalysisPanelProps): React.JSX.Element {
   const { enabled, analyzing, lines, error, reachedDepth, engineLabel } = controller;
   // Stored content counts only while it actually fills the lines area: the
@@ -107,7 +110,7 @@ export function AnalysisPanel({
           className={enabled ? styles.toggleOn : styles.toggleOff}
           onClick={() => controller.setEnabled(!enabled)}
           aria-label={enabled ? 'Turn engine off' : 'Turn engine on'}
-          data-testid="engine-toggle"
+          data-testid={toggleTestId}
         >
           <span className={styles.toggleKnob} />
         </button>

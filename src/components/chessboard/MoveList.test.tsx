@@ -161,4 +161,35 @@ describe('MoveList', () => {
     render(<MoveList tree={tree} path={[]} nagOverrides={overrides} />);
     expect(screen.queryAllByTestId('nag-glyph')).toHaveLength(0);
   });
+
+  it('scrolls the active move into view when autoScroll is on and the active ply changes', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const tree = treeOf('1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#');
+      const { rerender } = render(<MoveList tree={tree} path={[]} autoScroll />);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      const landing = pathToLanding(tree);
+      rerender(<MoveList tree={tree} path={landing} autoScroll />);
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('does not auto-scroll when the opt-in prop is off (Review/Live untouched)', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const tree = treeOf('1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#');
+      const { rerender } = render(<MoveList tree={tree} path={[]} />);
+      const landing = pathToLanding(tree);
+      rerender(<MoveList tree={tree} path={landing} />);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
 });

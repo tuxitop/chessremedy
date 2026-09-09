@@ -112,6 +112,30 @@ describe('Settings page — Game analysis group (Feature 008 polish)', () => {
   });
 });
 
+describe('Settings page — Puzzles (Feature 012 solve UX)', () => {
+  beforeEach(async () => {
+    await db.settings.clear();
+  });
+
+  it('shows the puzzle-timer checkbox off by default and persists enabling it', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+
+    const toggle = (await screen.findByTestId('setting-puzzle-timer')) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+    await waitFor(async () => {
+      const stored = await settingsRepository.get<boolean>(SETTINGS_KEYS.puzzleTimer);
+      expect(stored).toBe(true);
+    });
+
+    // A fresh read reflects the stored value.
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    const second = (await screen.findByTestId('setting-puzzle-timer')) as HTMLInputElement;
+    expect(second.checked).toBe(true);
+  });
+});
+
 describe('Settings page — Analysis maintenance (orphan-job cleanup)', () => {
   beforeEach(async () => {
     await db.settings.clear();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
+import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
 import { SolveScreen } from '@/components/puzzles/solve';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { dateIsoOf } from '@/domain/gameLibrary/timeframe';
@@ -108,6 +109,7 @@ export function PuzzlesPage(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [session, setSession] = useState<PracticeSession | null>(null);
   const recorder = useMemo<PuzzleAttemptRecorderLike>(() => createPracticeRecorder(), []);
+  const { showPuzzleTimer } = usePuzzleTimerSetting();
   const pickerHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const wasInSession = useRef(false);
 
@@ -212,6 +214,12 @@ export function PuzzlesPage(): React.JSX.Element {
     });
   }, []);
 
+  const handleRestartSession = useCallback((): void => {
+    setSession((current) =>
+      current === null ? current : { ...current, presentation: current.presentation + 1 },
+    );
+  }, []);
+
   // Keep focus inside the page: the solving screen focuses its own objective
   // on entry; ending a session moves focus back to the picker heading.
   useEffect(() => {
@@ -286,6 +294,8 @@ export function PuzzlesPage(): React.JSX.Element {
           config={DEFAULT_SOLVE_HINT_CONFIG}
           recorder={recorder}
           onExit={handlePresentationExit}
+          onRestart={handleRestartSession}
+          showTimer={showPuzzleTimer}
         />
       </div>
     );

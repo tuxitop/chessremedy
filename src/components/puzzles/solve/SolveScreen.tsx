@@ -1,19 +1,42 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import type { DrawShape } from '@lichess-org/chessground/draw';
-import type { Key } from '@lichess-org/chessground/types';
+import type { Color, Key } from '@lichess-org/chessground/types';
 import { makeSan } from 'chessops/san';
 import { isNormal } from 'chessops/types';
 import { parseUci } from 'chessops/util';
 import { Chessboard, type ChessboardHandle } from '@/components/chessboard/Chessboard';
 import { DEFAULT_PIECE_SET } from '@/components/chessboard/themes';
+import { MoveList } from '@/components/chessboard/MoveList';
+import { MoveListPane } from '@/components/chessboard/MoveListPane';
+import { Navigation, type NavigationTarget } from '@/components/chessboard/Navigation';
 import { PromotionDialog, type PromotionRole } from '@/components/chessboard/PromotionDialog';
-import { Navigation } from '@/components/chessboard/Navigation';
 import { uciMoveArrow } from '@/components/chessboard/boardShapes';
 import { useBoardSize, type UseBoardSize } from '@/components/chessboard/useBoardSize';
+import {
+  buildSolveLine,
+  puzzlePrefixOf,
+  type PuzzlePrefix,
+  type SolveVariation,
+} from '@/components/chessboard/puzzleMoveLine';
+import {
+  lastMoveFromPath,
+  pathToEnd,
+  positionAtPath,
+  step,
+  type Path,
+} from '@/components/chessboard/positionTree';
+import { AnalysisBoard } from '@/components/analysis/board/AnalysisBoard';
+import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
+import { EvaluationBar } from '@/components/analysis/EvaluationBar';
+import { engineArrowShapes } from '@/components/analysis/engineArrows';
+import { useAnalysisController } from '@/components/analysis/useAnalysisController';
+import { useBrowserAnalysisEngine } from '@/components/analysis/useBrowserAnalysisEngine';
+import { useEngineDefaults } from '@/hooks/useEngineDefaults';
+import { useAnalysisNavigation } from '@/hooks/useAnalysisNavigation';
 import { Button } from '@/components/ui/Button';
-import { parsePositionFen } from '@/domain/chess';
-import type { Position } from '@/domain/chess';
+import { fenOf, parsePositionFen, type Position } from '@/domain/chess';
+import type { MoveAnalysis } from '@/domain/chess';
 import { puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
@@ -25,10 +48,8 @@ import {
   type SolveHintConfig,
 } from '@/domain/training';
 import type { PuzzleAttemptRecorderLike } from '@/infrastructure/training';
+import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { usePuzzleSolve, type MoveSubmission, type WritePhase } from '@/hooks/usePuzzleSolve';
-import { KeyboardMoveEntry } from './KeyboardMoveEntry';
-import { OutcomePanel } from './OutcomePanel';
-import { PostSolvePanel, type StoredAnalysisLookup } from './PostSolvePanel';
 import { formatSolveTime } from './solveText';
 import styles from './SolveScreen.module.css';
 
@@ -41,6 +62,22 @@ const PROMOTION_ROLE_LETTER: Readonly<Record<PromotionRole, 'q' | 'r' | 'b' | 'n
 
 const HINT_HIGHLIGHT_BRUSH = 'yellow';
 const WRONG_MOVE_BRUSH = 'red';
+
+/** Visible finish copy for each stored result (single-view, no page swap). */
+export const SOLVE_RESULT_LABELS: Readonly<Record<PresentationOutcome['result'], string>> = {
+  solvedFirstTry: 'Success',
+  solvedWithHelp: 'Solved with hints',
+  failed: 'Failed',
+  skipped: 'Skipped',
+};
+
+/** Stored, game-scoped analysis lookup the solve prefix reads (ADR-033). */
+export interface StoredAnalysisLookup {
+  readonly listForGameAndAnalysis: (
+    gameId: string,
+    analysisId: string,
+  ) => Promise<readonly MoveAnalysis[]>;
+}
 
 /** Host contract of the solving screen (Feature 013 supplies these props). */
 export interface SolveScreenProps {
@@ -56,18 +93,27 @@ export interface SolveScreenProps {
   readonly onExit: (outcome: PresentationOutcome | null) => void;
   /** Optional shared board-size API (defaults to the standard sizing hook). */
   readonly boardSize?: UseBoardSize;
-  /** Optional stored-analysis seam for the post-solve step (ADR-033). */
+  /** Optional stored-analysis seam for the game prefix (defaults to the repo). */
   readonly storedAnalysis?: StoredAnalysisLookup;
+  /** Show the solve clock (Settings → Puzzles; default hidden). */
+  readonly showTimer?: boolean;
+  /**
+   * Host seam to re-present the current puzzle from a clean start. Used for the
+   * post-finish "Restart" action (the presentation controller has no return
+   * path from a recorded outcome to `solving`, so the host remounts the row).
+   */
+  readonly onRestart?: () => void;
 }
 
 /**
- * The Feature-012-owned solving screen (spec "User-facing behavior"): presents
- * an immutable `PuzzleRow` on the shared Chessboard (orientation = side to
- * move), with mouse/touch + pointer-free move entry, per-level hints, move-line
- * transport over the current presentation only, restart/hint/skip/give-up,
- * outcome summaries, and the engine-free stored-only post-solve step. No
- * difficulty is ever shown while solving, and every action is a labelled
- * control reachable by keyboard and touch (keyboard is never the only path).
+ * The Feature-012-owned solving screen (plan 012b single-view redesign): the
+ * board is drawable, the right panel is the standard move list (game prefix +
+ * played/solution mainline, wrong attempts as variations) with a status line
+ * and Hint / View solution / Restart controls, results are shown inside the
+ * move-list container, and once the puzzle is finished a Stockfish toggle
+ * (off by default) analyses the end position. Hints never fail the puzzle;
+ * View solution gives up and plays the stored solution out. The presentation
+ * controller (`usePuzzleSolve`) and its write/retry protocol are unchanged.
  */
 export function SolveScreen({
   row,
@@ -76,7 +122,9 @@ export function SolveScreen({
   recorder,
   onExit,
   boardSize,
-  storedAnalysis,
+  storedAnalysis = analysesRepository,
+  showTimer = false,
+  onRestart,
 }: SolveScreenProps): React.JSX.Element {
   const controller = usePuzzleSolve({ row, context, config, recorder });
   const ownBoardSize = useBoardSize();
@@ -88,19 +136,112 @@ export function SolveScreen({
   const boardRef = useRef<ChessboardHandle | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
-  const stage = controller.stage;
+  const engine = useBrowserAnalysisEngine();
+  const { defaults: engineDefaults, isReady: engineDefaultsReady } = useEngineDefaults();
 
-  const startPosition = useMemo<Position | null>(() => {
-    const parsed = parsePositionFen(row.startingFen);
-    return parsed.ok ? parsed.position : null;
-  }, [row.startingFen]);
-
-  // Focus the objective on presentation start (a11y; stage transitions later).
+  // Game-prefix records for the move list (loading is near-instant local I/O;
+  // solving input waits so variation depths stay consistent with the prefix).
+  const [prefixState, setPrefixState] = useState<
+    | { readonly status: 'loading' }
+    | { readonly status: 'ready'; readonly prefix: PuzzlePrefix | null }
+  >({ status: 'loading' });
   useEffect(() => {
-    if (stage === 'solving') {
-      headingRef.current?.focus();
-    }
-  }, [row.sourceGameId, row.sourcePly, stage]);
+    let active = true;
+    storedAnalysis
+      .listForGameAndAnalysis(row.sourceGameId, row.analysisId)
+      .then((records) => {
+        if (!active) {
+          return;
+        }
+        setPrefixState({ status: 'ready', prefix: puzzlePrefixOf(row, records) });
+      })
+      .catch(() => {
+        if (active) {
+          setPrefixState({ status: 'ready', prefix: null });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [storedAnalysis, row, row.sourceGameId, row.analysisId]);
+
+  // View state over the (re-derived) solve tree; variations are recorded by the
+  // mainline depth of the decision node they were tried at. `path` is `null`
+  // while the view "follows" the mainline end (the decision / final position);
+  // transport and clicks set an explicit line position to browse instead.
+  const [path, setPath] = useState<Path | null>(null);
+  const [variations, setVariations] = useState<readonly SolveVariation[]>([]);
+
+  const stage = controller.stage;
+  const outcome = controller.outcome;
+  const finished = stage === 'outcome' || stage === 'postSolve';
+  const prefixReady = prefixState.status === 'ready';
+  const prefix = prefixState.status === 'ready' ? prefixState.prefix : null;
+
+  const prefixTokens = useMemo(() => prefix?.tokens ?? [], [prefix]);
+  const startFen = prefix?.startFen ?? row.startingFen;
+
+  // The mainline the move list shows: the game prefix, then — once a failed
+  // give-up lands — the whole stored solution, otherwise the accepted line.
+  const suffixTokens = useMemo(
+    () => (finished && outcome?.result === 'failed' ? row.bestPv : controller.playedLine),
+    [finished, outcome, controller.playedLine, row.bestPv],
+  );
+  const mainline = useMemo(() => [...prefixTokens, ...suffixTokens], [prefixTokens, suffixTokens]);
+
+  const tree = useMemo(() => {
+    const built = buildSolveLine({ startFen, mainline, variations });
+    return built.tree;
+  }, [startFen, mainline, variations]);
+
+  // Mainline end (the decision position / final position after finish). The
+  // board is interactive exactly when the user is viewing this node.
+  const leafPath = useMemo(() => pathToEnd(tree, []), [tree]);
+
+  const displayedPath: Path = path === null ? leafPath : path;
+
+  const position = useMemo(() => positionAtPath(tree, displayedPath), [tree, displayedPath]);
+  const currentFen = useMemo(() => fenOf(position), [position]);
+  const positionSide = (position.turn === 'white' ? 'white' : 'black') as Color;
+
+  const atEnd = pathEquals(displayedPath, leafPath);
+  const atDecision = stage === 'solving' && prefixReady && atEnd;
+
+  const lastMove = useMemo(() => {
+    const move = lastMoveFromPath(displayedPath);
+    return move === null ? null : ([move[0], move[1]] as readonly [Key, Key]);
+  }, [displayedPath]);
+
+  // --- solve interactions ----------------------------------------------------
+
+  const handleSeek = useCallback((target: Path) => {
+    setPath(target);
+  }, []);
+
+  const navigate = useCallback(
+    (target: NavigationTarget): void => {
+      if (target === 'first') {
+        setPath([]);
+      } else if (target === 'last') {
+        setPath(null);
+      } else {
+        const next = step(tree, displayedPath, target === 'next' ? 1 : -1);
+        setPath(next);
+      }
+    },
+    [tree, displayedPath],
+  );
+
+  const navHandlers = useMemo(
+    () => ({
+      onFirst: () => navigate('first'),
+      onPrev: () => navigate('prev'),
+      onNext: () => navigate('next'),
+      onLast: () => navigate('last'),
+    }),
+    [navigate],
+  );
+  useAnalysisNavigation(navHandlers);
 
   const sanAt = useCallback((position: Position | null, uci: string): string => {
     if (position === null) {
@@ -116,7 +257,7 @@ export function SolveScreen({
   const handleVerdict = useCallback(
     (verdict: MoveSubmission, uci: string | null): void => {
       if (verdict.kind === 'wrong') {
-        const text = uci === null ? '' : sanAt(controller.decisionPosition, uci);
+        const text = uci === null ? '' : sanAt(position, uci);
         setAnnouncement(
           `${text === '' ? 'That move' : `${text}`} is not the move that achieves the objective. Try again.`,
         );
@@ -124,40 +265,51 @@ export function SolveScreen({
         setAnnouncement('That is not a legal move here.');
       } else if (verdict.kind === 'solved') {
         setAnnouncement('Solved!');
-      } else {
+      } else if (verdict.kind === 'accepted') {
         setAnnouncement(null);
       }
     },
-    [controller.decisionPosition, sanAt],
+    [position, sanAt],
   );
 
   const handleBoardMove = useCallback(
     (from: Key, to: Key): void => {
+      if (!atDecision) {
+        return;
+      }
+      const decisionDepth = prefixTokens.length + controller.playedLine.length;
       const uci = `${from}${to}`;
-      handleVerdict(controller.submitTextMove(uci), uci);
+      const verdict = controller.playBoardMove(from, to);
+      if (verdict.kind === 'wrong') {
+        setVariations((current) => [...current, { depth: decisionDepth, uci }]);
+      } else {
+        // Accepted or solved: follow the (possibly grown) line end.
+        setPath(null);
+      }
+      handleVerdict(verdict, uci);
     },
-    [controller, handleVerdict],
-  );
-
-  const handleTextMove = useCallback(
-    (uci: string): void => {
-      handleVerdict(controller.submitTextMove(uci), uci);
-    },
-    [controller, handleVerdict],
+    [atDecision, prefixTokens.length, controller, handleVerdict],
   );
 
   const handlePromotionSelect = useCallback(
     (role: PromotionRole): void => {
-      if (pendingPromotion === null) {
+      if (pendingPromotion === null || !atDecision) {
         return;
       }
       const { from, to } = pendingPromotion;
-      const uci = `${from}${to}${PROMOTION_ROLE_LETTER[role]}`;
+      const decisionDepth = prefixTokens.length + controller.playedLine.length;
       setPendingPromotion(null);
       boardRef.current?.clearPendingPromotion();
-      handleVerdict(controller.submitTextMove(uci), uci);
+      const uci = `${from}${to}${PROMOTION_ROLE_LETTER[role]}`;
+      const verdict = controller.playBoardMove(from, to, PROMOTION_ROLE_LETTER[role]);
+      if (verdict.kind === 'wrong') {
+        setVariations((current) => [...current, { depth: decisionDepth, uci }]);
+      } else {
+        setPath(null);
+      }
+      handleVerdict(verdict, uci);
     },
-    [pendingPromotion, controller, handleVerdict],
+    [pendingPromotion, atDecision, prefixTokens.length, controller, handleVerdict],
   );
 
   const handlePromotionCancel = useCallback((): void => {
@@ -168,90 +320,112 @@ export function SolveScreen({
 
   const handleRestart = useCallback((): void => {
     controller.restart();
+    setVariations([]);
+    setPath(null);
     setAnnouncement('Restarted. Try the puzzle again from the start.');
   }, [controller]);
 
+  const start = useMemo(() => startPosition(row), [row]);
+
   const handleHint = useCallback((): void => {
-    if (!controller.canHint || startPosition === null) {
+    if (!controller.canHint || !prefixReady || start === null) {
       return;
     }
     const revealed = controller.revealedHintLevels;
     const reached: HintLevel | null = revealed.length > 0 ? revealed[revealed.length - 1]! : null;
-    const nextLevel = nextHintLevel(reached, config);
-    if (nextLevel !== null) {
-      const content = hintContent(nextLevel, row, startPosition);
+    const level = nextHintLevel(reached, config);
+    controller.revealHint();
+    if (level !== null) {
+      const content = hintContent(level, row, start);
       if (content.ok) {
         setAnnouncement(content.content.text);
       }
     }
-    controller.revealHint();
-  }, [controller, config, row, startPosition]);
-
-  const handleSkip = useCallback((): void => {
-    controller.skip();
-  }, [controller]);
+  }, [controller, prefixReady, start, config, row]);
 
   const handleGiveUp = useCallback((): void => {
     controller.giveUp();
+    setPath(null);
   }, [controller]);
 
-  // Latest revealed hint content (shown as text under the controls).
-  const revealedTexts = useMemo(() => {
-    const levels = controller.revealedHintLevels;
-    if (startPosition === null || levels.length === 0) {
-      return [];
-    }
-    const texts: string[] = [];
-    for (const level of levels) {
-      const content = hintContent(level, row, startPosition);
-      texts.push(content.ok ? content.content.text : '');
-    }
-    return texts.filter((text) => text.length > 0);
-  }, [controller.revealedHintLevels, row, startPosition]);
+  const handleNext = useCallback((): void => {
+    onExit(controller.exitOutcome());
+  }, [controller, onExit]);
 
+  const handleRetryWrite = useCallback((): void => {
+    controller.retryWrite();
+  }, [controller]);
+
+  // --- board shapes ----------------------------------------------------------
+
+  // Latest revealed hint content is shown as yellow square highlights, then a
+  // yellow arrow once the full move is revealed (level 4). Hints cover the
+  // first solution move only, so the shapes only ever draw at the first
+  // decision point (empty played line — see `autoShapes`).
   const hintShapes = useMemo<readonly DrawShape[]>(() => {
-    if (startPosition === null) {
+    if (start === null) {
       return [];
     }
     const shapes: DrawShape[] = [];
-    const seen = new Set<string>();
-    for (const level of controller.revealedHintLevels) {
-      const content = hintContent(level, row, startPosition);
+    const revealed = controller.revealedHintLevels;
+    if (revealed.length === 0) {
+      return [];
+    }
+    for (const level of revealed) {
+      const content = hintContent(level, row, start);
       if (!content.ok) {
         continue;
       }
       for (const square of content.content.squares) {
-        if (!seen.has(square)) {
-          seen.add(square);
-          shapes.push({ orig: square as Key, brush: HINT_HIGHLIGHT_BRUSH });
-        }
+        shapes.push({ orig: square as Key, brush: HINT_HIGHLIGHT_BRUSH });
+      }
+    }
+    if (revealed.includes(4)) {
+      const arrow = uciMoveArrow(row.bestMove, HINT_HIGHLIGHT_BRUSH);
+      if (arrow !== null) {
+        shapes.push(arrow);
       }
     }
     return shapes;
-  }, [controller.revealedHintLevels, row, startPosition]);
+  }, [controller.revealedHintLevels, start, row]);
 
   const wrongArrow = useMemo<DrawShape | null>(() => {
     const uci = controller.lastWrongUci;
     return uci === null ? null : uciMoveArrow(uci, WRONG_MOVE_BRUSH);
   }, [controller.lastWrongUci]);
 
+  // --- post-finish engine -----------------------------------------------------
+
+  const engineController = useAnalysisController({
+    service: engine.service,
+    fen: finished ? currentFen : null,
+    capabilities: engine.capabilities,
+    autoStart: false,
+    defaults: engineDefaultsReady ? engineDefaults : null,
+  });
+  const engineOn = finished && engineController.enabled;
+  const engineShapes = useMemo<readonly DrawShape[]>(
+    () => engineArrowShapes(engineController.lines, engineController.settings.arrows),
+    [engineController.lines, engineController.settings.arrows],
+  );
+
   const autoShapes = useMemo<readonly DrawShape[]>(() => {
-    if (stage === 'solving' && controller.atDecisionPoint && controller.lastWrongUci !== null) {
+    if (engineOn) {
+      return engineShapes;
+    }
+    const hintMovesVisible = controller.playedLine.length === 0;
+    if (stage === 'solving' && atEnd && hintMovesVisible) {
       return wrongArrow === null ? [...hintShapes] : [wrongArrow, ...hintShapes];
     }
-    return hintShapes;
-  }, [stage, controller.atDecisionPoint, controller.lastWrongUci, wrongArrow, hintShapes]);
+    return [];
+  }, [engineOn, engineShapes, stage, atEnd, controller.playedLine.length, wrongArrow, hintShapes]);
 
-  const lastMoveKeys = useMemo<readonly [Key, Key] | null>(() => {
-    if (controller.viewPly === 0) {
-      return null;
+  // Focus the objective on presentation start (a11y; stage transitions later).
+  useEffect(() => {
+    if (stage === 'solving') {
+      headingRef.current?.focus();
     }
-    const token = controller.playedLine[controller.viewPly - 1];
-    if (token === undefined || token.length < 4) {
-      return null;
-    }
-    return [token.slice(0, 2) as Key, token.slice(2, 4) as Key];
-  }, [controller.viewPly, controller.playedLine]);
+  }, [row.sourceGameId, row.sourcePly, stage]);
 
   if (stage === 'error') {
     return (
@@ -271,46 +445,19 @@ export function SolveScreen({
     );
   }
 
-  if (stage === 'outcome' && controller.outcome !== null) {
-    return (
-      <section className={styles.screen} data-testid="solve-screen">
-        <OutcomePanel
-          result={controller.outcome.result}
-          solvingTimeMs={controller.outcome.solvingTimeMs}
-          wrongMoveCount={controller.outcome.wrongMoveCount}
-          hintCount={controller.outcome.hintCount}
-          highestHintLevel={controller.outcome.highestHintLevel}
-          writePhase={(controller.writePhase ?? 'pending') as WritePhase}
-          writeError={controller.writeError}
-          canAnalyze={controller.outcome.solved}
-          onRetryWrite={controller.retryWrite}
-          onDiscard={() => onExit(null)}
-          onAnalyze={controller.openPostSolve}
-          onContinue={() => onExit(controller.exitOutcome())}
-        />
-      </section>
-    );
-  }
-
-  if (stage === 'postSolve' && controller.outcome !== null) {
-    return (
-      <section className={styles.screen} data-testid="solve-screen">
-        <PostSolvePanel
-          row={row}
-          outcome={controller.outcome}
-          attemptLine={controller.playedLine}
-          wrongMovesTried={controller.wrongMovesTried}
-          {...(storedAnalysis !== undefined ? { storedAnalysis } : {})}
-          boardSize={resolvedBoardSize}
-          onContinue={() => onExit(controller.exitOutcome())}
-        />
-      </section>
-    );
-  }
-
-  const interactive = stage === 'solving' && controller.atDecisionPoint;
   const objective = puzzleObjectiveLabel(row);
   const toMove = row.sideToMove === 'white' ? 'White' : 'Black';
+
+  const barColumn = engineOn ? (
+    <EvaluationBar
+      evaluation={engineController.lines.length > 0 ? engineController.lines[0]!.evaluation : null}
+      sideToMove={positionSide}
+    />
+  ) : (
+    <div className={styles.reservedBar} aria-hidden="true" data-testid="solve-eval-reserved" />
+  );
+
+  const totalPlies = leafPath.length;
 
   return (
     <section className={styles.screen} data-testid="solve-screen">
@@ -324,38 +471,44 @@ export function SolveScreen({
           >
             {objective}
           </h2>
-          <p className={styles.subtitle} data-testid="solve-side-to-move">
+          <p className={styles.subtitle} data-testid="solve-subtitle">
             {toMove} to move — find the move that achieves the objective.
           </p>
         </div>
-        <p className={styles.clock} data-testid="solve-clock">
-          {formatSolveTime(controller.elapsedMs)}
-        </p>
+        {showTimer ? (
+          <p className={styles.clock} data-testid="solve-clock">
+            {formatSolveTime(controller.elapsedMs)}
+          </p>
+        ) : null}
       </header>
 
-      <div className={styles.boardAndSide}>
-        <div className={styles.boardWrap}>
-          <div className={styles.boardArea}>
-            {controller.position !== null ? (
+      <AnalysisBoard
+        boardSize={resolvedBoardSize}
+        dataTestId="solve-layout"
+        boardColumn={
+          <div className={styles.boardColumn}>
+            <div className={styles.boardArea}>
               <Chessboard
                 ref={boardRef}
-                position={controller.position}
-                interactive={interactive}
-                drawable={!interactive}
+                position={position}
                 orientation={row.sideToMove}
-                lastMove={lastMoveKeys}
-                autoShapes={interactive ? autoShapes : hintShapes}
+                interactive={atDecision && controller.atDecisionPoint}
+                drawable
+                moving={pendingPromotion === null}
+                lastMove={lastMove}
+                autoShapes={autoShapes}
                 boardSize={resolvedBoardSize}
                 onMove={handleBoardMove}
                 onPromotionRequired={(pending) => {
                   setPendingPromotion({ from: pending.from, to: pending.to });
                 }}
               />
-            ) : (
-              <p className={styles.errorText} role="alert">
-                {controller.loadError}
-              </p>
-            )}
+              {controller.loadError !== null ? (
+                <p className={styles.errorText} role="alert">
+                  {controller.loadError}
+                </p>
+              ) : null}
+            </div>
             <PromotionDialog
               open={pendingPromotion !== null}
               pieceSet={DEFAULT_PIECE_SET}
@@ -363,67 +516,181 @@ export function SolveScreen({
               onCancel={handlePromotionCancel}
             />
           </div>
-
-          <div className={styles.transportRow}>
-            <h3 className={styles.srOnly}>Current presentation&apos;s moves</h3>
-            <Navigation
-              currentPly={controller.viewPly}
-              totalPlies={controller.lineLength}
-              onNavigate={(target) => controller.goToPly(target === 'last' ? 'end' : target)}
-            />
+        }
+        bar={barColumn}
+        sidePanel={
+          <div className={styles.sidePanel}>
+            {finished ? (
+              <div className={styles.engineBlock}>
+                <AnalysisPanel
+                  controller={engineController}
+                  capabilities={engine.capabilities}
+                  fen={currentFen}
+                  toggleTestId="solve-engine-toggle"
+                />
+              </div>
+            ) : null}
+            <MoveListPane dataTestId="solve-movelist">
+              <div className={styles.paneBody}>
+                <div className={styles.paneList}>
+                  <MoveList
+                    tree={tree}
+                    path={displayedPath}
+                    onSeek={handleSeek}
+                    autoScroll={prefixTokens.length > 0}
+                  />
+                </div>
+                <SolvePaneFooter
+                  finished={finished}
+                  outcome={outcome}
+                  solvingControlsVisible={stage === 'solving' && prefixReady && !finished}
+                  toMove={toMove}
+                  canHint={controller.canHint && atEnd}
+                  canRestart={
+                    controller.playedLine.length > 0 ||
+                    controller.hintCount > 0 ||
+                    controller.wrongMoveCount > 0
+                  }
+                  writePhase={(controller.writePhase ?? 'pending') as WritePhase}
+                  writeError={controller.writeError}
+                  onHint={handleHint}
+                  onSolution={handleGiveUp}
+                  onRestart={handleRestart}
+                  onNext={handleNext}
+                  onRetryWrite={handleRetryWrite}
+                  {...(onRestart !== undefined ? { onRestartAfterFinish: onRestart } : {})}
+                />
+              </div>
+            </MoveListPane>
+            <div className={styles.navRow}>
+              <Navigation
+                currentPly={displayedPath.length}
+                totalPlies={totalPlies}
+                onNavigate={navigate}
+              />
+              <span className={styles.plyCounter} data-testid="solve-ply">
+                {displayedPath.length}/{totalPlies}
+              </span>
+            </div>
           </div>
-        </div>
-
-        <aside className={styles.side} aria-label="Solve controls">
-          <div className={styles.counters}>
-            <p data-testid="solve-wrong-count">
-              Wrong moves: <strong>{controller.wrongMoveCount}</strong>
-            </p>
-            <p data-testid="solve-hint-count">
-              Hints used: <strong>{controller.hintCount}</strong>
-            </p>
-          </div>
-
-          {revealedTexts.length > 0 ? (
-            <ul className={styles.hintList} data-testid="solve-hint-list">
-              {revealedTexts.map((text, index) => (
-                <li key={`${text}-${index}`} data-testid={`solve-hint-item-${index}`}>
-                  {text}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          <KeyboardMoveEntry
-            position={controller.atDecisionPoint ? controller.decisionPosition : null}
-            onSubmitLegalMove={handleTextMove}
-          />
-
-          <div className={styles.controls}>
-            <Button variant="secondary" onClick={handleRestart} data-testid="solve-restart">
-              Restart
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleHint}
-              disabled={!controller.canHint}
-              data-testid="solve-hint"
-            >
-              Hint
-            </Button>
-            <Button variant="secondary" onClick={handleSkip} data-testid="solve-skip">
-              Skip
-            </Button>
-            <Button variant="secondary" onClick={handleGiveUp} data-testid="solve-give-up">
-              Give up
-            </Button>
-          </div>
-        </aside>
-      </div>
+        }
+        {...(resolvedBoardSize.isMobile
+          ? {}
+          : { sidePanelStyle: { height: resolvedBoardSize.size } })}
+      />
 
       <p className={styles.srOnly} role="status" data-testid="solve-announcement">
         {announcement ?? ''}
       </p>
     </section>
+  );
+}
+
+function startPosition(row: PuzzleRow): Position | null {
+  const parsed = parsePositionFen(row.startingFen);
+  return parsed.ok ? parsed.position : null;
+}
+
+function pathEquals(a: Path, b: Path): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index]!.id !== b[index]!.id) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function SolvePaneFooter({
+  finished,
+  outcome,
+  solvingControlsVisible,
+  toMove,
+  canHint,
+  canRestart,
+  writePhase,
+  writeError,
+  onHint,
+  onSolution,
+  onRestart,
+  onNext,
+  onRetryWrite,
+  onRestartAfterFinish,
+}: {
+  readonly finished: boolean;
+  readonly outcome: PresentationOutcome | null;
+  readonly solvingControlsVisible: boolean;
+  readonly toMove: string;
+  readonly canHint: boolean;
+  readonly canRestart: boolean;
+  readonly writePhase: WritePhase;
+  readonly writeError: string | null;
+  readonly onHint: () => void;
+  readonly onSolution: () => void;
+  readonly onRestart: () => void;
+  readonly onNext: () => void;
+  readonly onRetryWrite: () => void;
+  readonly onRestartAfterFinish?: () => void;
+}): React.JSX.Element {
+  if (finished) {
+    const result = outcome?.result ?? 'failed';
+    const tone = result === 'failed' ? styles.resultFailed : styles.resultSuccess;
+    const written = writePhase === 'written';
+    return (
+      <div className={styles.paneFooter}>
+        <p className={`${styles.result} ${tone}`} data-testid="solve-result">
+          {SOLVE_RESULT_LABELS[result]}
+        </p>
+        {writeError !== null ? (
+          <div className={styles.writeError} role="alert" data-testid="solve-write-error">
+            <span>{writeError}</span>
+            <Button variant="secondary" onClick={onRetryWrite} data-testid="solve-retry-write">
+              Retry save
+            </Button>
+          </div>
+        ) : null}
+        <div className={styles.controls}>
+          {onRestartAfterFinish !== undefined ? (
+            <Button variant="secondary" onClick={onRestartAfterFinish} data-testid="solve-restart">
+              Restart
+            </Button>
+          ) : null}
+          <Button variant="primary" disabled={!written} onClick={onNext} data-testid="solve-next">
+            Next puzzle
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (!solvingControlsVisible) {
+    return (
+      <div className={styles.paneFooter}>
+        <p className={styles.status} data-testid="solve-movelist-status">
+          Loading…
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.paneFooter}>
+      <p className={styles.status} data-testid="solve-movelist-status">
+        {toMove} to move…
+      </p>
+      <div className={styles.controls}>
+        <Button variant="secondary" onClick={onHint} disabled={!canHint} data-testid="solve-hint">
+          Hint
+        </Button>
+        <Button variant="secondary" onClick={onSolution} data-testid="solve-solution">
+          View solution
+        </Button>
+        {canRestart ? (
+          <Button variant="secondary" onClick={onRestart} data-testid="solve-restart">
+            Restart
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }

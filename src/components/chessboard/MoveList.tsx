@@ -232,6 +232,12 @@ export interface MoveListProps {
    * move-classification glyphs on Game Review). Keyed by `ply.id`.
    */
   nagOverrides?: ReadonlyMap<number, readonly number[]>;
+  /**
+   * When `true`, the list scrolls the active move into view whenever the
+   * active ply changes (puzzle solving with a long game prefix). Defaults to
+   * `false` so Live Analysis / Game Review are untouched.
+   */
+  autoScroll?: boolean;
 }
 
 export function MoveList({
@@ -240,11 +246,27 @@ export function MoveList({
   onSeek,
   plyEvals,
   nagOverrides,
+  autoScroll = false,
 }: MoveListProps): React.JSX.Element {
   const model = useMemo(() => buildMoveListModel(tree), [tree]);
   const listRef = useRef<HTMLDivElement | null>(null);
   const activeId = path.length > 0 ? path[path.length - 1]!.id : null;
   const { rows, tokens } = model;
+
+  // Scroll the active move into view (puzzle prefix lines can be long). Runs
+  // only when the active ply changes, so the user's own scrolling is never
+  // fought while the selection stays put.
+  useEffect(() => {
+    if (!autoScroll || activeId === null) {
+      return;
+    }
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    const active = list.querySelector<HTMLButtonElement>('[aria-current="step"]');
+    active?.scrollIntoView({ block: 'nearest' });
+  }, [autoScroll, activeId]);
 
   // Keep the keyboard focus ring on the active move: when the current ply
   // changes (e.g. left/right game navigation) while a move button is focused,

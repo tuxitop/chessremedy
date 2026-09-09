@@ -7,18 +7,13 @@
  * `presentationIndex`), a `PuzzleAttemptRecorderLike`, and drives navigation
  * from the returned `PresentationOutcome`. Feature 012 ships no route, no nav
  * entry and no Library action; the shared Chessboard (ADR-002/014) stays the
- * only chessboard this surface uses, and the post-solve step is engine-free
- * and stored-data-only (ADR-033).
+ * only chessboard this surface uses. Solving is a single analysis-style view:
+ * the game-prefix move list with in-list results, drawable board, and an
+ * engine toggle that becomes available once the puzzle is finished (ADR-033).
  */
 
-export { SolveScreen } from './SolveScreen';
-export type { SolveScreenProps } from './SolveScreen';
-export { OutcomePanel, highestHintText } from './OutcomePanel';
-export type { OutcomePanelProps } from './OutcomePanel';
-export { PostSolvePanel } from './PostSolvePanel';
-export type { PostSolvePanelProps, StoredAnalysisLookup } from './PostSolvePanel';
-export { KeyboardMoveEntry, textMoveToUci } from './KeyboardMoveEntry';
-export type { KeyboardMoveEntryProps, TextMoveParseResult } from './KeyboardMoveEntry';
+export { SolveScreen, SOLVE_RESULT_LABELS } from './SolveScreen';
+export type { SolveScreenProps, StoredAnalysisLookup } from './SolveScreen';
 export { usePuzzleSolve } from '@/hooks/usePuzzleSolve';
 export type {
   MoveSubmission,

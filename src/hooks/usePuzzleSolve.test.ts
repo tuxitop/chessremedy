@@ -90,7 +90,7 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     const { result } = renderSolve(blunderRowFixture(), rig);
 
     act(() => {
-      const verdict = result.current.submitTextMove('h5f7');
+      const verdict = result.current.playBoardMove('h5', 'f7');
       expect(verdict).toEqual({ kind: 'solved' });
     });
 
@@ -107,7 +107,7 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     const { result } = renderSolve(blunderRowFixture(), rig);
 
     act(() => {
-      expect(result.current.submitTextMove('d2d3')).toEqual({ kind: 'wrong' });
+      expect(result.current.playBoardMove('d2', 'd3')).toEqual({ kind: 'wrong' });
     });
     expect(result.current.wrongMoveCount).toBe(1);
     expect(result.current.wrongMovesTried).toEqual(['d2d3']);
@@ -116,7 +116,7 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(result.current.atDecisionPoint).toBe(true);
 
     act(() => {
-      result.current.submitTextMove('h5f7');
+      result.current.playBoardMove('h5', 'f7');
     });
     await waitFor(() => expect(result.current.writePhase).toBe('written'));
     expect(result.current.outcome?.result).toBe('solvedWithHelp');
@@ -124,12 +124,12 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(rig.calls).toHaveLength(1);
   });
 
-  it('treats an illegal text entry as illegal: not counted, nothing written', () => {
+  it('rejects an illegal move submission as illegal: not counted, nothing written', () => {
     const rig = createRecorderRig();
     const { result } = renderSolve(blunderRowFixture(), rig);
 
     act(() => {
-      expect(result.current.submitTextMove('e2e5')).toEqual({ kind: 'illegal' });
+      expect(result.current.playBoardMove('e2', 'e5')).toEqual({ kind: 'illegal' });
     });
     expect(result.current.wrongMoveCount).toBe(0);
     expect(result.current.wrongMovesTried).toEqual([]);
@@ -168,7 +168,7 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     const { result } = renderSolve(terminalAlternativeRowFixture(), rig);
 
     act(() => {
-      expect(result.current.submitTextMove('g5e6')).toEqual({ kind: 'solved' });
+      expect(result.current.playBoardMove('g5', 'e6')).toEqual({ kind: 'solved' });
     });
     expect(result.current.outcome?.result).toBe('solvedFirstTry');
     await waitFor(() => expect(result.current.writePhase).toBe('written'));
@@ -181,7 +181,7 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     const { result } = renderSolve(row, rig);
 
     act(() => {
-      expect(result.current.submitTextMove('b8b6')).toEqual({ kind: 'accepted' });
+      expect(result.current.playBoardMove('b8', 'b6')).toEqual({ kind: 'accepted' });
     });
     expect(result.current.playedLine).toEqual(['b8b6', 'g1f1']);
     expect(result.current.viewPly).toBe(2);
@@ -192,13 +192,13 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(result.current.viewPly).toBe(0);
     expect(result.current.atDecisionPoint).toBe(false);
     act(() => {
-      expect(result.current.submitTextMove('b6f2')).toEqual({ kind: 'ignored' });
+      expect(result.current.playBoardMove('b6', 'f2')).toEqual({ kind: 'ignored' });
     });
     act(() => result.current.goToPly('end'));
     expect(result.current.atDecisionPoint).toBe(true);
 
     act(() => {
-      expect(result.current.submitTextMove('b6f2')).toEqual({ kind: 'solved' });
+      expect(result.current.playBoardMove('b6', 'f2')).toEqual({ kind: 'solved' });
     });
     expect(result.current.playedLine).toEqual(['b8b6', 'g1f1', 'b6f2']);
     await waitFor(() => expect(result.current.writePhase).toBe('written'));

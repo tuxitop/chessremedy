@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import type { Game } from '@/domain/chess/game';
@@ -8,6 +8,8 @@ import type { PuzzleRow } from '@/domain/puzzle';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
+import { settingsRepository } from '@/infrastructure/db/settings-repository';
+import { SETTINGS_KEYS } from '@/config/app-config';
 import { renderWithProviders } from '@/test/test-utils';
 import { PuzzlesPage } from '@/pages/PuzzlesPage';
 
@@ -56,16 +58,32 @@ function renderPuzzles(): void {
   );
 }
 
-/** Pointer-free solve of the currently presented puzzle through the text path. */
-function typeAndPlayMove(text: string): void {
-  fireEvent.change(screen.getByLabelText('Enter a move'), { target: { value: text } });
-  fireEvent.click(screen.getByTestId('puzzle-move-submit'));
+function lastBoard(): Record<string, unknown> {
+  const last = chessboardProps[chessboardProps.length - 1];
+  if (!last) {
+    throw new Error('No Chessboard has rendered.');
+  }
+  return last;
 }
 
-/** Continue from an outcome screen back to the host once the row is written. */
-async function continueFromOutcome(): Promise<void> {
-  const panel = await screen.findByTestId('outcome-panel');
-  const button = within(panel).getByTestId('outcome-continue');
+async function waitForInteractive(): Promise<void> {
+  await waitFor(() => {
+    expect(lastBoard().interactive).toBe(true);
+  });
+}
+
+function boardMove(from: string, to: string): void {
+  const props = lastBoard();
+  const onMove = props.onMove as ((f: string, t: string) => void) | undefined;
+  if (!onMove) {
+    throw new Error('Board is not interactive.');
+  }
+  act(() => onMove(from, to));
+}
+
+/** Finish the presented puzzle via the in-list Next control (once written). */
+async function clickNext(): Promise<void> {
+  const button = await screen.findByTestId('solve-next');
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
 }
@@ -76,6 +94,7 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
     await db.games.clear();
     await db.puzzles.clear();
     await db.puzzleAttempts.clear();
+    await db.settings.clear();
   });
 
   it('shows an honest empty state pointing at the Game Library when no game has puzzles', async () => {
@@ -127,17 +146,16 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
 
     // The session starts on the first puzzle in sourcePly order with progress.
     expect(await screen.findByTestId('solve-objective')).toHaveTextContent('Forced mate');
-    expect(screen.getByTestId('solve-side-to-move')).toHaveTextContent('White to move');
     expect(screen.getByTestId('puzzles-practice-progress')).toHaveTextContent('Puzzle 1 of 2');
     expect(screen.getByTestId('puzzles-practice-game-label')).toHaveTextContent(
       'chessremedy vs bulletpete',
     );
-    const firstBoard = chessboardProps[chessboardProps.length - 1];
-    expect(firstBoard?.orientation).toBe('white');
-    expect(firstBoard?.interactive).toBe(true);
+    await waitForInteractive();
+    expect(lastBoard().orientation).toBe('white');
+    expect(screen.queryByTestId('solve-clock')).not.toBeInTheDocument();
 
-    typeAndPlayMove('h5f7');
-    await continueFromOutcome();
+    boardMove('h5', 'f7');
+    await clickNext();
 
     // Solving advanced to the second puzzle.
     expect(await screen.findByTestId('puzzles-practice-progress')).toHaveTextContent(
@@ -145,8 +163,9 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
     );
     expect(screen.getByTestId('solve-objective')).toHaveTextContent('Winning material');
 
-    typeAndPlayMove('g5e6');
-    await continueFromOutcome();
+    await waitForInteractive();
+    boardMove('g5', 'e6');
+    await clickNext();
 
     const complete = await screen.findByTestId('puzzles-practice-complete');
     expect(complete).toHaveTextContent('Practice complete');
@@ -159,31 +178,42 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
     expect(await db.puzzleAttempts.count()).toBe(0);
   });
 
-  it('a wrong-then-correct solve is accepted and a hint press works through the hosted SolveScreen', async () => {
+  it('a wrong-then-correct solve is accepted and hints never fail the puzzle through the hosted SolveScreen', async () => {
     await seedGames(GAME_WITH_MANY);
     await seedPuzzles([{ gameId: GAME_WITH_MANY.id, ply: 6 }]);
     renderPuzzles();
 
     fireEvent.click(await screen.findByTestId(`puzzles-practice-choose-${GAME_WITH_MANY.id}`));
     await screen.findByTestId('solve-objective');
+    await waitForInteractive();
 
     fireEvent.click(screen.getByTestId('solve-hint'));
     expect(screen.getByTestId('solve-announcement')).toHaveTextContent('Relevant piece: queen');
 
-    typeAndPlayMove('d2d3');
+    boardMove('d2', 'd3');
     expect(screen.getByTestId('solve-announcement')).toHaveTextContent(
       'not the move that achieves',
     );
-    expect(screen.getByTestId('solve-wrong-count')).toHaveTextContent('Wrong moves: 1');
 
-    typeAndPlayMove('h5f7');
-    const panel = await screen.findByTestId('outcome-panel');
-    expect(within(panel).getByTestId('outcome-result')).toHaveTextContent('Solved with help');
-    const continueButton = within(panel).getByTestId('outcome-continue');
-    await waitFor(() => expect(continueButton).toBeEnabled());
-    fireEvent.click(continueButton);
+    boardMove('h5', 'f7');
+    await waitFor(() =>
+      expect(screen.getByTestId('solve-result')).toHaveTextContent('Solved with hints'),
+    );
+    await clickNext();
     expect(await screen.findByTestId('puzzles-practice-complete')).toBeInTheDocument();
     expect(await db.puzzleAttempts.count()).toBe(0);
+  });
+
+  it('shows the solve clock in a session when the Show puzzle timer setting is on', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.puzzleTimer, true);
+    await seedGames(GAME_WITH_MANY);
+    await seedPuzzles([{ gameId: GAME_WITH_MANY.id, ply: 6 }]);
+    renderPuzzles();
+
+    fireEvent.click(await screen.findByTestId(`puzzles-practice-choose-${GAME_WITH_MANY.id}`));
+    await screen.findByTestId('solve-objective');
+    await waitForInteractive();
+    expect(screen.getByTestId('solve-clock')).toBeInTheDocument();
   });
 
   it('End practice discards the session and returns to the picker without persisting', async () => {
@@ -193,6 +223,7 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
 
     fireEvent.click(await screen.findByTestId(`puzzles-practice-choose-${GAME_WITH_MANY.id}`));
     await screen.findByTestId('solve-objective');
+    await waitForInteractive();
 
     fireEvent.click(screen.getByTestId('puzzles-practice-exit'));
 
@@ -213,13 +244,15 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
 
     fireEvent.click(await screen.findByTestId(`puzzles-practice-choose-${GAME_WITH_MANY.id}`));
     await screen.findByTestId('solve-objective');
-    typeAndPlayMove('h5f7');
-    await continueFromOutcome();
+    await waitForInteractive();
+    boardMove('h5', 'f7');
+    await clickNext();
     await waitFor(() =>
       expect(screen.getByTestId('puzzles-practice-progress')).toHaveTextContent('Puzzle 2 of 2'),
     );
-    typeAndPlayMove('g5e6');
-    await continueFromOutcome();
+    await waitForInteractive();
+    boardMove('g5', 'e6');
+    await clickNext();
 
     fireEvent.click(await screen.findByTestId('puzzles-practice-again'));
 

@@ -86,8 +86,6 @@ export interface PuzzleSolveController {
    * canonical promotion role letter when the move promotes.
    */
   playBoardMove(from: string, to: string, promotion?: 'q' | 'r' | 'b' | 'n'): MoveSubmission;
-  /** Text-path move entry: a canonical-UCI token the caller already validated. */
-  submitTextMove(uci: string): MoveSubmission;
   /** Advance one hint level per press. */
   revealHint(): void;
   /** Presentation-scoped restart: clears line + hint content, keeps counters/clock. */
@@ -383,7 +381,6 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
     lastWrongUci,
     canHint,
     playBoardMove,
-    submitTextMove: submitMove,
     revealHint,
     restart,
     skip,

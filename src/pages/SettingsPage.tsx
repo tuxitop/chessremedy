@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
+import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
 import { getBrowserAnalysisService } from '@/infrastructure/analysis';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import {
@@ -234,6 +235,11 @@ export function SettingsPage({
     isReady: gameAnalysisReady,
     save: saveGameAnalysis,
   } = useGameAnalysisSettings();
+  const {
+    showPuzzleTimer,
+    isReady: puzzleTimerReady,
+    save: savePuzzleTimer,
+  } = usePuzzleTimerSetting();
   const [builtService, setBuiltService] = useState<AnalysisServiceLike | null>(null);
   const capabilities = readBrowserCapabilities();
 
@@ -413,6 +419,31 @@ export function SettingsPage({
             </div>
           ) : (
             <p className={styles.engineLoading}>Loading board defaults…</p>
+          )}
+        </li>
+
+        <li className={styles.row} data-testid="settings-row-puzzles">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Puzzles</h2>
+            <p className={styles.rowDescription}>
+              Options for the puzzle solving screen. The solve clock is hidden by default; hints
+              never fail a puzzle, and the engine becomes available once a puzzle is finished.
+            </p>
+          </div>
+          {puzzleTimerReady ? (
+            <div className={styles.boardForm}>
+              <label className={styles.check}>
+                <input
+                  type="checkbox"
+                  checked={showPuzzleTimer}
+                  onChange={(e) => void savePuzzleTimer(e.target.checked)}
+                  data-testid="setting-puzzle-timer"
+                />
+                <span>Show puzzle timer</span>
+              </label>
+            </div>
+          ) : (
+            <p className={styles.engineLoading}>Loading puzzle settings…</p>
           )}
         </li>
 

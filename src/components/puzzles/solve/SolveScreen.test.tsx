@@ -2,20 +2,149 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { puzzleRowFixture, blunderRowFixture } from '@/domain/puzzle/test-support';
 import { buildAttemptRow } from '@/domain/training';
-
+import { makeMove } from '@/domain/analysis/test-support';
+import { fenOf } from '@/domain/chess';
+import type { AnalysisProfile, EngineMetadata, MoveAnalysis } from '@/domain/chess';
 import type { PuzzleRow } from '@/domain/puzzle';
 import type { PresentationOutcome } from '@/domain/training';
 import type { PuzzleAttemptRecorderLike, RecordAttemptInput } from '@/infrastructure/training';
 import { PuzzleAttemptWriteError } from '@/infrastructure/training';
-import {
-  solveConfigFixture,
-  cycleContextFixture,
-  trainingRowFixture,
-} from '@/domain/training/test-support';
-import { SolveScreen } from './SolveScreen';
+import { solveConfigFixture, cycleContextFixture } from '@/domain/training/test-support';
+import { buildSolveLine, mainlinePathOf } from '@/components/chessboard/puzzleMoveLine';
+import { positionAtPath } from '@/components/chessboard/positionTree';
+import { assembleBlunderPuzzle } from '@/domain/puzzle';
+import { DETECTION_VERSION } from '@/domain/tactics';
+import type { LiveEngineService } from '@/components/analysis/useLiveAnalysis';
+import type {
+  AnalysisJob,
+  AnalysisJobEvent,
+  EngineLine,
+  EngineServiceStatus,
+} from '@/infrastructure/engine/types';
+import type { EngineCapabilities } from '@/infrastructure/engine/capabilities';
+import { SolveScreen, type StoredAnalysisLookup } from './SolveScreen';
 
-const { chessboardProps } = vi.hoisted(() => ({
-  chessboardProps: [] as Array<Record<string, unknown>>,
+type FakeResultLine = EngineLine;
+
+interface FakeJob extends AnalysisJob {
+  listeners: Set<(event: AnalysisJobEvent) => void>;
+  finish(result: {
+    jobId: string;
+    position: string;
+    profile: AnalysisProfile;
+    timeMs: number;
+    lines: readonly FakeResultLine[];
+    engine: EngineMetadata;
+  }): void;
+}
+
+const { chessboardProps, engineFake } = vi.hoisted(() => {
+  const caps: EngineCapabilities = {
+    sharedArrayBuffer: false,
+    crossOriginIsolated: false,
+    hardwareConcurrency: 4,
+    isMobile: false,
+    build: 'lite-single',
+    threads: 1,
+    hashCapMb: 256,
+  };
+  const engineMeta: EngineMetadata = {
+    engineName: 'stockfish',
+    engineVersion: '18.0.8',
+    engineBuild: 'stockfish-18-lite-single',
+    profile: 'normal',
+  };
+  const status: EngineServiceStatus = {
+    lifecycle: 'ready',
+    engine: engineMeta,
+    build: 'lite-single',
+    activeJobId: null,
+    queued: 0,
+  };
+  const jobs: FakeJob[] = [];
+  let nextId = 1;
+  const service: LiveEngineService = {
+    analyze(fen: string, options?: { profile?: AnalysisProfile }) {
+      const listeners = new Set<(event: AnalysisJobEvent) => void>();
+      let jobStatus: AnalysisJob['status'] = 'queued';
+      const job: FakeJob = {
+        id: `job-${nextId++}`,
+        fen,
+        profile: options?.profile ?? 'normal',
+        status: jobStatus,
+        outcome: new Promise(() => undefined),
+        listeners,
+        cancel() {
+          jobStatus = 'cancelled';
+          for (const listener of listeners) {
+            listener({ type: 'status', status: 'cancelled' });
+          }
+        },
+        subscribe(listener) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        finish(result) {
+          jobStatus = 'completed';
+          for (const listener of listeners) {
+            listener({ type: 'result', result });
+          }
+        },
+      };
+      jobs.push(job);
+      queueMicrotask(() => {
+        if (jobStatus === 'queued') {
+          jobStatus = 'running';
+          for (const listener of listeners) {
+            listener({ type: 'status', status: 'running' });
+          }
+        }
+      });
+      return job;
+    },
+    cancel() {},
+    getStatus() {
+      return status;
+    },
+    onStatusChange() {
+      return () => undefined;
+    },
+  };
+  const complete = (index: number, options?: { lines?: readonly FakeResultLine[] }) => {
+    const job = jobs[index];
+    if (!job) {
+      return;
+    }
+    job.finish({
+      jobId: job.id,
+      position: job.fen,
+      profile: job.profile,
+      timeMs: 5,
+      lines: options?.lines ?? [
+        {
+          multipv: 1,
+          evaluation: { cp: 120 },
+          principalVariation: [{ uci: 'h5f7' }, { uci: 'e8d8' }],
+          wdl: null,
+        },
+      ],
+      engine: engineMeta,
+    });
+  };
+  return {
+    chessboardProps: [] as Array<Record<string, unknown>>,
+    engineFake: { service, jobs, caps, complete },
+  };
+});
+
+const engine = engineFake;
+
+vi.mock('@/components/analysis/useBrowserAnalysisEngine', () => ({
+  useBrowserAnalysisEngine: () => ({
+    service: engineFake.service,
+    capabilities: engineFake.caps,
+    error: null,
+  }),
 }));
 
 vi.mock('@/components/chessboard/Chessboard', () => ({
@@ -24,6 +153,10 @@ vi.mock('@/components/chessboard/Chessboard', () => ({
     return null;
   },
 }));
+
+const NO_RECORDS: StoredAnalysisLookup = {
+  listForGameAndAnalysis: async () => [],
+};
 
 interface Rig {
   readonly recorder: PuzzleAttemptRecorderLike;
@@ -62,7 +195,12 @@ function renderSolve(
   row: PuzzleRow,
   rig: Rig,
   onExit: (outcome: PresentationOutcome | null) => void,
-) {
+  options: {
+    readonly storedAnalysis?: StoredAnalysisLookup;
+    readonly showTimer?: boolean;
+    readonly onRestart?: () => void;
+  } = {},
+): void {
   render(
     <SolveScreen
       row={row}
@@ -70,6 +208,9 @@ function renderSolve(
       config={solveConfigFixture()}
       recorder={rig.recorder}
       onExit={onExit}
+      storedAnalysis={options.storedAnalysis ?? NO_RECORDS}
+      {...(options.showTimer !== undefined ? { showTimer: options.showTimer } : {})}
+      {...(options.onRestart !== undefined ? { onRestart: options.onRestart } : {})}
     />,
   );
 }
@@ -82,6 +223,12 @@ function lastBoard(): Record<string, unknown> {
   return last;
 }
 
+async function waitForInteractive(): Promise<void> {
+  await waitFor(() => {
+    expect(lastBoard().interactive).toBe(true);
+  });
+}
+
 function boardMove(from: string, to: string): void {
   const props = lastBoard();
   const onMove = props.onMove as ((f: string, t: string) => void) | undefined;
@@ -91,262 +238,309 @@ function boardMove(from: string, to: string): void {
   act(() => onMove(from, to));
 }
 
-function typeAndPlayMove(text: string): void {
-  fireEvent.change(screen.getByLabelText('Enter a move'), { target: { value: text } });
-  fireEvent.click(screen.getByTestId('puzzle-move-submit'));
+/** A purpose-built blunder row whose start position ends an authored prefix. */
+function rowWithPrefix(): { row: PuzzleRow; records: readonly MoveAnalysis[] } {
+  const STANDARD = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  const prefix = ['e2e4', 'e7e5', 'g1f3', 'b8c6'];
+  const built = buildSolveLine({ startFen: STANDARD, mainline: prefix });
+  const records = prefix.map((uci, ply) =>
+    makeMove(ply, {
+      gameId: 'fixture:prefix-game',
+      analysisId: 'analysis:prefix-game',
+      playedMove: { san: '', uci },
+      positionFen: fenOf(positionAtPath(built.tree, mainlinePathOf(built.tree, ply))),
+    }),
+  );
+  const fen = fenOf(positionAtPath(built.tree, mainlinePathOf(built.tree, prefix.length)));
+  const row = assembleBlunderPuzzle(
+    {
+      sourceGameId: 'fixture:prefix-game',
+      sourcePly: prefix.length,
+      analysisId: 'analysis:prefix-game',
+      startingFen: fen,
+      userMovePlayed: 'd2d4',
+      bestMove: 'f1c4',
+      evalBefore: { cp: 30, mate: null },
+      evalAfter: { cp: -240, mate: null },
+      detectionVersion: DETECTION_VERSION,
+    },
+    1_700_000_000_000,
+  );
+  return { row, records };
 }
 
-describe('SolveScreen (Feature 012, Stage D)', () => {
+/** Fabricated prefix chain ending at the given row's startingFen (scholar). */
+function scholarRecordsFor(gameId: string, analysisId: string): readonly MoveAnalysis[] {
+  const STANDARD = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  const moves = ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'g8f6', 'd1h5'];
+  const built = buildSolveLine({ startFen: STANDARD, mainline: moves });
+  return moves.map((uci, ply) =>
+    makeMove(ply, {
+      gameId,
+      analysisId,
+      playedMove: { san: '', uci },
+      positionFen: fenOf(positionAtPath(built.tree, mainlinePathOf(built.tree, ply))),
+    }),
+  );
+}
+
+describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
   beforeEach(() => {
     chessboardProps.length = 0;
+    engine.jobs.splice(0);
   });
 
-  it('presents a tactical origin fresh: starting board, orientation, objective label, no difficulty, zero counters', () => {
+  it('presents a fresh puzzle: drawable interactive board, objective, "{color} to move…", no clock, no result, no engine toggle, no counters or text entry', async () => {
     const rig = createRig();
     renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
     expect(screen.getByTestId('solve-objective')).toHaveTextContent('Forced mate');
-    expect(screen.getByTestId('solve-side-to-move')).toHaveTextContent('White to move');
-    expect(screen.queryByText(/Trivial|Medium|Hard|Master/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId('solve-wrong-count')).toHaveTextContent('Wrong moves: 0');
-    expect(screen.getByTestId('solve-hint-count')).toHaveTextContent('Hints used: 0');
-    expect(screen.getByTestId('solve-clock')).toHaveTextContent('0:00');
-    expect(screen.getByLabelText('Enter a move')).not.toBeDisabled();
+    expect(await screen.findByTestId('solve-movelist-status')).toHaveTextContent('White to move…');
+    expect(screen.queryByTestId('solve-result')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('solve-clock')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('solve-engine-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('solve-wrong-count')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('solve-hint-count')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Enter a move')).not.toBeInTheDocument();
+    expect(screen.getByTestId('solve-movelist')).toBeInTheDocument();
 
+    await waitForInteractive();
     const board = lastBoard();
     expect(board.orientation).toBe('white');
-    expect(board.interactive).toBe(true);
-    expect(board.position).toBeDefined();
+    expect(board.drawable).toBe(true);
     expect(rig.calls).toEqual([]);
   });
 
-  it('presents a blunder origin with its fixed correct-move objective', () => {
+  it('shows the solve clock only when the timer setting is on', async () => {
     const rig = createRig();
-    renderSolve(blunderRowFixture(), rig, () => undefined);
-    expect(screen.getByTestId('solve-objective')).toHaveTextContent('Find the best move');
-    expect(rig.calls).toEqual([]);
+    renderSolve(blunderRowFixture(), rig, () => undefined, { showTimer: true });
+    expect(await screen.findByTestId('solve-clock')).toHaveTextContent('0:00');
+    expect(screen.getByTestId('solve-movelist-status')).toHaveTextContent('White to move…');
   });
 
-  it('solves a blunder via the board and writes one attempt row before continuing to the host', async () => {
+  it('solves via the board, writes one row, shows Success inside the move list, then Next advances the host', async () => {
     const rig = createRig();
     const onExit = vi.fn();
     renderSolve(blunderRowFixture(), rig, onExit);
 
+    await waitForInteractive();
     boardMove('h5', 'f7');
 
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-announcement')).toHaveTextContent('Solved on the first try');
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Solved on the first try');
-    expect(screen.getByTestId('outcome-wrong-moves')).toHaveTextContent('0');
-    await waitFor(() => expect(screen.getByTestId('outcome-continue')).toBeEnabled());
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Success'));
     expect(rig.calls).toHaveLength(1);
+    await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
 
-    fireEvent.click(screen.getByTestId('outcome-continue'));
+    fireEvent.click(screen.getByTestId('solve-next'));
     expect(onExit).toHaveBeenCalledTimes(1);
     const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
     expect(outcome?.result).toBe('solvedFirstTry');
     expect(outcome?.attemptRow).toBeDefined();
   });
 
-  it('identifies a wrong board move (marker + announcement), returns to the decision point, and solves after retry', async () => {
-    const rig = createRig();
-    const onExit = vi.fn();
-    renderSolve(puzzleRowFixture('mate-one'), rig, onExit);
-
-    boardMove('d2', 'd3');
-
-    expect(screen.getByTestId('solve-announcement')).toHaveTextContent(
-      'not the move that achieves',
-    );
-    expect(screen.getByTestId('solve-wrong-count')).toHaveTextContent('Wrong moves: 1');
-    expect(screen.getByLabelText('Enter a move')).not.toBeDisabled();
-    const shapes = lastBoard().autoShapes as Array<{ brush: string }>;
-    expect(shapes.some((shape) => shape.brush === 'red')).toBe(true);
-    expect(rig.calls).toEqual([]);
-
-    typeAndPlayMove('h5f7');
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Solved with help');
-    expect(screen.getByTestId('outcome-wrong-moves')).toHaveTextContent('1');
-    await waitFor(() => expect(screen.getByTestId('outcome-continue')).toBeEnabled());
-    expect(rig.calls).toHaveLength(1);
-  });
-
-  it('reveals hints one level per press with PRODUCT content and highlights, and restart clears them but keeps counters', async () => {
+  it('a second hint press does not fail the puzzle; a hint-then-solve stays solvedWithHelp', async () => {
     const rig = createRig();
     renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
+    await waitForInteractive();
     fireEvent.click(screen.getByTestId('solve-hint'));
     expect(screen.getByTestId('solve-announcement')).toHaveTextContent('Relevant piece: queen');
-    expect(screen.getByTestId('solve-hint-list')).toHaveTextContent('Relevant piece: queen');
+    // Still solving at the decision point after a hint.
+    expect(lastBoard().interactive).toBe(true);
+    expect(screen.queryByTestId('solve-result')).not.toBeInTheDocument();
 
-    // Level 1 reveals only the piece type; level 2 adds the square highlight.
     fireEvent.click(screen.getByTestId('solve-hint'));
     expect(screen.getByTestId('solve-announcement')).toHaveTextContent('The piece is on h5');
-    const afterSecondHint = lastBoard().autoShapes as Array<{ orig: string; brush: string }>;
-    expect(afterSecondHint.some((shape) => shape.brush === 'yellow' && shape.orig === 'h5')).toBe(
-      true,
+
+    boardMove('h5', 'f7');
+    await waitFor(() =>
+      expect(screen.getByTestId('solve-result')).toHaveTextContent('Solved with hints'),
     );
-    expect(screen.getByTestId('solve-hint-count')).toHaveTextContent('Hints used: 2');
-
-    fireEvent.click(screen.getByTestId('solve-restart'));
-    expect(screen.queryByTestId('solve-hint-list')).not.toBeInTheDocument();
-    expect(screen.getByTestId('solve-hint-count')).toHaveTextContent('Hints used: 2');
-    expect(screen.getByTestId('solve-wrong-count')).toHaveTextContent('Wrong moves: 0');
-    expect(rig.calls).toEqual([]);
-  });
-
-  it('navigates the current presentation line only, gating move entry away from the decision point', async () => {
-    const rig = createRig();
-    const onExit = vi.fn();
-    renderSolve(puzzleRowFixture('mate-two'), rig, onExit);
-
-    typeAndPlayMove('b8b6');
-    expect(screen.getByTestId('solve-hint-count')).toHaveTextContent('Hints used: 0');
-
-    fireEvent.click(screen.getByTestId('nav-first'));
-    expect(lastBoard().interactive).toBe(false);
-    expect(screen.getByLabelText('Enter a move')).toBeDisabled();
-
-    fireEvent.click(screen.getByTestId('nav-last'));
-    expect(lastBoard().interactive).toBe(true);
-    expect(screen.getByLabelText('Enter a move')).not.toBeDisabled();
-
-    typeAndPlayMove('b6f2');
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Solved on the first try');
     expect(rig.calls).toHaveLength(1);
-    await waitFor(() => expect(screen.getByTestId('outcome-continue')).toBeEnabled());
+    const written = rig.calls[0];
+    expect(written?.counters.hintCount).toBeGreaterThan(0);
   });
 
-  it('opens the engine-free post-solve step from Analyze on a solved outcome and keeps the outcome on continue', async () => {
+  it('hint presses reveal a yellow source-square highlight and a yellow destination arrow', async () => {
     const rig = createRig();
-    const onExit = vi.fn();
-    renderSolve(puzzleRowFixture('mate-one'), rig, onExit);
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
-    typeAndPlayMove('h5f7');
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByTestId('outcome-analyze')).toBeEnabled());
+    await waitForInteractive();
+    fireEvent.click(screen.getByTestId('solve-hint'));
+    fireEvent.click(screen.getByTestId('solve-hint'));
+    let shapes = lastBoard().autoShapes as Array<{ orig: string; brush: string; dest?: string }>;
+    expect(shapes.some((s) => s.brush === 'yellow' && s.orig === 'h5')).toBe(true);
 
-    fireEvent.click(screen.getByTestId('outcome-analyze'));
-    expect(screen.getByTestId('post-solve-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('post-solve-result')).toHaveTextContent('Solved on the first try');
-
-    fireEvent.click(screen.getByTestId('post-solve-continue'));
-    const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
-    expect(outcome?.result).toBe('solvedFirstTry');
-    expect(rig.calls).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('solve-hint'));
+    fireEvent.click(screen.getByTestId('solve-hint'));
+    shapes = lastBoard().autoShapes as Array<{ orig: string; dest: string; brush: string }>;
+    expect(shapes.some((s) => s.brush === 'yellow' && s.dest === 'f7')).toBe(true);
   });
 
-  it('skip ends as skipped with no analyze and no post-solve step, then returns the outcome to the host', async () => {
+  it('a wrong move is marked red and appended as a variation; a retry solve records solvedWithHelp', async () => {
     const rig = createRig();
-    const onExit = vi.fn();
-    renderSolve(puzzleRowFixture('mate-one'), rig, onExit);
+    const { row, records } = rowWithPrefix();
+    renderSolve(row, rig, () => undefined, {
+      storedAnalysis: { listForGameAndAnalysis: async () => records },
+    });
 
-    fireEvent.click(screen.getByTestId('solve-skip'));
+    await waitForInteractive();
+    boardMove('d2', 'd4');
+    expect(screen.getByTestId('solve-announcement')).toHaveTextContent(
+      'not the move that achieves',
+    );
+    const shapes = lastBoard().autoShapes as Array<{ brush: string }>;
+    expect(shapes.some((s) => s.brush === 'red')).toBe(true);
 
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Skipped');
-    expect(screen.queryByTestId('outcome-analyze')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('post-solve-panel')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId('outcome-continue')).toBeEnabled());
-
-    fireEvent.click(screen.getByTestId('outcome-continue'));
-    const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
-    expect(outcome?.result).toBe('skipped');
+    const list = screen.getByTestId('solve-movelist');
+    await waitFor(() => {
+      expect(list).toHaveTextContent('e4');
+      expect(list).toHaveTextContent('e5');
+      expect(list).toHaveTextContent('Nf3');
+      expect(list).toHaveTextContent('Nc6');
+    });
+    // The wrong attempt is appended as a variation under the decision move
+    // once that move's continuation exists (after the correct move).
+    boardMove('f1', 'c4');
+    await waitFor(() => {
+      expect(list.textContent).toContain('(');
+      expect(list).toHaveTextContent('Bc4');
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('solve-result')).toHaveTextContent('Solved with hints'),
+    );
     expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.counters.wrongMoveCount).toBe(1);
   });
 
-  it('give-up opens the engine-free post-solve step automatically once the failed row is written', async () => {
+  it('renders the game prefix as a mainline when prefix records are supplied', async () => {
     const rig = createRig();
-    const onExit = vi.fn();
-    renderSolve(puzzleRowFixture('mate-one'), rig, onExit);
+    const row = puzzleRowFixture('mate-one');
+    const records = scholarRecordsFor(row.sourceGameId, row.analysisId);
+    renderSolve(row, rig, () => undefined, {
+      storedAnalysis: { listForGameAndAnalysis: async () => records },
+    });
 
-    fireEvent.click(screen.getByTestId('solve-give-up'));
-
-    await waitFor(() => expect(screen.getByTestId('post-solve-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('post-solve-result')).toHaveTextContent('Gave up');
-    expect(screen.getByTestId('post-solution-text')).toBeInTheDocument();
-    expect(rig.calls).toHaveLength(1);
-
-    fireEvent.click(screen.getByTestId('post-solve-continue'));
-    const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
-    expect(outcome?.result).toBe('failed');
+    await waitForInteractive();
+    const list = screen.getByTestId('solve-movelist');
+    await waitFor(() => {
+      expect(list).toHaveTextContent('e4');
+      expect(list).toHaveTextContent('e5');
+      expect(list).toHaveTextContent('Nf3');
+      expect(list).toHaveTextContent('Bc4');
+    });
   });
 
-  it('keeps a failed write on the outcome screen with an inline error and never advances an unwritten row', async () => {
+  it('View solution gives up: the stored solution plays out on the mainline with Failed, engine toggle appears only after finish', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
+
+    await waitForInteractive();
+    expect(screen.queryByTestId('solve-engine-toggle')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('solve-solution'));
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.trigger).toBe('gaveUp');
+    expect(screen.getByTestId('solve-movelist')).toHaveTextContent('Qxf7');
+
+    await waitFor(() => expect(screen.getByTestId('solve-engine-toggle')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
+  });
+
+  it('post-finish engine toggle analyzes the end position with a stubbed engine and fills the reserved eval bar', async () => {
+    const rig = createRig();
+    renderSolve(blunderRowFixture(), rig, () => undefined);
+
+    await waitForInteractive();
+    boardMove('h5', 'f7');
+    await waitFor(() => expect(screen.getByTestId('solve-engine-toggle')).toBeInTheDocument());
+    // Engine off: reserved empty column.
+    expect(screen.getByTestId('solve-eval-reserved')).toBeInTheDocument();
+
+    const jobsBefore = engine.jobs.length;
+    fireEvent.click(screen.getByTestId('solve-engine-toggle'));
+    expect(engine.jobs.length).toBeGreaterThan(jobsBefore);
+    expect(screen.queryByTestId('solve-eval-reserved')).not.toBeInTheDocument();
+    await act(async () => {});
+    act(() => engine.complete(engine.jobs.length - 1));
+    await waitFor(() => expect(screen.getByTestId('engine-result')).toBeInTheDocument());
+    expect(screen.getByTestId('evaluation-bar')).toBeInTheDocument();
+  });
+
+  it('keeps a failed write retryable with an inline error and never enables Next on an unwritten row', async () => {
     const rig = createRig();
     const onExit = vi.fn();
     renderSolve(puzzleRowFixture('mate-one'), rig, onExit);
     rig.setFailing(true);
 
-    fireEvent.click(screen.getByTestId('solve-give-up'));
+    await waitForInteractive();
+    fireEvent.click(screen.getByTestId('solve-solution'));
 
-    await waitFor(() => expect(screen.getByTestId('outcome-write-error')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-write-error')).toHaveTextContent('Failed to persist');
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Gave up');
-    expect(screen.getByTestId('outcome-continue')).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId('solve-write-error')).toBeInTheDocument());
+    expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed');
+    expect(screen.getByTestId('solve-next')).toBeDisabled();
 
     rig.setFailing(false);
-    fireEvent.click(screen.getByTestId('outcome-retry-write'));
-
-    // The retried write lands, the row is no longer unwritten, and the failed
-    // outcome's post-solve step opens automatically.
-    await waitFor(() => expect(screen.getByTestId('post-solve-panel')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('solve-retry-write'));
+    await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
     expect(rig.calls).toHaveLength(2);
     expect(onExit).not.toHaveBeenCalled();
   });
 
-  it('resolves a pawn promotion through the promotion dialog', async () => {
+  it('Restart appears once the user has started playing and resets the line to the decision point', async () => {
     const rig = createRig();
-    const onExit = vi.fn();
-    renderSolve(trainingRowFixture('promotion'), rig, onExit);
+    const { row } = rowWithPrefix();
+    renderSolve(row, rig, () => undefined);
 
-    // Board path: a pawn reaching the back rank triggers the promotion dialog.
-    const props = lastBoard();
-    const onPromotion = props.onPromotionRequired as
-      ((p: { from: string; to: string }) => void) | undefined;
-    if (!onPromotion) {
-      throw new Error('Board must support promotion.');
-    }
-    act(() => onPromotion({ from: 'c7', to: 'c8' }));
-    expect(screen.getByTestId('promotion-dialog')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('promotion-queen'));
+    await waitForInteractive();
+    expect(screen.queryByTestId('solve-restart')).not.toBeInTheDocument();
 
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Solved on the first try');
-    await waitFor(() => expect(screen.getByTestId('outcome-continue')).toBeEnabled());
-    expect(rig.calls).toHaveLength(1);
+    boardMove('d2', 'd4');
+    const restart = await screen.findByTestId('solve-restart');
+    fireEvent.click(restart);
+
+    expect(lastBoard().interactive).toBe(true);
+    expect(screen.queryByTestId('solve-result')).not.toBeInTheDocument();
+    expect(rig.calls).toEqual([]);
   });
 
-  it('solves a terminal accepted alternative on its first move and writes one row', async () => {
+  it('Restart is offered after finish only when the host supplies a restart seam, and fires it', async () => {
     const rig = createRig();
     const onExit = vi.fn();
-    renderSolve(puzzleRowFixture('accepted-alternatives'), rig, onExit);
+    const onRestart = vi.fn();
+    renderSolve(puzzleRowFixture('mate-one'), rig, onExit, { onRestart });
 
-    typeAndPlayMove('g5e6');
+    await waitForInteractive();
+    fireEvent.click(screen.getByTestId('solve-solution'));
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
 
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Solved on the first try');
-    await waitFor(() => expect(screen.getByTestId('outcome-continue')).toBeEnabled());
-    expect(rig.calls).toHaveLength(1);
-
-    fireEvent.click(screen.getByTestId('outcome-continue'));
-    const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
-    expect(outcome?.result).toBe('solvedFirstTry');
-  });
-
-  it('solves a promotion from the pointer-free text entry', async () => {
-    const rig = createRig();
-    const onExit = vi.fn();
-    renderSolve(trainingRowFixture('promotion'), rig, onExit);
-
-    typeAndPlayMove('c7c8q');
-
-    await waitFor(() => expect(screen.getByTestId('outcome-panel')).toBeInTheDocument());
-    expect(screen.getByTestId('outcome-result')).toHaveTextContent('Solved on the first try');
-    await waitFor(() => expect(screen.getByTestId('outcome-continue')).toBeEnabled());
-    expect(rig.calls).toHaveLength(1);
+    const restart = await screen.findByTestId('solve-restart');
+    fireEvent.click(restart);
+    expect(onRestart).toHaveBeenCalledTimes(1);
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it('does not offer a post-finish Restart when the host supplies no restart seam', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
+
+    await waitForInteractive();
+    fireEvent.click(screen.getByTestId('solve-solution'));
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+    expect(screen.queryByTestId('solve-restart')).not.toBeInTheDocument();
+  });
+
+  it('transport moves across the line and the board is not interactive away from the decision point', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
+
+    await waitForInteractive();
+    boardMove('h5', 'f7');
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('nav-first'));
+    expect(lastBoard().interactive).toBe(false);
+    fireEvent.click(screen.getByTestId('nav-last'));
+    expect(screen.getByTestId('solve-ply')).toHaveTextContent('1/1');
   });
 });

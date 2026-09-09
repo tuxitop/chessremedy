@@ -18,6 +18,7 @@ export const SETTINGS_KEYS = {
   lichessUsername: 'import.lichess.username',
   chessComFilters: 'import.chesscom.filters',
   lichessFilters: 'import.lichess.filters',
+  puzzleTimer: 'puzzle.timer',
 } as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS];
 
