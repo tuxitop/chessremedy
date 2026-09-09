@@ -68,9 +68,9 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Feature 007 (Library row surface + capability registry), Feature 010 (verified candidates); output consumed by Features 012/013.
 
 ### Feature 012 — Puzzle Training
-- Required: `ARCHITECTURE.md` (post-solve reuse of Feature 006); ADRs `decisions/ADR-031`, `decisions/ADR-023`, `decisions/ADR-018`; domain `domain/tactical-training.md`, `domain/puzzle-model.md`; research `research/cycle-training.md`.
+- Required: `ARCHITECTURE.md` (post-solve panel on the shared analysis board; ownership & deletion cascade); ADRs `decisions/ADR-031`, `decisions/ADR-023`, `decisions/ADR-033`; domain `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/analysis-model.md`, `domain/game-library.md`; research `research/cycle-training.md`.
 - Optional: `history/ADR-007/011/021/022` (rejected scheduling), `history/README.md`; `PRODUCT.md` §10 (hint levels — authoritative owner).
-- Dependencies: Features 006, 008, 011, 013.
+- Dependencies: Features 006, 008, 011; output (solve interaction + attempt rows) consumed by Feature 013, which hosts the solving screen and is implemented after 012 per the roadmap.
 
 ### Feature 013 — Tactical Training Cycles
 - Required: ADRs `decisions/ADR-031`, `decisions/ADR-025` (difficulty ordering default); domain `domain/tactical-training.md`, `domain/puzzle-model.md`; research `research/cycle-training.md`.
@@ -113,7 +113,7 @@ features, ADRs, research, or the whole documentation tree.
 
 - `domain/game-model.md` → Features 002/003/004/007/014/015/016
 - `domain/game-library.md` → Features 007/008/010/011/014/016
-- `domain/analysis-model.md` → Features 005/006/008/009/010/014
+- `domain/analysis-model.md` → Features 005/006/008/009/010/012/014
 - `domain/classification.md` → Features 006/008/009/010/014
 - `domain/time-control.md` → Features 003/007/008/014/015
 - `domain/clock.md` → Features 003/008
