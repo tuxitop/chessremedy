@@ -9,6 +9,7 @@ import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import type { AnalysisSummaryRow } from '@/infrastructure/db/summaries-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { puzzleFixtures } from '@/domain/puzzle/test-support';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import {
   analysisJobId,
   createAnalysisJob,
@@ -821,7 +822,7 @@ describe('GameLibrary puzzle insight + generation actions (Feature 011, Stage D)
       detectionVersion: DETECTION_VERSION,
       puzzleState: 'completed',
       puzzleProgress: { done: 2, total: 2 },
-      puzzleGeneratorVersion: 1,
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
     });
     const zero = await seedAnalyzedGame('li-blitz-blunder', {
       classificationCounts: { best: 8, good: 1, inaccuracy: 1, mistake: 0, blunder: 0 },
@@ -831,7 +832,7 @@ describe('GameLibrary puzzle insight + generation actions (Feature 011, Stage D)
       detectionVersion: DETECTION_VERSION,
       puzzleState: 'completed',
       puzzleProgress: { done: 0, total: 0 },
-      puzzleGeneratorVersion: 1,
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
     });
     await seedPuzzlesForGame(withPuzzles.id, 2);
     renderLibrary();
@@ -842,6 +843,82 @@ describe('GameLibrary puzzle insight + generation actions (Feature 011, Stage D)
     );
     const zeroStrip = await screen.findByTestId(`row-insights-${zero.id}`);
     expect(within(zeroStrip).getByTestId('row-insights-puzzles')).toHaveTextContent('Puzzles 0');
+  });
+
+  it('offers a Regenerate action + note for an outdated completed pass (older generator) and none for a current pass', async () => {
+    // A v1-completed pass with fresh detection is outdated: its rows/count stay
+    // (immutable + visible) and the row offers the engine-free Regenerate
+    // action; a current-version completed pass shows neither.
+    const outdated = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 1, total: 1 },
+      puzzleGeneratorVersion: 1,
+    });
+    await seedPuzzlesForGame(outdated.id, 1);
+    // A v1 pass that completed with zero verified candidates is equally
+    // outdated: regeneration can now add one-move blunder puzzles at count 0.
+    const zeroOutdated = await seedAnalyzedGame('cc-rapid-missed-tactic', {
+      classificationCounts: { best: 5, good: 2, inaccuracy: 1, mistake: 0, blunder: 1 },
+      accuracy: 66,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 0, total: 0 },
+      puzzleGeneratorVersion: 1,
+    });
+    const current = await seedAnalyzedGame('li-blitz-blunder', {
+      classificationCounts: { best: 8, good: 1, inaccuracy: 1, mistake: 0, blunder: 0 },
+      accuracy: 55,
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 2, total: 2 },
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
+    });
+    await seedPuzzlesForGame(current.id, 2);
+    const service = serviceWithGeneration();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    // Outdated row: the Puzzles N strip stays and the older-generator note +
+    // Regenerate action appear beside it.
+    const outdatedStrip = await screen.findByTestId(`row-insights-${outdated.id}`);
+    expect(within(outdatedStrip).getByTestId('row-insights-puzzles')).toHaveTextContent(
+      'Puzzles 1',
+    );
+    expect(within(outdatedStrip).getByTestId('row-insights-puzzles-outdated')).toHaveTextContent(
+      'older generator',
+    );
+    const regenerate = await screen.findByTestId(`row-puzzles-regenerate-${outdated.id}`);
+    expect(regenerate).toHaveTextContent('Regenerate puzzles');
+    fireEvent.click(regenerate);
+    await waitFor(() => expect(service.generationCalls).toEqual([outdated.id]));
+
+    // A zero-row outdated pass still offers the note + Regenerate action.
+    const zeroStrip = await screen.findByTestId(`row-insights-${zeroOutdated.id}`);
+    expect(within(zeroStrip).getByTestId('row-insights-puzzles')).toHaveTextContent('Puzzles 0');
+    expect(within(zeroStrip).getByTestId('row-insights-puzzles-outdated')).toHaveTextContent(
+      'older generator',
+    );
+    expect(
+      await screen.findByTestId(`row-puzzles-regenerate-${zeroOutdated.id}`),
+    ).toBeInTheDocument();
+
+    // Current row: strip only — no outdated note, no Regenerate action.
+    const currentStrip = await screen.findByTestId(`row-insights-${current.id}`);
+    expect(within(currentStrip).getByTestId('row-insights-puzzles')).toHaveTextContent('Puzzles 2');
+    expect(
+      within(currentStrip).queryByTestId('row-insights-puzzles-outdated'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`row-puzzles-regenerate-${current.id}`)).not.toBeInTheDocument();
   });
 
   it('shows "Puzzles not generated" with a Generate action that flips to live then completes', async () => {
@@ -884,7 +961,7 @@ describe('GameLibrary puzzle insight + generation actions (Feature 011, Stage D)
     await summariesRepository.patchForAnalysis(job.id, {
       puzzleState: 'completed',
       puzzleProgress: { done: 1, total: 1 },
-      puzzleGeneratorVersion: 1,
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
     });
     await seedPuzzlesForGame(game.id, 1);
     service.generating.delete(game.id);
@@ -981,7 +1058,7 @@ describe('GameLibrary puzzle insight + generation actions (Feature 011, Stage D)
       detectionVersion: DETECTION_VERSION,
       puzzleState: 'completed',
       puzzleProgress: { done: 1, total: 1 },
-      puzzleGeneratorVersion: 1,
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
     });
     await seedPuzzlesForGame(game.id, 1);
     const service = serviceWithGeneration();

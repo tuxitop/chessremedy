@@ -11,9 +11,11 @@ import { fixtureGame } from '@/domain/chess/fixtures';
 import {
   analysisJobId,
   createAnalysisJob,
+  markCompleted,
   planGameAnalysis,
   type AnalysisJob,
 } from '@/domain/analysis';
+import { TEST_ENGINE } from '@/domain/analysis/test-support';
 import { DETECTION_VERSION } from '@/domain/tactics';
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
 import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
@@ -30,6 +32,7 @@ import {
 } from './test-support/fakeAnalysisEngine';
 import type { AnalysisProfile, EngineMetadata } from '@/domain/chess';
 import type { EngineAnalysisResult } from '@/infrastructure/engine/types';
+import type { AnalysisSummaryRow } from '@/infrastructure/db/summaries-repository';
 
 let sequence = 0;
 
@@ -1302,5 +1305,110 @@ describe('AnalysisService — Feature-011 puzzle-generation hook (Stage C)', () 
     // Existing puzzle rows survive the forced re-analysis (supersede never
     // deletes them); the new run starts its own pass from absent instead.
     expect(await puzzlesRepository.countForGame(gameId)).toBe(1);
+  });
+
+  describe('generatePuzzles on-demand outcomes', () => {
+    /** A completed analysis job + its summary for a seeded game. */
+    async function seedSummary(
+      gameId: string,
+      overrides: Partial<AnalysisSummaryRow> = {},
+    ): Promise<AnalysisJob> {
+      const job = markCompleted(createAnalysisJob(gameId, TEST_ENGINE, 2, now()), now());
+      await analysisJobsRepository.putJob(job);
+      await summariesRepository.putForAnalysis({
+        analysisId: job.id,
+        gameId,
+        userColor: 'white',
+        classificationCounts: { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
+        userMoves: 0,
+        totalMoves: 0,
+        accuracy: null,
+        accuracyMoves: 0,
+        detectionState: 'completed',
+        missedTacticCount: 0,
+        detectionVersion: DETECTION_VERSION,
+        updatedAt: now(),
+        ...overrides,
+      });
+      return job;
+    }
+
+    /** Real engine-free generation over the shared repos; no engine needed. */
+    function serviceWithGeneration(): AnalysisService {
+      const generation = new PuzzleGenerationService({
+        puzzles: puzzlesRepository,
+        candidates: puzzleCandidatesRepository,
+        analyses: analysesRepository,
+        summaries: summariesRepository,
+        now,
+      });
+      return new AnalysisService({
+        games: gamesRepository,
+        analyses: analysesRepository,
+        jobs: analysisJobsRepository,
+        engine: createFakeEngine().service,
+        engineCache: new DexieEngineAnalysisCache(),
+        engineMetadata: (profile: AnalysisProfile): EngineMetadata => ({
+          ...FAKE_ENGINE_META,
+          profile,
+        }),
+        now,
+        summaries: summariesRepository,
+        generation,
+      });
+    }
+
+    it('reports already-current for a completed pass at the current generator version', async () => {
+      const gameId = await seedFixture('cc-bullet-blunder');
+      await seedSummary(gameId, {
+        puzzleState: 'completed',
+        puzzleProgress: { done: 1, total: 1 },
+        puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
+      });
+      const service = serviceWithGeneration();
+
+      expect(await service.generatePuzzles(gameId)).toBe('already-current');
+      // No pass was scheduled: nothing live, nothing written.
+      expect(await service.activeGenerationGames()).toEqual(new Set());
+      expect(await puzzlesRepository.countForGame(gameId)).toBe(0);
+    });
+
+    it('schedules a regeneration for an outdated completed pass and reports started, then already-current once settled', async () => {
+      const gameId = await seedFixture('li-blitz-blunder');
+      // A completed pass from the older v1 generator under fresh detection.
+      const job = await seedSummary(gameId, {
+        puzzleState: 'completed',
+        puzzleProgress: { done: 0, total: 0 },
+        puzzleGeneratorVersion: 1,
+      });
+      const service = serviceWithGeneration();
+
+      expect(await service.generatePuzzles(gameId)).toBe('started');
+
+      // The engine-free pass settles at the current version (over an empty
+      // candidate/blunder input set here: a completed zero-row regeneration).
+      await waitFor(async () => {
+        const current = await summariesRepository.getForAnalysis(job.id);
+        return current?.puzzleState === 'completed';
+      });
+      await waitFor(async () => (await service.activeGenerationGames()).size === 0);
+      const settled = (await summariesRepository.getForAnalysis(job.id))!;
+      expect(settled.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
+
+      // Once current, the on-demand entry is a no-op.
+      expect(await service.generatePuzzles(gameId)).toBe('already-current');
+    });
+
+    it('keeps reporting detection-not-ready until detection is completed and current', async () => {
+      const gameId = await seedFixture('cc-rapid-missed-tactic');
+      // A completed generation pass cannot mask a stale/absent detection: the
+      // freshness gate governs (plan R-6) and nothing is scheduled.
+      await seedSummary(gameId, { detectionVersion: 1 });
+      const service = serviceWithGeneration();
+
+      expect(await service.generatePuzzles(gameId)).toBe('detection-not-ready');
+      expect(await service.activeGenerationGames()).toEqual(new Set());
+      expect(await puzzlesRepository.countForGame(gameId)).toBe(0);
+    });
   });
 });

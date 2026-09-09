@@ -163,6 +163,12 @@
   font-size: var(--font-size-md);
 }
 
+/* The "older generator — regenerate" hint shown beside a current count line
+   when a completed generation pass predates the current generator version. */
+.regenerateNote {
+  color: var(--color-warning, #b7791f);
+}
+
 .statePanel {
   max-width: 34rem;
   padding: var(--space-5);

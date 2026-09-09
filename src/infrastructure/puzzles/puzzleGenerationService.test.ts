@@ -415,6 +415,72 @@ describe('PuzzleGenerationService', () => {
     expect(await r.puzzles.addIfAbsent([rows[0]!])).toBe(0);
   });
 
+  it('regenerates an outdated completed pass (older generator) and only ever adds absent rows', async () => {
+    // A v1 generator pass completed under fresh detection: the summary records
+    // version 1 and a tactical row for the verified candidate already exists.
+    const summaries = new FakeSummariesRepository();
+    await seedSummary(summaries, {
+      puzzleState: 'completed',
+      puzzleProgress: { done: 1, total: 1 },
+      puzzleGeneratorVersion: 1,
+    });
+    const r = rig([scoped('mate-one')], summaries, [blunderRecord(10)]);
+    // A v1 row has no `origin` discriminator (absent = tactical) and records
+    // the v1 generator version; it must survive the regeneration untouched.
+    const assembled = assemblePuzzle(r.verified[0]!, NOW);
+    const { origin, ...v1Fields } = assembled;
+    void origin;
+    const v1TacticalRow: PuzzleRow = { ...v1Fields, puzzleGeneratorVersion: 1 };
+    await r.puzzles.addIfAbsent([v1TacticalRow]);
+
+    // Regeneration runs the same v2 pass over the stored inputs.
+    await run(r.service);
+
+    const summary = (await summaries.getForAnalysis(ANALYSIS_ID))!;
+    expect(summary.puzzleState).toBe('completed');
+    expect(summary.puzzleProgress).toEqual({ done: 2, total: 2 });
+    expect(summary.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
+    // Detection fields survive the regeneration write.
+    expect(summary.detectionState).toBe('completed');
+    expect(summary.detectionVersion).toBe(DETECTION_VERSION);
+
+    // The existing v1 tactical row is immutable and untouched; the re-run adds
+    // only the absent row — the one-move blunder puzzle the v1 generator never
+    // produced (add-only natural key, nothing overwritten or deleted).
+    const rows = await r.puzzles.listForGame(GAME_ID);
+    expect(rows).toHaveLength(2);
+    const ply6 = rows.find((row) => row.sourcePly === 6)!;
+    expect(ply6).toEqual(v1TacticalRow);
+    expect(ply6.puzzleGeneratorVersion).toBe(1);
+    expect(ply6.origin).toBeUndefined();
+    const ply10 = rows.find((row) => row.sourcePly === 10)!;
+    expect(ply10.origin).toBe('blunder');
+    expect(ply10.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
+  });
+
+  it('regenerates an outdated completed pass even when it completed with zero rows', async () => {
+    // A v1 pass that completed with no verified candidates and no blunder
+    // inputs recorded version 1 at a real zero — regenerating it is a normal
+    // v2 pass over whatever inputs the stored analysis now yields.
+    const summaries = new FakeSummariesRepository();
+    await seedSummary(summaries, {
+      puzzleState: 'completed',
+      puzzleProgress: { done: 0, total: 0 },
+      puzzleGeneratorVersion: 1,
+    });
+    const r = rig([], summaries, [blunderRecord(10)]);
+
+    await run(r.service);
+
+    const summary = (await summaries.getForAnalysis(ANALYSIS_ID))!;
+    expect(summary.puzzleState).toBe('completed');
+    expect(summary.puzzleProgress).toEqual({ done: 1, total: 1 });
+    expect(summary.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
+    const rows = await r.puzzles.listForGame(GAME_ID);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.origin).toBe('blunder');
+  });
+
   it('an aborted pass leaves the summary queued + resumable and resume writes only the missing rows', async () => {
     const summaries = new FakeSummariesRepository();
     await seedSummary(summaries);

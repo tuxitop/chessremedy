@@ -99,6 +99,16 @@ export interface GameRowInsights {
    */
   readonly puzzleState?: SummaryPuzzleState;
   /**
+   * Puzzle-generator version of the latest completed analysis's completed
+   * generation pass (Feature 011 regeneration); `null` until one completes and
+   * only meaningful when `puzzleState` is `'completed'`. A completed pass whose
+   * version differs from the current `PUZZLE_GENERATOR_VERSION` constant is
+   * **outdated**: its rows stay visible and immutable, but the row offers the
+   * engine-free "Regenerate puzzles" action to add the newer row kinds (e.g.
+   * one-move blunder puzzles).
+   */
+  readonly puzzleGeneratorVersion?: number | null;
+  /**
    * Live generation progress (`done`/`total` puzzles assembled/written) of the
    * latest completed analysis's generation pass. Absent/`null` on rows whose
    * pass has not recorded progress. The Library renders a progress bar from

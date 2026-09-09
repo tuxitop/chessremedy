@@ -22,6 +22,7 @@ import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import type { GameAnalysisStatus } from '@/domain/analysis';
 import type { GameAnalysisProgress } from '@/infrastructure/analysis';
 import { DETECTION_VERSION } from '@/domain/tactics';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import { formatAccuracy } from '@/domain/analysis/classificationMeta';
 import {
   classificationCountColor,
@@ -419,7 +420,7 @@ export function GameLibrary({
             justStartedGenerations.current = new Set(
               [...justStartedGenerations.current].filter((id) => id !== gameId),
             );
-            if (outcome === 'already-completed') {
+            if (outcome === 'already-current') {
               library.reload();
             }
           }
@@ -1139,6 +1140,20 @@ function rowInsightItemsFor(
           color: puzzleCountColor(count),
         });
       }
+      // A completed pass from an older generator version is outdated: its rows
+      // stay visible and immutable, and the strip says the pass can be
+      // regenerated (engine-free) to add the newer puzzle kinds.
+      if (row.puzzleGeneratorVersion !== PUZZLE_GENERATOR_VERSION) {
+        const outdated = 'Puzzle generation is from an older generator';
+        items.push({
+          key: 'puzzlesOutdated',
+          testId: 'row-insights-puzzles-outdated',
+          text: `${outdated} — regenerate to add one-move blunder puzzles.`,
+          spoken: `${outdated}. Regenerate to add one-move blunder puzzles.`,
+          title: `${outdated}. Regenerate puzzles to add one-move blunder puzzles.`,
+          color: 'var(--color-warning, #b7791f)',
+        });
+      }
     } else if (generationRunning) {
       // A pass that is live in this session — even one whose persisted state
       // has not yet advanced past `absent` (the pass just started) — reads
@@ -1295,10 +1310,12 @@ function DetectionScanAction({
  * On-demand puzzle-generation affordance under a row (Feature 011, mirror of
  * `DetectionScanAction`): run the first generation pass of an analysis whose
  * detection completed at the current version but whose puzzles were never
- * generated, resume an interrupted pass, or retry a failed one. Rendered only
- * while detection is completed/fresh — a stale completed detection offers the
- * Feature-010 refresh-scan instead. Absent (never "generating" twice) while
- * the pass is live; the live strip note governs.
+ * generated, resume an interrupted pass, retry a failed one, or **regenerate**
+ * a completed pass from an older generator version (engine-free — adds the
+ * rows the newer generator produces, e.g. one-move blunder puzzles). Rendered
+ * only while detection is completed/fresh — a stale completed detection offers
+ * the Feature-010 refresh-scan instead. Absent (never "generating" twice)
+ * while the pass is live; the live strip note governs.
  */
 function PuzzleGenerationAction({
   row,
@@ -1321,7 +1338,7 @@ function PuzzleGenerationAction({
     return null; // The strip already shows "Generating puzzles…".
   }
   const puzzle = row.puzzleState ?? 'absent';
-  let kind: 'generate' | 'resume' | 'retry' | null = null;
+  let kind: 'generate' | 'resume' | 'retry' | 'regenerate' | null = null;
   let label = '';
   if (puzzle === 'queued' || puzzle === 'inProgress') {
     kind = 'resume';
@@ -1332,6 +1349,11 @@ function PuzzleGenerationAction({
   } else if (puzzle === 'absent') {
     kind = 'generate';
     label = 'Generate puzzles';
+  } else if (puzzle === 'completed' && row.puzzleGeneratorVersion !== PUZZLE_GENERATOR_VERSION) {
+    // Outdated completed pass (older generator): an engine-free re-run adds
+    // the newer rows without touching the immutable ones.
+    kind = 'regenerate';
+    label = 'Regenerate puzzles';
   } else {
     return null;
   }

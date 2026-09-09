@@ -26,11 +26,21 @@
  *    writes it and the blunder is skipped by the natural key. Rows are written
  *    through the repository's idempotent `addIfAbsent` on the natural key
  *    `[sourceGameId + sourcePly]` — first write wins, re-analysis / resume /
- *    retry never duplicates or overwrites an immutable row.
+ *    retry / regeneration never duplicates or overwrites an immutable row.
  * 3. The per-analysis summary is kept in sync through the generation-pass state
  *    machine (`absent → queued → inProgress → completed | failed`), always via
  *    `summaries.patchForAnalysis` on the puzzle fields **only**, so detection
  *    fields and classification counts are never clobbered (plan R-2).
+ *
+ * A completed pass is final only for the generator version it ran under: the
+ * idempotency gate no-ops solely when the summary reports `completed` **and**
+ * `puzzleGeneratorVersion === PUZZLE_GENERATOR_VERSION`. A completed pass from
+ * an older generator is *outdated* and is re-run by any pass invocation —
+ * regeneration is engine-free and identical to the original pass (same stored
+ * inputs, same assembly, same add-only writes), which is what adds the
+ * one-move blunder correct-move rows an older pass never produced. Existing
+ * immutable rows are never overwritten or deleted; the completed write records
+ * the current generator version.
  *
  * An empty input set is a real zero: the pass completes with
  * `puzzleState: 'completed'`, `puzzleProgress: {done: 0, total: 0}` and the
@@ -109,7 +119,9 @@ export class PuzzleGenerationService {
    * puzzle-generation state to `completed` (or `failed`/`queued`, see the
    * module header). Idempotent per analysis identity and abort-aware/resumable:
    * already-persisted `(sourceGameId, sourcePly)` rows are skipped by the
-   * natural key on a resume.
+   * natural key on a resume. A completed pass is a no-op only when it is at
+   * the current `PUZZLE_GENERATOR_VERSION`; a completed pass from an older
+   * generator is regenerated (see the idempotency gate below).
    */
   async runPassForAnalysis(
     analysisId: string,
@@ -120,11 +132,22 @@ export class PuzzleGenerationService {
       return;
     }
     const summary = await this.summaries.getForAnalysis(analysisId);
-    // Idempotency gate: a completed generation pass for this analysis identity
-    // is final — a re-run / resume / retry returns without touching anything
-    // (rows are add-only, so a later pass over new inputs only ever adds
-    // absent keys).
-    if (!summary || summary.puzzleState === 'completed') {
+    // Idempotency gate: a completed generation pass is final ONLY for the
+    // generator version it ran under. A pass that is `completed` at the
+    // current PUZZLE_GENERATOR_VERSION is a no-op (rows are add-only, so a
+    // later pass over new inputs only ever adds absent keys). A completed pass
+    // from an older generator is *outdated* — this invocation regenerates it
+    // (the engine-free re-run adds the rows the newer generator produces,
+    // e.g. one-move blunder correct-move puzzles, and never touches existing
+    // immutable rows). A pass in any other state (absent/queued/inProgress/
+    // failed) also runs, exactly as a normal pass/resume/retry.
+    if (!summary) {
+      return;
+    }
+    if (
+      summary.puzzleState === 'completed' &&
+      summary.puzzleGeneratorVersion === PUZZLE_GENERATOR_VERSION
+    ) {
       return;
     }
     // Freshness precondition: only generate off a detection verdict produced by

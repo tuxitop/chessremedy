@@ -43,6 +43,7 @@ import type { EngineMetadata, AnalysisProfile, EvalCpMate, MoveAnalysis } from '
 import type { Game, GameId } from '@/domain/chess/game';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
 import { DETECTION_VERSION } from '@/domain/tactics';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import { latestCompletedJob } from '@/domain/analysis';
 import type { AnalysisSummariesRepository } from '@/infrastructure/db/summaries-repository';
 import type { PuzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
@@ -83,7 +84,8 @@ export type ScanGameOutcome =
 export type PuzzleGenerationOutcome =
   | 'started'
   | 'already-running'
-  | 'already-completed'
+  // A completed pass is already at the current generator version (no-op).
+  | 'already-current'
   | 'analysis-in-progress'
   | 'no-completed-analysis'
   | 'game-missing'
@@ -442,15 +444,21 @@ export class AnalysisService {
   }
 
   /**
-   * Generate / resume / retry the Feature-011 puzzle-generation pass for a
-   * game's latest completed analysis (on-demand entry, mirror of `scanGame`).
-   * Engine-free by construction: the pass does pure assembly + batched
-   * IndexedDB writes over the analysis's verified candidates (Feature 011) and
-   * is registered live through `startGeneration` so the Library/per-game view
-   * can show it and cancel it. Only meaningful when the analysis's detection
-   * pass already `completed` at the current `DETECTION_VERSION` — any other
-   * state leaves the puzzle fields `absent` (the Library renders the
-   * Feature-010 note) and is reported as `'detection-not-ready'`.
+   * Generate / resume / retry / regenerate the Feature-011 puzzle-generation
+   * pass for a game's latest completed analysis (on-demand entry, mirror of
+   * `scanGame`). Engine-free by construction: the pass does pure assembly +
+   * batched IndexedDB writes over the analysis's verified candidates (Feature
+   * 011) and is registered live through `startGeneration` so the
+   * Library/per-game view can show it and cancel it. Only meaningful when the
+   * analysis's detection pass already `completed` at the current
+   * `DETECTION_VERSION` — any other state leaves the puzzle fields `absent`
+   * (the Library renders the Feature-010 note) and is reported as
+   * `'detection-not-ready'`.
+   *
+   * A completed pass is a no-op only when it is already at the current
+   * generator version (`'already-current'`); a completed pass from an older
+   * generator is *outdated* and is scheduled as a regeneration (`'started'`),
+   * as are absent/queued/inProgress/failed passes exactly as before.
    */
   async generatePuzzles(gameId: GameId): Promise<PuzzleGenerationOutcome> {
     if (!this.generation) {
@@ -474,11 +482,16 @@ export class AnalysisService {
     }
     if (this.summaries) {
       const existing = await this.summaries.getForAnalysis(latest.id);
-      // A completed generation pass for this analysis identity is final (rows
-      // are add-only); a stale detection result leaves generation `absent`
-      // until a fresh refresh scan re-completes (plan R-6).
-      if (existing?.puzzleState === 'completed') {
-        return 'already-completed';
+      // A completed pass is final only at the current generator version: it is
+      // a no-op then (rows are add-only). A completed pass from an older
+      // version is outdated and falls through so the pass regenerates. A stale
+      // detection result leaves generation `absent` until a fresh refresh scan
+      // re-completes (plan R-6).
+      if (
+        existing?.puzzleState === 'completed' &&
+        existing.puzzleGeneratorVersion === PUZZLE_GENERATOR_VERSION
+      ) {
+        return 'already-current';
       }
       if (
         existing &&

@@ -19,7 +19,11 @@ import type {
   SummaryDetectionState,
   SummaryPuzzleState,
 } from '@/domain/analysis/summaryDerivation';
-import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
+import {
+  difficultyBucketOf,
+  PUZZLE_GENERATOR_VERSION,
+  puzzleObjectiveLabel,
+} from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import { DETECTION_VERSION } from '@/domain/tactics';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
@@ -53,6 +57,12 @@ interface PuzzlesData {
    * no generation pass exists yet — never a real zero).
    */
   readonly puzzleState: SummaryPuzzleState;
+  /**
+   * Puzzle-generator version of the shown analysis's completed generation pass;
+   * `null` until a pass completes. A completed pass whose version differs from
+   * the current `PUZZLE_GENERATOR_VERSION` is outdated → Regenerate is offered.
+   */
+  readonly puzzleGeneratorVersion: number | null;
   /** Live generation progress (`done`/`total` puzzles settled); `null` pre-pass. */
   readonly puzzleProgress: { readonly done: number; readonly total: number } | null;
   /** Every puzzle row of the game (game-scoped immutable rows), ply-ordered. */
@@ -82,6 +92,7 @@ function useGamePuzzles(gameId: string): PuzzlesData {
     detectionState: 'absent',
     detectionVersion: null,
     puzzleState: 'absent',
+    puzzleGeneratorVersion: null,
     puzzleProgress: null,
     puzzles: [],
   });
@@ -96,6 +107,7 @@ function useGamePuzzles(gameId: string): PuzzlesData {
       let detectionState: PuzzlesData['detectionState'] = 'absent';
       let detectionVersion: number | null = null;
       let puzzleState: SummaryPuzzleState = 'absent';
+      let puzzleGeneratorVersion: number | null = null;
       let puzzleProgress: PuzzlesData['puzzleProgress'] = null;
       if (game && completed) {
         const summary = await summariesRepository.getForAnalysis(completed.id);
@@ -104,6 +116,7 @@ function useGamePuzzles(gameId: string): PuzzlesData {
         detectionState = summary ? summary.detectionState : 'absent';
         detectionVersion = summary?.detectionVersion ?? null;
         puzzleState = summary?.puzzleState ?? 'absent';
+        puzzleGeneratorVersion = summary?.puzzleGeneratorVersion ?? null;
         puzzleProgress = summary?.puzzleProgress ?? null;
       }
       if (cancelled) {
@@ -121,6 +134,7 @@ function useGamePuzzles(gameId: string): PuzzlesData {
         detectionState,
         detectionVersion,
         puzzleState,
+        puzzleGeneratorVersion,
         puzzleProgress,
         puzzles,
       });
@@ -316,11 +330,12 @@ function GamePuzzlesPage({ analysisService }: GamePuzzlesPageProps): React.JSX.E
   const detectionReady = data.detectionState === 'completed' && !detectionOutdated;
   const generationLive = generationPending && running.generation;
 
-  const { note, actionKind } = puzzleHeaderUi({
+  const { note, regenerateNote, actionKind } = puzzleHeaderUi({
     detectionOutdated,
     detectionReady,
     puzzleState: data.puzzleState,
     puzzleProgress: data.puzzleProgress,
+    puzzleGeneratorVersion: data.puzzleGeneratorVersion,
     generationLive,
     count: data.puzzles.length,
   });
@@ -342,7 +357,15 @@ function GamePuzzlesPage({ analysisService }: GamePuzzlesPageProps): React.JSX.E
       </header>
 
       <div className={styles.stateBar} data-testid="puzzles-state-bar" role="status">
-        <span data-testid="puzzles-state-note">{note}</span>
+        <span data-testid="puzzles-state-note">
+          {note}
+          {regenerateNote !== null ? (
+            <span className={styles.regenerateNote} data-testid="puzzles-regenerate-note">
+              {' '}
+              · {regenerateNote}
+            </span>
+          ) : null}
+        </span>
         {actionKind !== null && canGenerate && !generationLive ? (
           <Button
             variant="secondary"
@@ -382,25 +405,29 @@ function puzzleHeaderUi(input: {
   readonly detectionReady: boolean;
   readonly puzzleState: SummaryPuzzleState;
   readonly puzzleProgress: { readonly done: number; readonly total: number } | null;
+  readonly puzzleGeneratorVersion: number | null;
   readonly generationLive: boolean;
   readonly count: number;
-}): { note: string; actionKind: 'generate' | 'resume' | 'retry' | null } {
+}): {
+  note: string;
+  regenerateNote: string | null;
+  actionKind: 'generate' | 'resume' | 'retry' | 'regenerate' | null;
+} {
   if (input.detectionOutdated) {
     return {
       note: 'The tactics scan used an older version — puzzle state is out of date until the scan is refreshed.',
+      regenerateNote: null,
       actionKind: null,
     };
   }
   if (!input.detectionReady) {
     return {
       note: 'Tactics scan must complete before puzzles are generated.',
+      regenerateNote: null,
       actionKind: null,
     };
   }
   const puzzle = input.puzzleState;
-  if (puzzle === 'completed') {
-    return { note: `${input.count} ${input.count === 1 ? 'puzzle' : 'puzzles'}`, actionKind: null };
-  }
   if (input.generationLive) {
     const progress = input.puzzleProgress;
     return {
@@ -408,25 +435,41 @@ function puzzleHeaderUi(input: {
         progress && progress.total > 0
           ? `Generating puzzle ${progress.done} of ${progress.total}…`
           : 'Generating puzzles…',
+      regenerateNote: null,
       actionKind: null,
     };
   }
+  if (puzzle === 'completed') {
+    const countNote = `${input.count} ${input.count === 1 ? 'puzzle' : 'puzzles'}`;
+    if (input.puzzleGeneratorVersion === PUZZLE_GENERATOR_VERSION) {
+      return { note: countNote, regenerateNote: null, actionKind: null };
+    }
+    // A completed pass from an older generator version is outdated: the rows
+    // stay inspectable and the header offers an engine-free Regenerate.
+    return {
+      note: countNote,
+      regenerateNote:
+        'Puzzle generation is from an older generator — regenerate to add one-move blunder puzzles.',
+      actionKind: 'regenerate',
+    };
+  }
   if (puzzle === 'absent') {
-    return { note: 'Puzzles not generated', actionKind: 'generate' };
+    return { note: 'Puzzles not generated', regenerateNote: null, actionKind: 'generate' };
   }
   if (puzzle === 'queued' || puzzle === 'inProgress') {
-    return { note: 'Puzzle generation interrupted', actionKind: 'resume' };
+    return { note: 'Puzzle generation interrupted', regenerateNote: null, actionKind: 'resume' };
   }
   if (puzzle === 'failed') {
-    return { note: 'Puzzle generation failed', actionKind: 'retry' };
+    return { note: 'Puzzle generation failed', regenerateNote: null, actionKind: 'retry' };
   }
-  return { note: 'Puzzles not generated', actionKind: null };
+  return { note: 'Puzzles not generated', regenerateNote: null, actionKind: null };
 }
 
-const ACTION_LABELS: Readonly<Record<'generate' | 'resume' | 'retry', string>> = {
+const ACTION_LABELS: Readonly<Record<'generate' | 'resume' | 'retry' | 'regenerate', string>> = {
   generate: 'Generate puzzles',
   resume: 'Resume puzzle generation',
   retry: 'Retry puzzle generation',
+  regenerate: 'Regenerate puzzles',
 };
 
 /**

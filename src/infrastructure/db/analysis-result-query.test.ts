@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { markCompleted, markInProgress } from '@/domain/analysis';
 import { makeEngine, makeJob } from '@/domain/analysis/test-support';
 import { DETECTION_VERSION } from '@/domain/tactics';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import { DEFAULT_LIBRARY_FILTERS } from '@/domain/gameLibrary/filters';
 import type { AnalysisSummaryRow } from './summaries-repository';
 import {
@@ -160,6 +161,7 @@ describe('analysisInsightsForGame', () => {
       missedTactics: null,
       scanProgress: null,
       puzzleState: 'absent',
+      puzzleGeneratorVersion: null,
       puzzleProgress: null,
     });
   });
@@ -250,9 +252,30 @@ describe('analysisInsightsForGame', () => {
         detectionVersion: DETECTION_VERSION,
         puzzleState: 'completed',
         puzzleProgress: { done: 1, total: 1 },
-        puzzleGeneratorVersion: 1,
+        puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
         ...extra,
       });
+
+    it('exposes the generator version of a completed pass (current)', () => {
+      const insights = analysisInsightsForGame([job], [completedSummary()], { [gameId]: 2 });
+      expect(insights.puzzleState).toBe('completed');
+      expect(insights.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
+      expect(insights.puzzleCount).toBe(2);
+    });
+
+    it('an outdated completed pass (older generator) keeps its count and exposes the older version', () => {
+      const insights = analysisInsightsForGame(
+        [job],
+        [completedSummary({ puzzleGeneratorVersion: 1 })],
+        { [gameId]: 1 },
+      );
+      // The older pass's rows stay visible/immutable: the count is still a real
+      // number and the stored generator version is exposed so the UI can offer
+      // the engine-free Regenerate action.
+      expect(insights.puzzleState).toBe('completed');
+      expect(insights.puzzleGeneratorVersion).toBe(1);
+      expect(insights.puzzleCount).toBe(1);
+    });
 
     it('exposes the state note but never a count before the pass completed', () => {
       const insights = analysisInsightsForGame(

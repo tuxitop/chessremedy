@@ -16,6 +16,7 @@ import {
 } from '@/domain/analysis';
 import { TEST_ENGINE } from '@/domain/analysis/test-support';
 import { puzzleFixtures, blunderPuzzleFixtures } from '@/domain/puzzle/test-support';
+import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import type { Game } from '@/domain/chess/game';
 import type { PuzzleRow } from '@/domain/puzzle';
 import { DETECTION_VERSION } from '@/domain/tactics';
@@ -113,7 +114,7 @@ function completedSummary(): SummaryOverrides {
     detectionVersion: DETECTION_VERSION,
     puzzleState: 'completed',
     puzzleProgress: { done: 2, total: 2 },
-    puzzleGeneratorVersion: 1,
+    puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
   };
 }
 
@@ -332,7 +333,7 @@ describe('Game Puzzles page (Feature 011, Stage E)', () => {
     await summariesRepository.patchForAnalysis(job.id, {
       puzzleState: 'completed',
       puzzleProgress: { done: 1, total: 1 },
-      puzzleGeneratorVersion: 1,
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
     });
     await puzzlesRepository.addIfAbsent([rowFor(6)]);
     rig.generating.delete(GAME.id);
@@ -426,6 +427,49 @@ describe('Game Puzzles page (Feature 011, Stage E)', () => {
     expect(screen.queryByTestId('puzzles-generate')).not.toBeInTheDocument();
     expect(screen.queryByTestId('puzzles-resume')).not.toBeInTheDocument();
     expect(screen.queryByTestId('puzzles-retry')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('puzzles-regenerate')).not.toBeInTheDocument();
     expect(screen.getByTestId('puzzle-card-6')).toBeInTheDocument();
+  });
+
+  it('offers Regenerate puzzles on an outdated completed pass (older generator) and regenerates on demand', async () => {
+    // A completed pass from the previous v1 generator with fresh detection: the
+    // rows stay inspectable, the count line stays, and the header offers the
+    // engine-free Regenerate action (regeneration adds one-move blunder rows).
+    await seedGame({
+      detectionState: 'completed',
+      detectionVersion: DETECTION_VERSION,
+      puzzleState: 'completed',
+      puzzleProgress: { done: 2, total: 2 },
+      puzzleGeneratorVersion: 1,
+    });
+    await seedPuzzles([6]);
+    const rig = generationService();
+    renderPuzzles(rig.service);
+
+    const note = await screen.findByTestId('puzzles-state-note');
+    expect(note).toHaveTextContent('1 puzzle');
+    expect(note).toHaveTextContent('older generator');
+    const regenerate = screen.getByTestId('puzzles-regenerate');
+    expect(regenerate).toHaveTextContent('Regenerate puzzles');
+    // The immutable row stays inspectable alongside the regenerate affordance.
+    expect(screen.getByTestId('puzzle-card-6')).toBeInTheDocument();
+
+    fireEvent.click(regenerate);
+    await waitFor(() => expect(rig.calls).toEqual([GAME.id]));
+  });
+
+  it('a current-version completed pass offers no Regenerate action', async () => {
+    await seedGame(completedSummary());
+    await seedPuzzles([6]);
+    const rig = generationService();
+    renderPuzzles(rig.service);
+
+    const note = await screen.findByTestId('puzzles-state-note');
+    expect(note).toHaveTextContent('1 puzzle');
+    expect(note).not.toHaveTextContent('older generator');
+    expect(screen.queryByTestId('puzzles-regenerate')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('puzzles-generate')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('puzzles-resume')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('puzzles-retry')).not.toBeInTheDocument();
   });
 });

@@ -88,8 +88,10 @@ export function resolveGameAnalysis(
  * the analysis status always; accuracy/counts only when a completed run's
  * summary exists; missed tactics follow absent-vs-zero (`null` until the
  * detection pass completed, `0` a real zero). Feature-011 puzzle data follows
- * the same discipline: `puzzleState`/`puzzleProgress` are carried for the row
- * note whenever a summary exists, while `puzzleCount` (the live `puzzles`-row
+ * the same discipline: `puzzleState`/`puzzleProgress` and
+ * `puzzleGeneratorVersion` are carried whenever a summary exists (the version
+ * lets the row offer the engine-free Regenerate action on a completed pass
+ * from an older generator), while `puzzleCount` (the live `puzzles`-row
  * count of the game, from the optional per-game counts map) is exposed only
  * when the generation pass `completed` **and** the detection result is
  * `completed` at the current pipeline version (plan-015 freshness gate / plan
@@ -130,6 +132,7 @@ export function analysisInsightsForGame(
     missedTactics: detectionCompleted ? summary.missedTacticCount : null,
     scanProgress: summary.scanProgress ?? null,
     puzzleState,
+    puzzleGeneratorVersion: summary.puzzleGeneratorVersion ?? null,
     puzzleProgress,
     ...(puzzleCount !== undefined ? { puzzleCount } : {}),
   };
