@@ -86,6 +86,19 @@ current constant is treated as outdated: puzzle state/counts are suppressed
 until a fresh scan re-derives candidates. Generation never does engine work,
 never runs on the UI thread, and is resumable on demand.
 
+A completed **generation** result is final only for the `puzzleGeneratorVersion`
+it ran under: it is *current* when `completed` and its stored version equals
+the current `PUZZLE_GENERATOR_VERSION`. When the generator version advances, a
+previously-completed pass is *outdated* — its rows remain immutable and
+visible, and an engine-free **Regenerate** action re-runs the same add-only
+assembly over the stored detection outputs (verified candidates + stored
+user-side blunder plies of that analysis) to add the newly-available puzzle
+kinds (notably one-move blunder correct-move rows). Regeneration never
+overwrites or deletes rows; the completed summary then records the current
+generator version. Regeneration is explicit only (never auto-backfilled by
+reconcile/session start); the natural re-settle of a fresh detection pass over
+an older completed pass is itself a regeneration.
+
 ## No scheduling state
 
 A Puzzle is an immutable definition and carries **no scheduling or

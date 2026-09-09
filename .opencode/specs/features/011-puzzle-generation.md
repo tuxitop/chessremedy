@@ -316,8 +316,9 @@ blunder is always "find the better move", even in a lost game).
   for the engine/analysis that produced it; re-verification is a future,
   opt-in pass, never automatic.)
 - Generation is therefore **idempotent**: re-running the pass for an analysis
-  (resume, retry, or a later analysis over the same game positions) writes only
-  rows whose `(game, sourcePly)` is absent.
+  (resume, retry, regeneration of an outdated pass, or a later analysis over
+  the same game positions) writes only rows whose `(game, sourcePly)` is
+  absent.
 
 ## Puzzle-generation pass (states & lifecycle)
 
@@ -350,6 +351,30 @@ absent → queued → inProgress → completed | failed
 - `failed` — a write/assembly error interrupted the pass. Already-written
   puzzle rows persist; the pass is retried via the same resume/retry entry
   point.
+
+### Generator-version finality & regeneration
+
+A completed pass is **final only for the generator version it ran under**: a
+pass is *current* when `puzzleState: 'completed'` **and** its stored
+`puzzleGeneratorVersion` equals the current `PUZZLE_GENERATOR_VERSION`. A
+completed pass whose stored generator version is older is *outdated* — its rows
+stay visible and immutable, but the pass may be re-run. Re-running is an
+explicit, **engine-free "Regenerate puzzles"** action (Game Library row and the
+per-game puzzle view), identical to the original pass: the same stored inputs
+(current-version verified candidates + the analysis's stored user-side blunder
+plies), the same candidate-first assembly, and the same add-only
+`[sourceGameId + sourcePly]` writes. Existing rows are never overwritten or
+deleted, so regeneration is what makes the newly-available puzzle kinds
+(notably one-move blunder correct-move rows) appear for games generated under
+an older generator. The summary is updated through the usual `patchForAnalysis`
+path and the final `completed` write records the current generator version.
+An outdated pass shows the Regenerate affordance even when the row count is
+`0` (an older pass that completed with zero verified candidates can
+legitimately gain blunder puzzles); a *current* pass offers no Regenerate
+action. Outdated passes are never auto-backfilled at session start or by
+reconcile — regeneration runs only through the explicit action or the natural
+re-settle of a fresh detection pass (which re-runs generation exactly like any
+new pass; over an older completed pass that is simply a regeneration).
 
 ### Trigger & scheduling
 
@@ -418,6 +443,19 @@ On a game with no puzzles and a not-yet-completed generation state, the action
 may still open the view in its empty/state-note state, or be disabled with an
 explanation — the affordance never implies a zero count.
 
+### Regenerate puzzles (outdated generation pass)
+
+When the latest completed analysis's generation pass is `completed` but its
+`puzzleGeneratorVersion` predates the current constant — and detection is
+`completed` at the current `DETECTION_VERSION` (fresh inputs) — the row shows an
+informational note ("Puzzle generation is from an older generator — regenerate
+to add one-move blunder puzzles.") beside the normal `Puzzles N` strip and a
+**"Regenerate puzzles"** action (row `regenerate` kind; per-game view header
+action). The action is offered even when the strip reads `Puzzles 0`. A
+current-version completed pass shows no note and no action (strip only).
+Clicking it starts the engine-free pass described under "Generator-version
+finality & regeneration", shown live exactly like a normal run.
+
 ### Per-game puzzle list/preview (read-only)
 
 A dedicated, deliberate (not a shrunk table) view listing the game's puzzles.
@@ -445,7 +483,9 @@ Feature 012.
 
 The view is **read-only**: no solving, no attempt recording, no post-solve
 analysis (Features 012/013), no re-generation controls beyond the
-Generate/Resume state affordance when the pass is not complete. Building a
+Generate/Resume state affordance when the pass is not complete and the
+"Regenerate puzzles" action when a completed pass is from an older generator.
+Building a
 training set from these puzzles is Feature-013's job (consumer); this feature
 only exposes the puzzles and hands off the set-building entry point to Feature
 013.
@@ -523,6 +563,13 @@ Additive persistence only:
 - **Engine upgrade (ADR-020)** → existing puzzles retain their generating
   engine/analysis metadata and stay valid for that engine; re-verification/
   regeneration is opt-in and versioned, never automatic.
+- **Generator-version advance** → an older completed pass is *outdated*: its
+  rows remain immutable and visible, and the row/per-game view offer the
+  engine-free Regenerate action (even at `0` rows). Regeneration re-runs the
+  same add-only assembly over the stored inputs — writing the newly-available
+  rows (notably one-move blunder correct-move rows) and recording the current
+  generator version — and never overwrites or deletes rows. A current-version
+  completed pass is never re-run by this action.
 - **Terminal/book positions** never appear (Feature-010 already excludes them
   from candidates).
 - **User blunder with no engine best move** at that ply (e.g. a book/terminal
@@ -633,6 +680,14 @@ reveal and the red-played/green-solution arrows).
     user's actual move is always marked by a red arrow on the drawable
     inspection board. Rows committed before the version-2 generator render
     unchanged (origin absent = tactical).
+12. A completed generation pass from an older `puzzleGeneratorVersion` is
+    outdated: its rows stay visible and immutable, and the Game Library row and
+    per-game puzzle view offer an engine-free "Regenerate puzzles" action (even
+    at a `0` row count, given a completed+current detection). Regeneration
+    re-runs the same add-only assembly over the stored inputs, adds the
+    previously-missing rows (e.g. one-move blunder puzzles) and records the
+    current generator version on the completed summary; a current-version
+    completed pass offers no Regenerate action.
 
 ## Testing requirements
 
