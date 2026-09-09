@@ -125,6 +125,11 @@ export interface GameRowInsights {
    * instead (absent ≠ zero, mirror of `missedTactics`).
    */
   readonly puzzleCount?: number;
+  /**
+   * Feature-013/014 mastered-puzzle aggregate over the Feature-012
+   * `puzzleAttempts` rows (that table is the source; Feature 012 itself
+   * never computes this — the Library stays a read model here).
+   */
   readonly masteredPuzzleCount?: number;
 }
 
