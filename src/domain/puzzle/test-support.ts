@@ -2,15 +2,19 @@
  * Feature 011 — deterministic verified-candidate puzzle fixtures (domain).
  *
  * Seven engine-free, hand-authored `VerifiedTacticalCandidate` fixtures
- * covering the spec's fixture kinds. Every board + UCI line is legal (the
- * repository's own `walkLine` replays each `bestPv` without error — asserted in
- * `test-support.test.ts`). Component and repository tests share this single
- * source via `puzzleFixture(kind)` / `puzzleRowFixture(kind)`.
+ * covering the spec's fixture kinds plus one one-move blunder "correct-move"
+ * fixture. Every board + UCI line is legal (the repository's own `walkLine`
+ * replays each `bestPv` without error — asserted in `test-support.test.ts`).
+ * Component and repository tests share this single source via
+ * `puzzleFixture(kind)` / `puzzleRowFixture(kind)` and the blunder
+ * `blunderRowFixture(kind)`.
  */
 
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import type { PuzzleRow } from './types';
-import { assemblePuzzle } from './assemble';
+import { assembleBlunderPuzzle, assemblePuzzle } from './assemble';
+import type { BlunderPuzzleInput } from './assemble';
 
 /** The seven deterministic fixture kinds (spec "Deterministic fixtures"). */
 export type PuzzleFixtureKind =
@@ -158,7 +162,7 @@ function specFor(kind: PuzzleFixtureKind): VerifiedTacticalCandidate {
     tacticalObjective: spec.tacticalObjective,
     candidateSolutionLength: spec.bestPv.length,
     verificationMetadata: metadataFor(kind),
-    detectionVersion: 10,
+    detectionVersion: DETECTION_VERSION,
     verificationStatus: 'verified',
     verificationSource: spec.verificationSource ?? 'tactical-search',
     difficulty: spec.difficulty,
@@ -187,4 +191,44 @@ export const puzzleFixtures: Readonly<Record<PuzzleFixtureKind, PuzzleRow>> = {
   'missed-opportunity': puzzleRowFixture('missed-opportunity'),
   'multi-move-combination': puzzleRowFixture('multi-move-combination'),
   'accepted-alternatives': puzzleRowFixture('accepted-alternatives'),
+};
+
+// --- One-move blunder "correct-move" fixture (origin 'blunder') --------------
+
+/** The deterministic one-move blunder fixture kinds (spec "Fixture puzzles"). */
+export type BlunderFixtureKind = 'correct-move';
+
+const BLUNDER_SPECS: Readonly<Record<BlunderFixtureKind, BlunderPuzzleInput>> = {
+  'correct-move': {
+    sourceGameId: 'fixture:blunder-correct-move',
+    sourcePly: 8,
+    analysisId: 'analysis:blunder-correct-move',
+    // The missed-mate position before White's move: the user played d2d3 and
+    // missed the engine's 4.Qxf7# — a one-move correct-move decision point.
+    startingFen: MATE_ONE_FEN,
+    userMovePlayed: 'd2d3',
+    bestMove: 'h5f7',
+    // Best-line evaluation of the position (the best move mates) vs the value
+    // of the played blunder: a deterministic swing the difficulty derives from.
+    evalBefore: { mate: 1, cp: null },
+    evalAfter: { cp: -300, mate: null },
+    detectionVersion: DETECTION_VERSION,
+  },
+};
+
+/** A deterministic qualifying-blunder input fixture (engine-free). */
+export function blunderPuzzleInputFixture(
+  kind: BlunderFixtureKind = 'correct-move',
+): BlunderPuzzleInput {
+  return { ...BLUNDER_SPECS[kind]! };
+}
+
+/** The blunder input fixture assembled into an immutable puzzle row. */
+export function blunderRowFixture(kind: BlunderFixtureKind = 'correct-move'): PuzzleRow {
+  return assembleBlunderPuzzle(blunderPuzzleInputFixture(kind), PUZZLE_FIXTURE_NOW);
+}
+
+/** Index of blunder fixture kind → assembled row (component/service tests). */
+export const blunderPuzzleFixtures: Readonly<Record<BlunderFixtureKind, PuzzleRow>> = {
+  'correct-move': blunderRowFixture('correct-move'),
 };

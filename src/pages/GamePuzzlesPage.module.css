@@ -112,6 +112,13 @@
   font-size: var(--font-size-sm);
 }
 
+/* The per-card "Show/Hide solution" reveal toggle (Feature-011 delta): a real,
+   keyboard-operable button, hidden text until pressed. */
+.reveal {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
 .provenance {
   color: var(--color-fg-muted);
   font-variant-numeric: tabular-nums;

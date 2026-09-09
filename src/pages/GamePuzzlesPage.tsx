@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { Link, useParams } from 'react-router-dom';
+import type { DrawShape } from '@lichess-org/chessground/draw';
 import { Chessboard } from '@/components/chessboard/Chessboard';
+import { uciMoveArrow } from '@/components/chessboard/boardShapes';
 import { useBoardSize, type UseBoardSize } from '@/components/chessboard/useBoardSize';
 import { Button } from '@/components/ui/Button';
 import { parsePositionFen, uciPvToSan } from '@/domain/chess';
@@ -17,7 +19,7 @@ import type {
   SummaryDetectionState,
   SummaryPuzzleState,
 } from '@/domain/analysis/summaryDerivation';
-import { difficultyBucketOf, objectiveLabel } from '@/domain/puzzle';
+import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import { DETECTION_VERSION } from '@/domain/tactics';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
@@ -428,10 +430,12 @@ const ACTION_LABELS: Readonly<Record<'generate' | 'resume' | 'retry', string>> =
 };
 
 /**
- * One read-only puzzle card: the starting position on the shared board
- * (interactive off, oriented to the side to move), the ADR-025 difficulty
- * bucket + score, the tactical objective, and the provenance / expected
- * solution in SAN. No solving, no hints, no attempt recording (Feature 012).
+ * One read-only puzzle card: the starting position on the shared board (pieces
+ * frozen, free-draw enabled for inspection, oriented to the side to move), the
+ * ADR-025 difficulty bucket + score, the objective, and the provenance. The
+ * solution is hidden behind a per-card "Show solution" reveal (SAN + the green
+ * solution arrow); the user's actual move is always shown as a red arrow and
+ * as text. No solving, no hints, no attempt recording (Feature 012).
  */
 function PuzzleCard({
   row,
@@ -440,16 +444,18 @@ function PuzzleCard({
   row: PuzzleRow;
   boardSize: UseBoardSize;
 }): React.JSX.Element {
+  const [revealed, setRevealed] = useState(false);
   const position = useMemo<Position | null>(() => {
     const parsed = parsePositionFen(row.startingFen);
     return parsed.ok ? parsed.position : null;
   }, [row.startingFen]);
   const bucket = difficultyBucketOf(row.difficulty);
-  const objective = objectiveLabel(row.tacticalObjective);
+  const objective = puzzleObjectiveLabel(row);
   const played = sanText(row.startingFen, [row.userMovePlayed]);
   const solution = sanText(row.startingFen, [...row.bestPv]);
-  // Accepted alternative first moves beyond the verified best move, as SAN
-  // (a move that is not accepted is incorrect — Feature 012/013 contract).
+  // Accepted alternative first moves beyond the best move, as SAN (a move that
+  // is not accepted is incorrect — Feature 012/013 contract). Tactical rows
+  // only; blunder rows have none.
   const alternatives = useMemo(() => {
     const distinct = [...new Set(row.acceptedFirstMoves ?? [])];
     if (distinct.length <= 1) {
@@ -460,13 +466,31 @@ function PuzzleCard({
       .map((uci) => sanText(row.startingFen, [uci]));
   }, [row]);
   const moveNumber = fullMoveOf(row.sourcePly);
+  // Board arrows: the user's actual (wrong) move is always marked red; the
+  // solution's first move is drawn green only after the solution is revealed.
+  const autoShapes = useMemo<readonly DrawShape[]>(() => {
+    const shapes: DrawShape[] = [];
+    const playedArrow = uciMoveArrow(row.userMovePlayed, 'red');
+    if (playedArrow) {
+      shapes.push(playedArrow);
+    }
+    if (revealed) {
+      const solutionArrow = uciMoveArrow(row.bestMove, 'green');
+      if (solutionArrow) {
+        shapes.push(solutionArrow);
+      }
+    }
+    return shapes;
+  }, [row.userMovePlayed, row.bestMove, revealed]);
 
   return (
     <article
       className={styles.card}
       data-testid={`puzzle-card-${row.sourcePly}`}
       role="region"
-      aria-label={`Puzzle at move ${moveNumber}, ply ${row.sourcePly}. ${bucket.name} difficulty, ${bucket.min} to ${bucket.max}. ${objective}. You played ${played}, solution ${solution}.`}
+      aria-label={`Puzzle at move ${moveNumber}, ply ${row.sourcePly}. ${bucket.name} difficulty, ${bucket.min} to ${bucket.max}. ${objective}. You played ${played}.${
+        revealed ? ` Solution ${solution}.` : ''
+      }`}
     >
       <div className={styles.boardArea} data-testid={`puzzle-board-${row.sourcePly}`}>
         {position ? (
@@ -474,7 +498,8 @@ function PuzzleCard({
             position={position}
             interactive={false}
             orientation={row.sideToMove}
-            drawable={false}
+            drawable
+            autoShapes={autoShapes}
             boardSize={boardSize}
           />
         ) : (
@@ -505,18 +530,32 @@ function PuzzleCard({
         <p className={styles.played} data-testid={`puzzle-played-${row.sourcePly}`}>
           You played <strong>{played}</strong>
         </p>
-        <p className={styles.solution} data-testid={`puzzle-solution-${row.sourcePly}`}>
-          Solution <strong>{solution}</strong>
-        </p>
-        {alternatives.length > 0 ? (
-          <p className={styles.alternatives} data-testid={`puzzle-accepted-${row.sourcePly}`}>
-            Also accepted:{' '}
-            {alternatives.map((san) => (
-              <span key={san} className={styles.acceptedChip}>
-                {san}
-              </span>
-            ))}
-          </p>
+        <Button
+          variant="secondary"
+          className={styles.reveal!}
+          data-testid={`puzzle-reveal-${row.sourcePly}`}
+          aria-pressed={revealed}
+          aria-label={revealed ? 'Hide solution' : 'Show solution'}
+          onClick={() => setRevealed((cur) => !cur)}
+        >
+          {revealed ? 'Hide solution' : 'Show solution'}
+        </Button>
+        {revealed ? (
+          <>
+            <p className={styles.solution} data-testid={`puzzle-solution-${row.sourcePly}`}>
+              Solution <strong>{solution}</strong>
+            </p>
+            {alternatives.length > 0 ? (
+              <p className={styles.alternatives} data-testid={`puzzle-accepted-${row.sourcePly}`}>
+                Also accepted:{' '}
+                {alternatives.map((san) => (
+                  <span key={san} className={styles.acceptedChip}>
+                    {san}
+                  </span>
+                ))}
+              </p>
+            ) : null}
+          </>
         ) : null}
       </div>
     </article>

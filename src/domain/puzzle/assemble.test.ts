@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { VerifiedTacticalCandidate } from '@/domain/tactics';
-import { assemblePuzzle } from './assemble';
+import type { EvalCpMate } from '@/domain/chess';
+import { assembleBlunderPuzzle, assemblePuzzle, blunderDifficultyOf } from './assemble';
 import { PUZZLE_GENERATOR_VERSION } from './types';
-import { puzzleFixture, puzzleRowFixture, PUZZLE_FIXTURE_NOW } from './test-support';
+import {
+  blunderPuzzleInputFixture,
+  blunderRowFixture,
+  puzzleFixture,
+  puzzleRowFixture,
+  PUZZLE_FIXTURE_NOW,
+} from './test-support';
 
 function candidateOverrides(
   overrides: Partial<VerifiedTacticalCandidate>,
@@ -122,5 +129,85 @@ describe('assemblePuzzle', () => {
     // Content-equal but never shared references (no cross-row aliasing).
     expect(row.bestPv).toEqual(other.bestPv);
     expect(row.bestPv).not.toBe(other.bestPv);
+  });
+});
+
+describe('assembleBlunderPuzzle', () => {
+  it('assembles an honest one-move blunder row (origin blunder, no tactical fields)', () => {
+    const input = blunderPuzzleInputFixture('correct-move');
+    const row = assembleBlunderPuzzle(input, PUZZLE_FIXTURE_NOW);
+
+    expect(row).toMatchObject({
+      sourceGameId: input.sourceGameId,
+      sourcePly: input.sourcePly,
+      analysisId: input.analysisId,
+      startingFen: input.startingFen,
+      userMovePlayed: input.userMovePlayed,
+      sideToMove: 'white',
+      bestMove: input.bestMove,
+      origin: 'blunder',
+      difficulty: blunderDifficultyOf(input.evalBefore, input.evalAfter),
+      puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
+      detectionVersion: input.detectionVersion,
+      createdAt: PUZZLE_FIXTURE_NOW,
+    });
+    // The whole solution is the single best move.
+    expect(row.bestPv).toEqual([input.bestMove]);
+    // No tactical-only fields and no candidate on an honest blunder row.
+    expect(row.tacticalObjective).toBeUndefined();
+    expect(row.verificationMetadata).toBeUndefined();
+    expect(row.candidateSolutionLength).toBeUndefined();
+    expect(row.acceptedFirstMoves).toBeUndefined();
+    expect(row.candidateGenerationVersion).toBeNull();
+    // Immutability: no scheduling/training state (ADR-031).
+    expect(row).not.toHaveProperty('state');
+    expect(row).not.toHaveProperty('due');
+  });
+
+  it('throws on an unparseable starting FEN', () => {
+    const input = { ...blunderPuzzleInputFixture('correct-move'), startingFen: 'not-a-fen' };
+    expect(() => assembleBlunderPuzzle(input, 1)).toThrow(/unparseable starting FEN/);
+  });
+});
+
+describe('blunderDifficultyOf', () => {
+  it('is monotonic: a bigger win-probability swing yields an EASIER (lower) score', () => {
+    // Tiny blunder-floor swing (~15 wp) → hard-ish correct-move puzzle.
+    const subtle: [EvalCpMate, EvalCpMate] = [
+      { cp: 200, mate: null },
+      { cp: 200 - 60, mate: null },
+    ];
+    // Huge swing (a hanging-queen-style blunder) → trivial-to-find move.
+    const huge: [EvalCpMate, EvalCpMate] = [
+      { cp: 1000, mate: null },
+      { cp: -1000, mate: null },
+    ];
+    const subtleScore = blunderDifficultyOf(subtle[0]!, subtle[1]!);
+    const hugeScore = blunderDifficultyOf(huge[0]!, huge[1]!);
+    expect(subtleScore).toBeGreaterThan(hugeScore);
+    // Huge swing clamps near the easy end; the score never leaves [0, 100].
+    expect(hugeScore).toBeLessThan(10);
+    expect(hugeScore).toBeGreaterThanOrEqual(0);
+  });
+
+  it('keeps scores in [0, 100] for degenerate/mate evaluations', () => {
+    // Mate values behave like extreme centipawns through the win-percent curve.
+    const mated: [EvalCpMate, EvalCpMate] = [
+      { cp: null, mate: -1 },
+      { cp: null, mate: 1 },
+    ];
+    const score = blunderDifficultyOf(mated[0]!, mated[1]!);
+    expect(score).toBeGreaterThanOrEqual(0);
+    expect(score).toBeLessThanOrEqual(100);
+
+    // A no-op (equal evals) would be a 100 — clamped to the max.
+    const equal = blunderDifficultyOf({ cp: 0, mate: null }, { cp: 0, mate: null });
+    expect(equal).toBe(100);
+  });
+
+  it('matches the assembled row difficulty exactly (deterministic)', () => {
+    const input = blunderPuzzleInputFixture('correct-move');
+    const row = blunderRowFixture('correct-move');
+    expect(row.difficulty).toBe(blunderDifficultyOf(input.evalBefore, input.evalAfter));
   });
 });

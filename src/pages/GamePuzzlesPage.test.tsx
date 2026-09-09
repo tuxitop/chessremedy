@@ -15,7 +15,7 @@ import {
   type GameAnalysisStatus,
 } from '@/domain/analysis';
 import { TEST_ENGINE } from '@/domain/analysis/test-support';
-import { puzzleFixtures } from '@/domain/puzzle/test-support';
+import { puzzleFixtures, blunderPuzzleFixtures } from '@/domain/puzzle/test-support';
 import type { Game } from '@/domain/chess/game';
 import type { PuzzleRow } from '@/domain/puzzle';
 import { DETECTION_VERSION } from '@/domain/tactics';
@@ -181,7 +181,7 @@ describe('Game Puzzles page (Feature 011, Stage E)', () => {
     await db.puzzles.clear();
   });
 
-  it('renders every puzzle card in ply order with a read-only board, difficulty, objective and provenance', async () => {
+  it('renders every puzzle card in ply order with a drawable board, difficulty, objective and provenance', async () => {
     await seedGame(completedSummary());
     await seedPuzzles([20, 6, 8]);
     renderPuzzles(null);
@@ -197,34 +197,94 @@ describe('Game Puzzles page (Feature 011, Stage E)', () => {
       'puzzle-card-20',
     ]);
 
-    // Boards: one read-only Chessboard per puzzle, none interactive.
+    // Boards: one Chessboard per puzzle, pieces frozen but drawable for
+    // inspection (free-draw + arrows). The user's played move is always marked
+    // with a red arrow; the solution is hidden, so no green arrow yet.
     expect(screen.getAllByTestId(/^puzzle-board-/)).toHaveLength(3);
     expect(chessboardProps).toHaveLength(3);
     for (const props of chessboardProps) {
       expect(props.interactive).toBe(false);
-      expect(props.drawable).toBe(false);
+      expect(props.drawable).toBe(true);
       expect(props.onMove).toBeUndefined();
       expect(props.onPromotionRequired).toBeUndefined();
       expect(props.orientation).toBe('white');
+      expect(props.autoShapes).toEqual([
+        { orig: expect.any(String), dest: expect.any(String), brush: 'red' },
+      ]);
     }
 
-    // mate-one (ply 6): Move 4, Trivial · 12, Forced mate, You played d3,
-    // solution Qxf7…, no accepted alternatives.
+    // mate-one (ply 6): Move 4, Trivial · 12, Forced mate, You played d3.
+    // The solution SAN is hidden behind the per-card reveal until pressed.
     const mateOne = within(screen.getByTestId('puzzle-card-6'));
     expect(mateOne.getByTestId('puzzle-objective-6')).toHaveTextContent('Forced mate');
     expect(mateOne.getByTestId('puzzle-difficulty-6')).toHaveTextContent('Trivial · 12');
     expect(mateOne.getByTestId('puzzle-provenance-6')).toHaveTextContent('Move 4 (ply 6)');
     expect(mateOne.getByTestId('puzzle-played-6')).toHaveTextContent('You played d3');
-    expect(mateOne.getByTestId('puzzle-solution-6')).toHaveTextContent(/Qxf7/);
+    expect(mateOne.queryByTestId('puzzle-solution-6')).not.toBeInTheDocument();
     expect(mateOne.queryByTestId('puzzle-accepted-6')).not.toBeInTheDocument();
+    const reveal6 = mateOne.getByTestId('puzzle-reveal-6');
+    expect(reveal6).toHaveTextContent('Show solution');
+    expect(reveal6).toHaveAttribute('aria-pressed', 'false');
 
-    // accepted-alternatives (ply 20): Move 11, Medium · 52, Winning material,
-    // and the extra accepted first move rendered as a read-only chip.
+    fireEvent.click(reveal6);
+    const revealedMateOne = within(screen.getByTestId('puzzle-card-6'));
+    expect(await waitFor(() => revealedMateOne.getByTestId('puzzle-solution-6'))).toHaveTextContent(
+      /Qxf7/,
+    );
+    expect(revealedMateOne.getByTestId('puzzle-reveal-6')).toHaveTextContent('Hide solution');
+    expect(revealedMateOne.getByTestId('puzzle-reveal-6')).toHaveAttribute('aria-pressed', 'true');
+    expect(revealedMateOne.queryByTestId('puzzle-accepted-6')).not.toBeInTheDocument();
+
+    // Revealing adds the green solution arrow to that card's board.
+    const redAndGreen = chessboardProps[chessboardProps.length - 1];
+    expect(redAndGreen?.autoShapes).toEqual([
+      { orig: 'd2', dest: 'd3', brush: 'red' },
+      { orig: 'h5', dest: 'f7', brush: 'green' },
+    ]);
+
+    // The reveal is per card: the other cards keep their solution hidden.
+    const material = within(screen.getByTestId('puzzle-card-8'));
+    expect(material.queryByTestId('puzzle-solution-8')).not.toBeInTheDocument();
+
+    // accepted-alternatives (ply 20): the extra accepted first moves are part
+    // of the solution, so they appear only after that card's own reveal.
     const alternatives = within(screen.getByTestId('puzzle-card-20'));
     expect(alternatives.getByTestId('puzzle-objective-20')).toHaveTextContent('Winning material');
     expect(alternatives.getByTestId('puzzle-difficulty-20')).toHaveTextContent('Medium · 52');
     expect(alternatives.getByTestId('puzzle-provenance-20')).toHaveTextContent('Move 11 (ply 20)');
-    expect(alternatives.getByTestId('puzzle-accepted-20')).toHaveTextContent('Also accepted');
+    expect(alternatives.queryByTestId('puzzle-accepted-20')).not.toBeInTheDocument();
+    fireEvent.click(alternatives.getByTestId('puzzle-reveal-20'));
+    const revealedAlternatives = within(screen.getByTestId('puzzle-card-20'));
+    expect(
+      await waitFor(() => revealedAlternatives.getByTestId('puzzle-accepted-20')),
+    ).toHaveTextContent('Also accepted');
+  });
+
+  it('renders a one-move blunder correct-move puzzle with its own objective label and reveal', async () => {
+    await seedGame(completedSummary());
+    await puzzlesRepository.addIfAbsent([
+      { ...blunderPuzzleFixtures['correct-move'], sourceGameId: GAME.id, sourcePly: 12 },
+    ]);
+    renderPuzzles(null);
+
+    const note = await screen.findByTestId('puzzles-state-note');
+    expect(note).toHaveTextContent('1 puzzle');
+
+    const card = within(screen.getByTestId('puzzle-card-12'));
+    expect(card.getByTestId('puzzle-objective-12')).toHaveTextContent('Find the best move');
+    expect(card.getByTestId('puzzle-difficulty-12')).toBeVisible();
+    expect(card.getByTestId('puzzle-played-12')).toHaveTextContent('You played d3');
+    // Blunder rows carry no accepted alternatives and hide the one-move
+    // solution until the per-card reveal.
+    expect(card.queryByTestId('puzzle-accepted-12')).not.toBeInTheDocument();
+    expect(card.queryByTestId('puzzle-solution-12')).not.toBeInTheDocument();
+
+    fireEvent.click(card.getByTestId('puzzle-reveal-12'));
+    const revealed = within(screen.getByTestId('puzzle-card-12'));
+    expect(await waitFor(() => revealed.getByTestId('puzzle-solution-12'))).toHaveTextContent(
+      /Qxf7/,
+    );
+    expect(revealed.getByTestId('puzzle-reveal-12')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows a completed generation with zero puzzles as a real "0 puzzles", never a list', async () => {

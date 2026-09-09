@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { walkLine } from '@/domain/tactics';
-import { assemblePuzzle } from './assemble';
+import { assembleBlunderPuzzle, assemblePuzzle } from './assemble';
 import {
   PUZZLE_FIXTURE_KINDS,
   puzzleFixture,
   puzzleRowFixture,
   PUZZLE_FIXTURE_NOW,
+  blunderPuzzleInputFixture,
+  blunderRowFixture,
 } from './test-support';
 
 describe('puzzle fixtures', () => {
@@ -51,5 +53,14 @@ describe('puzzle fixtures', () => {
       expect(d).toBeGreaterThanOrEqual(0);
       expect(d).toBeLessThanOrEqual(100);
     }
+  });
+
+  it('assembles the blunder fixture legally and deterministically', () => {
+    const input = blunderPuzzleInputFixture('correct-move');
+    const walked = walkLine(input.startingFen, [input.bestMove]);
+    expect(walked.ok, walked.ok ? '' : walked.message).toBe(true);
+    expect(blunderRowFixture('correct-move')).toEqual(
+      assembleBlunderPuzzle(input, PUZZLE_FIXTURE_NOW),
+    );
   });
 });

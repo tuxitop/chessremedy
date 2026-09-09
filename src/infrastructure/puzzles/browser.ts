@@ -2,14 +2,16 @@
  * Browser puzzle-generation service assembly (Feature 011, Stage C).
  *
  * Wires the Feature-011 repositories (schema-v8 `puzzles`, Feature-010
- * `puzzleCandidates`, per-analysis summaries) into a `PuzzleGenerationService`
- * with a `Date.now`-based clock. The service is **engine-free by construction**
- * (no engine service, no ADR-018 cache), so this assembly is synchronous and
- * needs no engine initialisation — unlike the tactical-detection assembly.
+ * `puzzleCandidates`, the per-analysis `MoveAnalysis` records, per-analysis
+ * summaries) into a `PuzzleGenerationService` with a `Date.now`-based clock.
+ * The service is **engine-free by construction** (no engine service, no
+ * ADR-018 cache), so this assembly is synchronous and needs no engine
+ * initialisation — unlike the tactical-detection assembly.
  */
 
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
+import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { PuzzleGenerationService } from './puzzleGenerationService';
 
@@ -17,6 +19,7 @@ export function createBrowserPuzzleGenerationService(): PuzzleGenerationService 
   return new PuzzleGenerationService({
     puzzles: puzzlesRepository,
     candidates: puzzleCandidatesRepository,
+    analyses: analysesRepository,
     summaries: summariesRepository,
   });
 }

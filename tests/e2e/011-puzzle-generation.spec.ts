@@ -128,10 +128,15 @@ test.describe('Puzzle generation (Feature 011)', () => {
     await expect(card.getByTestId('puzzle-board-6')).toBeVisible();
     await expect(card.getByTestId('puzzle-board-6').locator('cg-board')).toBeVisible();
 
-    // Provenance: you played 4.d3; solution is the mate Qxf7#.
+    // Provenance: you played 4.d3; solution is the mate Qxf7#. The solution is
+    // hidden behind the per-card "Show solution" reveal until pressed.
     await expect(card.getByTestId('puzzle-provenance-6')).toContainText('Move 4');
     await expect(card.getByTestId('puzzle-played-6')).toContainText('d3');
+    await expect(card.getByTestId('puzzle-solution-6')).not.toBeVisible();
+    await expect(card.getByTestId('puzzle-reveal-6')).toContainText('Show solution');
+    await card.getByTestId('puzzle-reveal-6').click();
     await expect(card.getByTestId('puzzle-solution-6')).toContainText('Qxf7#');
+    await expect(card.getByTestId('puzzle-reveal-6')).toContainText('Hide solution');
 
     // Objective + difficulty bucket/score are rendered read-only.
     await expect(card.getByTestId('puzzle-objective-6')).toHaveText('Forced mate');

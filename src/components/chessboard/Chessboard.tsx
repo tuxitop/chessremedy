@@ -145,6 +145,80 @@ export function isPromotionDestination(position: ChessOpsPosition, from: Key, de
   return mover !== undefined && mover.role === 'pawn' && mover.color === position.turn;
 }
 
+/** Whether Chessground should bind board events at all (move + draw input). */
+function eventsBound(p: Pick<LiveProps, 'interactive' | 'drawable'>): boolean {
+  return p.interactive || p.drawable;
+}
+
+/**
+ * Chessground interaction for one board state:
+ *
+ * - `interactive` boards move pieces as today;
+ * - a board that is NOT interactive but IS drawable stays event-bound for
+ *   inspection / free-drawing while every piece is frozen (no move, drag,
+ *   select or premove) — the puzzle-view "drawable inspection" mode;
+ * - a board that is neither interactive nor drawable is fully viewOnly.
+ */
+function interactionConfig(
+  p: Pick<LiveProps, 'interactive' | 'drawable' | 'moving' | 'showLegalMoves' | 'dests'>,
+): {
+  readonly viewOnly: boolean;
+  readonly movable: NonNullable<Config['movable']>;
+} {
+  if (!eventsBound(p)) {
+    // Fully inert: Chessground binds nothing; the movable shape is irrelevant.
+    return {
+      viewOnly: true,
+      movable: { free: false, color: 'both', showDests: false, dests: new Map() },
+    };
+  }
+  if (!p.interactive) {
+    // Warm inspection board (drawable on, pieces frozen).
+    return {
+      viewOnly: false,
+      movable: { free: false, color: 'both', showDests: false, dests: new Map() },
+    };
+  }
+  const frozen = !p.moving;
+  return {
+    viewOnly: false,
+    movable: {
+      free: false,
+      color: 'both',
+      showDests: p.showLegalMoves && !frozen,
+      dests: frozen ? new Map() : p.dests,
+    },
+  };
+}
+
+/**
+ * Explicit draggable / selectable / premove / predrop toggles for warm boards.
+ * Chessground merges (never un-sets) omitted sub-objects, so a board that
+ * passed through the warm-static state must be told to re-enable its piece
+ * input when it returns to `interactive`.
+ */
+function pieceInputControls(p: Pick<LiveProps, 'interactive'>): {
+  readonly draggable: { readonly enabled: boolean };
+  readonly selectable: { readonly enabled: boolean };
+  readonly premovable: { readonly enabled: boolean };
+  readonly predroppable: { readonly enabled: boolean };
+} {
+  if (p.interactive) {
+    return {
+      draggable: { enabled: true },
+      selectable: { enabled: true },
+      premovable: { enabled: true },
+      predroppable: { enabled: false },
+    };
+  }
+  return {
+    draggable: { enabled: false },
+    selectable: { enabled: false },
+    premovable: { enabled: false },
+    predroppable: { enabled: false },
+  };
+}
+
 /**
  * Chessboard wrapper around `@lichess-org/chessground`.
  *
@@ -237,24 +311,16 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
       return;
     }
     const p = livePropsRef.current;
-    const frozen = !p.interactive || !p.moving;
+    const interaction = interactionConfig(p);
     api.set({
       fen: p.fen,
       turnColor: p.turnColor,
       check: p.check,
       orientation: p.orientation,
       coordinates: p.coordinates,
-      viewOnly: !p.interactive,
-      ...(p.interactive
-        ? {
-            movable: {
-              free: false,
-              color: 'both',
-              showDests: p.showLegalMoves && !frozen,
-              dests: frozen ? new Map() : p.dests,
-            },
-          }
-        : {}),
+      viewOnly: interaction.viewOnly,
+      movable: interaction.movable,
+      ...(interaction.viewOnly ? {} : pieceInputControls(p)),
       drawable: { enabled: p.drawable, brushes: DRAW_BRUSHES },
       animation: { enabled: p.animation },
       highlight: {
@@ -292,34 +358,37 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
       return undefined;
     }
     const p = livePropsRef.current;
+    const interaction = interactionConfig(p);
     const config: Config = {
       fen: p.fen,
       turnColor: p.turnColor,
       check: p.check,
       orientation: p.orientation,
       coordinates: p.coordinates,
-      viewOnly: !p.interactive,
+      viewOnly: interaction.viewOnly,
       movable: {
-        free: false,
-        color: 'both',
-        showDests: p.showLegalMoves,
-        dests: p.dests,
-        events: {
-          after: (orig: Key, dest: Key) => {
-            const pos = positionRef.current;
-            if (isPromotionDestination(pos, orig, dest)) {
-              if (pendingPromotionRef.current) {
-                return;
-              }
-              pendingPromotionRef.current = { from: orig, to: dest };
-              freezeForPromotion();
-              onPromotionRef.current?.({ from: orig, to: dest });
-              return;
+        ...interaction.movable,
+        ...(p.interactive
+          ? {
+              events: {
+                after: (orig: Key, dest: Key) => {
+                  const pos = positionRef.current;
+                  if (isPromotionDestination(pos, orig, dest)) {
+                    if (pendingPromotionRef.current) {
+                      return;
+                    }
+                    pendingPromotionRef.current = { from: orig, to: dest };
+                    freezeForPromotion();
+                    onPromotionRef.current?.({ from: orig, to: dest });
+                    return;
+                  }
+                  onMoveRef.current?.(orig, dest);
+                },
+              },
             }
-            onMoveRef.current?.(orig, dest);
-          },
-        },
+          : {}),
       },
+      ...(interaction.viewOnly ? {} : pieceInputControls(p)),
       drawable: { enabled: p.drawable, brushes: DRAW_BRUSHES },
       animation: { enabled: p.animation },
       highlight: { lastMove: Boolean(p.lastMove), check: true },
