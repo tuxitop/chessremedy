@@ -6,12 +6,14 @@ import { analysisJobsRepository } from './analysis-jobs-repository';
 import { summariesRepository } from './summaries-repository';
 import { puzzleCandidatesRepository } from './candidates-repository';
 import { puzzlesRepository } from './puzzles-repository';
+import { attemptsRepository } from './attempts-repository';
 import { DexieEngineAnalysisCache } from './engine-cache-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { makeRecords, TEST_ENGINE } from '@/domain/analysis/test-support';
 import { createAnalysisJob } from '@/domain/analysis';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
+import { attemptRowFixture, cycleContextFixture } from '@/domain/training/test-support';
 import { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from '@/domain/tactics';
 
 function candidateRow(gameId: string, analysisId: string, sourcePly: number) {
@@ -64,9 +66,10 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     await db.analysisSummaries.clear();
     await db.puzzleCandidates.clear();
     await db.puzzles.clear();
+    await db.puzzleAttempts.clear();
   });
 
-  it('removes game-scoped MoveAnalysis, jobs, summaries, candidates and puzzles but retains the engine cache', async () => {
+  it('removes game-scoped MoveAnalysis, jobs, summaries, candidates, puzzles and attempts but retains the engine cache', async () => {
     const game = fixtureGame('cc-blitz-clean');
     await gamesRepository.saveGame(game);
     const other = fixtureGame('li-rapid-clean');
@@ -98,6 +101,26 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
       puzzleRow(game.id, job.id, 9),
     ]);
 
+    // Feature-012 attempt rows for the deleted game's puzzles (two
+    // presentations of ply 7, one of ply 9), derived through the real
+    // buildAttemptRow over those same puzzle rows.
+    for (const attempt of [
+      attemptRowFixture({
+        row: puzzleRow(game.id, job.id, 7),
+        context: cycleContextFixture('cycle:deleted', '', 1),
+      }),
+      attemptRowFixture({
+        row: puzzleRow(game.id, job.id, 7),
+        context: cycleContextFixture('cycle:deleted', '', 2),
+      }),
+      attemptRowFixture({
+        row: puzzleRow(game.id, job.id, 9),
+        context: cycleContextFixture('cycle:deleted', '', 1),
+      }),
+    ]) {
+      await attemptsRepository.addAttempt(attempt);
+    }
+
     // …and identical rows for a different game that must survive.
     const otherJob = createAnalysisJob(other.id, TEST_ENGINE, 6, 1);
     const otherSummary = buildAnalysisSummary(
@@ -114,6 +137,12 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     });
     await puzzleCandidatesRepository.bulkPutForAnalysis([candidateRow(other.id, otherJob.id, 1)]);
     await puzzlesRepository.addIfAbsent([puzzleRow(other.id, otherJob.id, 1)]);
+    await attemptsRepository.addAttempt(
+      attemptRowFixture({
+        row: puzzleRow(other.id, otherJob.id, 1),
+        context: cycleContextFixture('cycle:other', '', 1),
+      }),
+    );
 
     const cache = new DexieEngineAnalysisCache();
     await cache.put('shared-fen-key', {
@@ -135,6 +164,9 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     expect(await summariesRepository.getForAnalysis(job.id)).toBeUndefined();
     expect(await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id)).toEqual([]);
     expect(await puzzlesRepository.countForGame(game.id)).toBe(0);
+    expect(await attemptsRepository.listForCycle('cycle:deleted')).toEqual([]);
+    expect(await attemptsRepository.listForPuzzle(`${game.id}:7`)).toEqual([]);
+    expect(await attemptsRepository.listForPuzzle(`${game.id}:9`)).toEqual([]);
     // The engine cache is position-keyed and shared — never purged.
     expect(await cache.count()).toBe(1);
     // Another game's derived rows are untouched.
@@ -144,5 +176,8 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
       await puzzleCandidatesRepository.listForGameAndAnalysis(other.id, otherJob.id),
     ).toHaveLength(1);
     expect(await puzzlesRepository.countForGame(other.id)).toBe(1);
+    expect((await attemptsRepository.listForCycle('cycle:other')).map((a) => a.puzzleId)).toEqual([
+      `${other.id}:1`,
+    ]);
   });
 });

@@ -123,14 +123,16 @@ games, moves, analyses, analysis summaries, puzzle candidates, puzzles,
 training sets, training cycles, puzzle attempts, import jobs, analysis
 jobs, application settings, sync metadata.
 
-The schema is **versioned, currently v8** (additive): v4 added the
+The schema is **versioned, currently v9** (additive): v4 added the
 analysis tables; v5 added the structured time-control value
 (base/increment/days/estimate/display, `domain/time-control.md`) to the
 games row while retaining the verbatim `timeControl` string and the indexed
 `normalizedTimeControl` category; v6 backfills the Library full-move count
 and board-detectable end; v7 adds the Feature-010 game-scoped derived
 tables `analysisSummaries` and `puzzleCandidates`; v8 adds the Feature-011
-`puzzles` table.
+`puzzles` table; v9 adds the Feature-012 `puzzleAttempts` table (one
+immutable row per puzzle presentation, indexed for per-cycle/per-puzzle
+reads and the game-deletion cascade).
 
 ### Data ownership & deletion
 

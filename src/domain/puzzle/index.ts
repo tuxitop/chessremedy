@@ -7,6 +7,8 @@ export { assemblePuzzle, assembleBlunderPuzzle, blunderDifficultyOf } from './as
 export type { BlunderPuzzleInput } from './assemble';
 export { difficultyBucketOf, DIFFICULTY_BUCKETS } from './buckets';
 export type { DifficultyBucket, DifficultyBucketName } from './buckets';
+export { puzzleIdOf, parsePuzzleId } from './id';
+export type { PuzzleIdParseResult } from './id';
 export {
   objectiveLabel,
   OBJECTIVE_LABELS,

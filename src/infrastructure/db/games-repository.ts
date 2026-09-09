@@ -19,8 +19,10 @@ import {
 import { parseTimeControl, type TimeControl } from '@/domain/chess/timeControl';
 import { gameEndOf, type GameTermination } from '@/domain/chess/gameEnd';
 import type { GameSource } from '@/domain/chess/gameSource';
+import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { Color } from 'chessops/types';
+import { DexiePuzzleAttemptsRepository } from './attempts-repository';
 import { db, type ChessRemedyDatabase } from './database';
 
 /** Persisted row — scalar Game metadata (authoritative) + verbatim PGN. */
@@ -234,8 +236,12 @@ export class DexieGamesRepository implements GamesRepository {
    * Batch delete inside one transaction (Game Library). Game-scoped derived
    * rows follow their source game (ARCHITECTURE.md §7): Feature-008 analysis
    * records and analysis jobs, Feature-010 per-analysis summaries and puzzle
-   * candidates, plus Feature-011 puzzles are removed here. The independent
-   * FEN-keyed engine cache (ADR-018) is deliberately NOT touched.
+   * candidates, plus Feature-011 puzzles are removed here. Feature-012 puzzle
+   * attempts follow their puzzle: the deleted games' puzzle ids are derived
+   * from the `puzzles` rows (`puzzleIdOf(sourceGameId, sourcePly)`) and the
+   * attempts table is cleared by `puzzleId` (no attempt may outlive its
+   * source game). The independent FEN-keyed engine cache (ADR-018) is
+   * deliberately NOT touched.
    */
   async deleteGames(ids: readonly GameId[]): Promise<void> {
     if (ids.length === 0) {
@@ -251,6 +257,7 @@ export class DexieGamesRepository implements GamesRepository {
         this.database.analysisSummaries,
         this.database.puzzleCandidates,
         this.database.puzzles,
+        this.database.puzzleAttempts,
       ],
       async () => {
         await this.database.games.bulkDelete(gameIds);
@@ -258,7 +265,13 @@ export class DexieGamesRepository implements GamesRepository {
         await this.database.analysisJobs.where('gameId').anyOf(gameIds).delete();
         await this.database.analysisSummaries.where('gameId').anyOf(gameIds).delete();
         await this.database.puzzleCandidates.where('sourceGameId').anyOf(gameIds).delete();
+        const puzzleRows = await this.database.puzzles
+          .where('sourceGameId')
+          .anyOf(gameIds)
+          .toArray();
         await this.database.puzzles.where('sourceGameId').anyOf(gameIds).delete();
+        const puzzleIds = puzzleRows.map((row) => puzzleIdOf(row.sourceGameId, row.sourcePly));
+        await new DexiePuzzleAttemptsRepository(this.database).deleteForPuzzleIds(puzzleIds);
       },
     );
   }
