@@ -59,6 +59,25 @@ Out of scope (owned elsewhere):
 - Blunder-difficulty re-rating from solver data (Feature 013's concern).
 - Cross-game FEN dedup or transposition merging (Feature-011 V1 rule).
 
+### Interim practice host (temporary, superseded by Feature 013)
+
+Until Feature 013 ships, a **temporary `/puzzles` practice host** (introduced
+with Feature 012, replacing the placeholder page) surfaces Feature-012's
+`SolveScreen` over a chosen game's Feature-011 puzzle rows. It lets a user
+solve real generated puzzles today while Feature 013 is not yet built.
+
+- The host lists the games that own at least one puzzle row and presents each
+  chosen game's rows (both tactical and blunder origins) in `sourcePly` order
+  through the standard Feature-012 solving flow.
+- Attempts are recorded through a **non-persisting, in-memory recorder**:
+  practice sessions are **not** training history and write **no** attempt rows.
+  Practice must never write to the `puzzleAttempts` table under its ephemeral
+  pseudo cycle ids (`practice:…`).
+- This host is **not** the Feature-013 cycle host: it is an owner-directed
+  interim surface only. Feature 013 supersedes it and removes the host, its
+  `/puzzles` entry and its practice copy when the real cycle host lands (see
+  Feature 013).
+
 ## Solving-session model
 
 A **solving session** is one contiguous run of the solving screen over an

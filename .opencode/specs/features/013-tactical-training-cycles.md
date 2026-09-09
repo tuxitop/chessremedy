@@ -39,6 +39,19 @@ The model is defined in `specs/domain/tactical-training.md`.
   puzzles.
 - No FSRS dependency; no scheduling state on the Puzzle model.
 
+## Interim `/puzzles` practice host supersession
+
+Before this feature ships, Feature 012 introduced a **temporary `/puzzles`
+practice host**: an owner-directed interim surface that drives Feature-012's
+`SolveScreen` over a chosen game's puzzle rows with a **non-persisting
+in-memory recorder** (practice sessions are not training history and write no
+attempt rows). When this feature's real cycle host lands it **replaces and
+removes** that interim host — the `/puzzles` page, its practice copy and its
+ephemeral pseudo cycle ids — and takes over the 'Puzzles' nav entry. Real
+cycle sessions persist attempts under **real cycle ids** through the
+Feature-012 recorder/host contract (`SolveScreen` +
+`PuzzleAttemptRecorderLike`), exactly as specified here and in Feature 012.
+
 ## Cycle semantics (summary)
 
 - Completing the set finishes the cycle (`completed`).
