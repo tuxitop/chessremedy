@@ -5,8 +5,9 @@
 Deliver the puzzle **solving experience** for the user's personalized
 puzzles (both Feature-011 origins): presenting a puzzle from a fixed
 training row, handling the user's moves, hints, retries and skips,
-deciding the outcome, recording that outcome as a `PuzzleAttempt`, and
-offering an engine-free post-solve analysis of the completed puzzle.
+deciding the outcome and recording it as a `PuzzleAttempt`, showing the
+result in the move list, and offering an opt-in post-finish engine that
+analyses the completed puzzle's end position.
 
 Puzzles are trained as part of a fixed **training set** and an active
 **training cycle** (Feature 013 / ADR-031). This feature is the solving
@@ -41,8 +42,10 @@ In scope:
 - Outcome determination and the end-of-presentation write of one
   `PuzzleAttempt` row (result, solving time, wrong-move count, hints
   used).
-- The post-solve analysis step (a read-only use of the shared
-  analysis-board surface in stored mode — Feature 006 / ADR-033).
+- The single-view solve surface (plan 012b): a drawable board, a move
+  list that carries the game prefix with wrong moves as variations,
+  in-list results, and an opt-in post-finish engine on the shared
+  analysis-board surface (ADR-033).
 
 Out of scope (owned elsewhere):
 
@@ -108,50 +111,73 @@ next puzzle or cycle results — never to a per-puzzle scheduler
 ### Entering and leaving a presentation
 
 - A presentation starts when the host hands the next puzzle row to the
-  solving screen. The board shows `startingFen` oriented to
-  `sideToMove` (always the user's color, Feature-011), the objective
+  solving screen. The board shows the puzzle position (the game prefix
+  ends at `startingFen`) oriented to `sideToMove` (always the user's
+  color, Feature-011) inside the game-context move list; the objective
   chip (the tactical objective, or the fixed "Find the best move" label
-  for a blunder row), and a fresh timer/counters. Difficulty is not
-  shown while solving (it would leak cycle ordering, which is difficulty
-  ascending by default).
+  for a blunder row) is shown, the solve clock only when the "Show
+  puzzle timer" setting is on, and counters are never shown. Difficulty
+  is not shown while solving (it would leak cycle ordering, which is
+  difficulty ascending by default).
 - The presentation ends when one of the outcomes in "Outcomes" occurs.
 - Leaving the session mid-presentation (navigate away, session end)
   **discards** the presentation: no attempt row is written and the
   puzzle stays unanswered, so a resumed cycle re-presents it as the next
-  unanswered puzzle (Feature 013). The post-solve solution is never
-  shown for a discarded presentation (it would spoil the future
-  re-presentation).
+  unanswered puzzle (Feature 013). The stored solution is never shown
+  for a discarded presentation (it would spoil the future
+  re-presentation); it is revealed only by finishing the presentation.
 
 ## User-facing behavior
 
-Required capabilities on the solving screen:
+The solving surface reads like a chess analysis page (plan 012b single-view
+redesign). Required capabilities on the solving screen:
 
 - responsive Chessground board (shared wrapper), oriented to the side to
-  move; mouse and touch move entry.
-- move-list transport over the moves played in the current presentation:
-  **start**, **previous**, **next**, **end** (these navigate the current
-  presentation's move line only — they never move between puzzles).
-- **restart** — clears the current presentation's move line (and any
-  revealed hint content) and returns the board to `startingFen`; it does
+  move, **drawable** throughout (solving and inspection) with mouse and
+  touch move entry plus the promotion dialog;
+- a move list inside the right panel built from the **game prefix** (the
+  stored `MoveAnalysis` records before the puzzle's `sourcePly`) with the
+  played/solution moves on the mainline and each wrong attempt appended as
+  a **variation** under its decision node — no classification glyphs, no
+  per-ply eval chips; the list auto-scrolls to the active move;
+- move-list transport over the whole line (game prefix + played + revealed
+  solution): **start**, **previous**, **next**, **end** plus keyboard
+  `←`/`→` (Shift for first/last) exactly like Analysis/Review;
+- **restart** — clears the current presentation's move line and any
+  revealed hint content and returns the board to the puzzle start; it does
   not end the presentation, does not reset the wrong-move count, hint
-  counters or the solving clock, and does not create a new attempt
-  (presentation-scoped replay).
-- **hint** — requests the next hint level (see Hints).
-- **skip** — ends the presentation with result `skipped` and moves on.
-- **give up / show solution** — ends the presentation with result
-  `failed` and opens the post-solve analysis step.
-- **analyze** — after any definite outcome, opens the post-solve
-  analysis step; on a `failed` outcome the step opens automatically.
-- **continue** — closes the post-solve step and returns control to the
-  cycle host (next puzzle, configured re-presentation, or cycle
-  results). Available on every outcome screen so the user never loses
-  the just-recorded outcome.
-- wrong moves must be identified as incorrect (see Solving rules).
+  counters or the solving clock, and does not create a new attempt. It
+  appears once the user has started playing (a move or a hint);
+- **hint** — requests the next hint level (see Hints). Hints never fail
+  the puzzle and a second press does not fail it either;
+- **view solution** (= give up) — ends the presentation with result
+  `failed` and **plays the stored solution out** on the mainline; the
+  engine then analyzes the solution end;
+- **in-list results** — a success shows a green **Success**, a solve after
+  any hint and/or wrong move shows **Solved with hints** (green), and a
+  give-up/view-solution shows **Failed** (red), all inside the move-list
+  container (no page swap, no separate outcome/post-solve panel); neither
+  hint/wrong-move counters nor a timer are shown in the result area;
+- **next puzzle** — after any finish the view stays put and offers a
+  **Next puzzle** control (the host advances the cursor);
+- **post-finish engine** — once the puzzle is finished (any finish) an
+  engine toggle becomes available (off by default): turning it on analyzes
+  the final board position exactly like the analysis page (engine lines +
+  settings), and the evaluation bar appears in its **reserved** column
+  without shifting the layout;
+- **solve clock** — a Settings row ("Show puzzle timer", default hidden)
+  controls whether the solve clock is rendered; when off it is not rendered
+  at all;
+- wrong moves must be identified as incorrect (see Solving rules): a red
+  arrow marker plus a non-visual announcement (never color alone);
+- there is **no keyboard text-move entry** (the KeyboardMoveEntry and its
+  controller path were removed); the board (mouse/touch) plus the promotion
+  dialog are the only move paths, and every action remains a labelled
+  control reachable by keyboard and touch.
 
-The exact layout (board + objective chip + transport + outcome summary)
-is a UI decision; the behaviors above are required. Keyboard shortcuts
-may accelerate these actions but must never be their only trigger
-(AGENTS.md).
+The exact layout (board + objective + move list + engine area) is a UI
+decision; the behaviors above are required. Keyboard shortcuts may
+accelerate these actions but must never be their only trigger (AGENTS.md).
 
 ## Solving rules & answer evaluation
 
@@ -196,18 +222,18 @@ identified as incorrect (visual marker plus non-visual announcement —
 never color alone), the wrong-move count is incremented, and the move
 does **not** advance the exercise: the board returns to the decision
 point and the user may try again (auto-retry, per PRODUCT §10). Wrong
-moves tried are kept in presentation memory for the post-solve step
-("you tried X") but never enter the recorded move line. There is no
+moves tried are kept in presentation memory and rendered as move-list
+variations under their decision node ("you tried X") but never enter the
+recorded move line. There is no
 fixed wrong-move limit in V1: the user decides between solving,
-requesting hints, giving up and skipping. Illegal moves cannot be
-played via the board (Chessground constrains to legal moves); an illegal
-entry through a keyboard/text path is rejected with feedback and is not
-counted as a wrong move.
+requesting hints, viewing the solution and moving on. Illegal moves
+cannot be played via the board (Chessground constrains to legal moves);
+an illegal submission is rejected with feedback and is not counted as a
+wrong move.
 
 Replaying the user's own historical move (`userMovePlayed`) is almost
 always a wrong answer (the puzzle exists because that move was a miss or
-blunder) and is handled like any other wrong move; its stored
-explanation appears in the post-solve step.
+blunder) and is handled like any other wrong move.
 
 ## Hints
 
@@ -220,7 +246,12 @@ once the first move is solved, further hints are unavailable.
 - One **hint** control advances one level per press through the enabled
   levels, starting at the set's configured first-hint threshold and
   skipping disabled levels (hint-level availability is set configuration
-  from `domain/tactical-training.md`, provided by the host).
+  from `domain/tactical-training.md`, provided by the host). Presses stay
+  available and **never** fail the puzzle; after any hint (or wrong move)
+  a solve records `solvedWithHelp` (kept as stored — never rewritten).
+- Hint visuals are drawn on the board as yellow square highlights, then a
+  yellow arrow to the destination once the full first move is revealed
+  (level 4); no hint text list is shown in the side panel.
 - Using a hint never marks a puzzle failed and never increments the
   wrong-move count. A solve that used any hint is recorded as
   `solvedWithHelp` with the highest level reached.
@@ -247,65 +278,40 @@ cycle or the set by default; retry-failed behavior
 (`none`/`immediate`/`endOfCycle`) and the next-cycle revisit are Feature
 013 decisions over the recorded results.
 
-Each outcome screen shows the recorded result, solving time, wrong-move
-count and hints used before **continue** returns to the host.
+Every finish stays on the same single view: the recorded result appears
+inside the move-list container (green **Success** for `solvedFirstTry`,
+green **Solved with hints** for `solvedWithHelp`, red **Failed** for
+`failed`, with the skipped label for a skipped presentation), and **Next
+puzzle** returns the outcome to the host (the cycle host then advances:
+next puzzle, configured re-presentation, or cycle results). Counters,
+hints and the timer are **not** shown in the result area.
 
-## Post-solve analysis
+## Post-finish engine analysis & single-view results
 
-After a definite outcome the user can open an analysis step that is a
-**read-only use of the shared analysis-board surface in stored mode**
-(Feature 006 / ADR-033). No engine runs and no new analysis is produced:
-the step renders only records that already exist — the puzzle row, the
-source game's persisted `MoveAnalysis` records (Feature 008), and the
-presentation's in-memory attempt line. There is no "lines"/
-MultiPV configuration and no ADR-018 cache read: the step shows the
-stored content that actually exists, exactly like stored review, and
-never recomputes classifications or evaluations in the view (ADR-033).
+After any definite outcome the puzzle stays on the solving surface (no page
+swap to a separate outcome/post-solve step). The recorded result is shown
+in-list (above) and the user may continue solving/analysing on the same
+board:
 
-The step shows, for the puzzle's starting position:
-
-- the move list of the user's attempt alongside the stored verified
-  solution (SAN) — for tactical rows the full `bestPv`, plus accepted
-  alternative first moves where stored; for blunder rows the single
-  correct move;
-- rejected wrong moves listed as "your move X — not the move that
-  achieves the objective" (no fabricated evaluation for novel wrong
-  moves: no engine ran on them);
-- the divergence point highlighted.
-
-**Stored-data annotation only.** An ADR-023 classification glyph and an
-eval-swing line ("your move lost X win%; the engine preferred Y") are
-rendered only when the divergence move at a ply matches a move the game
-actually played and a stored `MoveAnalysis` classification exists for it
-(that record carries the engine's preferred move, the classification and
-the win-percentage loss). In practice this is the puzzle's source ply
-and the user's historical move (`userMovePlayed`), which is exactly the
-explanation the puzzle exists to teach. Any other divergence shows the
-objective-achieving move from the stored line without glyph or eval. A
-correctly solved puzzle marks each attempt move as *matching the
-verified solution* — never as an ADR-023 `best` label (accepted
-alternatives are correct without being the engine's top move, and no
-in-session move is engine-classified).
-
-Outcomes rendered by the step:
-
-- **solved** (`solvedFirstTry`/`solvedWithHelp`): the attempt line is
-  shown fully marked as matching the solution; the verified line is
-  shown for reference (plus alternatives where stored); the attempt
-  summary (time, hints, wrong moves) is displayed. No divergence, no
-  eval annotations.
-- **failed**: the divergence point is highlighted; if the wrong move at
-  the divergence is the stored historical move of the source ply, its
-  stored classification glyph and eval swing are shown; otherwise the
-  stored solution is shown as "the move that achieves the objective".
-  The stored solution is always shown in full as the reference
-  continuation.
-- **skipped**: no post-solve step is offered (the user chose to move
-  on; the solution stays unseen so future cycles stay fair).
-
-**Continue** closes the step and returns to the cycle host without
-losing the recorded outcome (next puzzle, configured re-presentation, or
-cycle results).
+- **View solution (give up)** plays the stored solution out on the mainline
+  and marks the presentation `failed`; the board lands on the end of the
+  solution line.
+- A **stored-only replay** remains available through the move list and
+  transport over the full line; wrong attempts are listed as variations
+  ("your move …") under their decision node — no engine ran on novel wrong
+  moves, so nothing is fabricated for them.
+- **Post-finish engine:** once the puzzle is finished (any finish) the user
+  may toggle the engine on (off by default). It analyzes the **end position
+  actually on the board** through the shared analysis controller
+  (`useAnalysisController`), rendering engine lines + settings exactly like
+  the analysis page and engine arrows on the board; the evaluation bar
+  appears in a **reserved** bar column that is empty until enabled, so
+  nothing shifts. A stubbed engine service is used in component tests (no
+  real Stockfish).
+- The write/retry protocol is unchanged: the attempt row must be written
+  before **Next puzzle** advances (an unwritten row keeps the result in
+  view with an inline error and a retry, exactly like the former outcome
+  screen).
 
 ## Game Library integration
 
@@ -361,7 +367,8 @@ state is Feature 013's):
 - `solving` — accepting moves at the decision point (counters running);
 - `outcome` — result summary shown; the attempt row is being/awaiting
   write;
-- `postSolve` — the analysis step is open.
+- `postSolve` — the post-finish phase of the presentation (the controller
+  stage; the single view keeps the move list/result/engine on screen).
 
 Attempt-write states at outcome: `pending` → `written`; on failure the
 row write is `retryable` and the outcome stays visible on the outcome
@@ -380,9 +387,9 @@ the outcome unrecorded (never silently dropped).
 - **Unparseable `startingFen`/solution** (pipeline defect, mirroring
   Feature-011's assembly contract): the presentation fails to load and
   is reported/skipped; the session never crashes.
-- **Missing stored analysis/classification** for the source ply (older
-  analysis, outdated run): the post-solve step renders without glyphs or
-  eval — absent data is never replaced by fabricated or zero values.
+- **Missing stored analysis for the source ply** (older analysis,
+  outdated run): the solve falls back to a puzzle-only move list without
+  the game prefix — absent data is never replaced by fabricated values.
 - **Deletion mid-presentation** (game deleted while solving): the just
   written row may be removed by the cascade; the session returns control
   to the host, which reconciles.
@@ -414,47 +421,49 @@ the outcome unrecorded (never silently dropped).
   cover the first solution move only).
 - **Puzzle revisited after a failed prior cycle:** each presentation is
   a fresh row with its own counters and timer.
-- **Offline:** the whole solve and post-solve flow works offline (no
-  engine, no network) per ARCHITECTURE §11.
+- **Offline:** the whole solve flow works offline; the post-finish engine
+  is optional and only ever runs when toggled on (per ARCHITECTURE §11,
+  Feature 005).
 
 ## Accessibility
 
-- Every action (hint, skip, give up, restart, transport, analyze,
-  continue) is a real control with a visible text label, reachable by
+- Every action (hint, view solution, restart, transport, engine toggle,
+  next puzzle) is a real control with a visible text label, reachable by
   keyboard and touch — never hover-only, never shortcut-only.
-- **Move entry must be pointer-free-possible:** playing moves is an
-  essential action, so a keyboard path to enter a move must exist (e.g.
-  square selection via focus or algebraic entry); the Feature-006 rule
-  that arrow keys do not move pieces still applies.
+- The board (mouse and touch) with the promotion dialog is the move-entry
+  path; the Feature-006 rule that arrow keys do not move pieces still
+  applies, and keyboard `←`/`→` (Shift = first/last) transports the move
+  list like Analysis/Review. There is intentionally **no** text/keyboard
+  move entry (plan 012b removed it).
 - The puzzle's objective, the side to move and the position are exposed
   as text for assistive technology; the wrong-move verdict, hint content
   and outcome are announced (`aria-live`) — color and glyphs are never
   the only signal.
-- Focus is managed on presentation start/end and when the post-solve
-  step opens/closes; returning via **continue** restores the outcome
-  context.
+- Focus is managed on presentation start and when a finish lands; **Next
+  puzzle** returns control to the host and the outcome context is kept.
 
 ## Responsive / mobile
 
 - The board uses the shared fluid wrapper; the solving screen stacks on
   tablet/mobile (board, then objective/controls, then move list/
   analysis) rather than shrinking a desktop layout.
-- The post-solve step follows the Feature-008 mobile patterns
-  (collapsible sections for move list and engine-lines content).
+- The engine-lines area and the move list follow the Feature-008 mobile
+  patterns (the shared analysis layout stacks the columns).
 - No interaction requires hover; touch targets stay practical for
   mouse and touch.
 
 ## Performance
 
-- Feature 012 never runs the engine and never touches the ADR-018 cache:
-  per-move cost is bounded `chessops` legal-move handling plus constant
-  state work — nothing freezes the UI (ARCHITECTURE §10).
+- Solving never runs the engine: per-move cost is bounded `chessops`
+  legal-move handling plus constant state work — nothing freezes the UI
+  (ARCHITECTURE §10). The post-finish engine runs in the shared Worker
+  only when the user toggles it on.
 - Persistence is a single small IndexedDB write per presentation
   outcome; the session keeps only the current puzzle in memory (the host
   owns the queue).
-- The post-solve step reads only already-persisted rows (one game-scoped
-  `MoveAnalysis` lookup at the source ply); opening it is cheap and
-  repeatable.
+- The game-prefix move list reads only already-persisted rows (one
+  game-scoped `MoveAnalysis` lookup at the source ply); it is loaded once
+  per presentation and the move list is derived locally.
 
 ## Acceptance criteria
 
@@ -483,19 +492,31 @@ the outcome unrecorded (never silently dropped).
 7. Hints reveal exactly the PRODUCT §10 level information, respect the
    set's level availability/threshold, stop at level 4, never reveal
    beyond the first solution move, and never mark the puzzle failed.
-8. The post-solve step is read-only over stored data: no engine starts,
-   no ADR-018 cache read, no MultiPV configuration; a solved puzzle shows
-   the attempt marked as matching the verified solution (no ADR-023
-   glyphs invented); a failed puzzle highlights the divergence and shows
-   stored classification/eval annotation only where a stored
-   `MoveAnalysis` record for that move exists; **continue** returns to
-   the cycle host with the outcome preserved.
-9. Feature 012 never computes cycle aggregates, never starts the engine,
-   and never re-derives or regenerates puzzle rows.
-10. The solving screen is keyboard-operable end to end (including a
-    pointer-free move-entry path), outcomes are announced, and no
-    essential signal relies on color alone.
-11. Fixtures (both origins, multi-move, accepted alternatives,
+8. Results appear inside the move-list container with the copy **Success**
+   (clean solve), **Solved with hints** (any hint/wrong move) and
+   **Failed** (view solution), and **Next puzzle** returns the recorded
+   outcome to the host only once the row is written (an unwritten row
+   keeps the result with an inline error and retry).
+9. **View solution** plays the stored solution out on the mainline and
+   records `failed`; **hints never fail the puzzle** and a solve after
+   any hint/wrong move keeps `solvedWithHelp` exactly as stored.
+10. The engine toggle appears only after the puzzle finishes (any finish),
+    is off by default, and analyzes the final board position with the
+    shared analysis controller (stubbed engine in component tests); the
+    evaluation bar lives in a reserved column that is empty until enabled.
+11. The game-prefix move list shows the stored prefix + played/solution
+    mainline with wrong attempts as variations (no classification glyphs,
+    no per-ply evals) and auto-scrolls to the active move; transport and
+    keyboard `←`/`→` (Shift = first/last) move across the whole line.
+12. The solve clock is rendered only when the "Show puzzle timer" setting
+    is on (default hidden); counters and the timer are never shown in the
+    result area.
+13. Feature 012 never computes cycle aggregates and never re-derives or
+    regenerates puzzle rows.
+14. The solving screen is keyboard-operable end to end, outcomes are
+    announced, and no essential signal relies on color alone (there is no
+    keyboard text-move entry by design).
+15. Fixtures (both origins, multi-move, accepted alternatives,
     promotion) are deterministic and require no engine, network or
     IndexedDB for domain/component tests.
 
@@ -518,10 +539,12 @@ the outcome unrecorded (never silently dropped).
   outcome visible.
 - **Component:** the solving screen renders fixture puzzles with no
   engine/network/IndexedDB (presentation, correct/wrong move feedback,
-  hints text, skip/give-up/restart/transport, outcome summary,
-  post-solve step contents and the stored-only divergence annotation,
-  continue returning to the host); keyboard/AT behaviour (announcements,
-  focus, pointer-free move entry); mobile layout.
+  hints as yellow square/arrow shapes, hint-then-solve -> `solvedWithHelp`,
+  view-solution -> `failed` at the line end, engine toggle after finish,
+  in-list result copy Success / Solved with hints / Failed, hidden timer
+  default, Next advancing the host, prefix + variation move list and
+  MoveList auto-scroll); keyboard/AT behaviour (announcements, focus,
+  arrow transport); mobile layout.
 - **End-to-end:** requires the Feature-013 host and lands with that
   feature (a full set → cycle → solve → attempt → cycle-completion
   flow). Feature-012's own slice is covered by the harness above.
@@ -530,9 +553,8 @@ the outcome unrecorded (never silently dropped).
 
 Feature 012 depends on:
 
-- Feature 006 — the shared analysis-board surface (stored mode) reused
-  by the post-solve step, and the rule that glyphs render only where
-  classification output exists (ADR-033);
+- Feature 006 — the shared analysis-board surface reused by the solve
+  view and the post-finish engine (ADR-033);
 - Feature 008 — persisted `MoveAnalysis` of the source ply backing the
   stored divergence annotations;
 - Feature 011 — the immutable `PuzzleRow` input (both origins, accepted
@@ -554,8 +576,8 @@ Feature 012 output is consumed by:
 
 Required reading (see `.opencode/CONTEXT-MAP.md`):
 
-- Architecture/decisions: `ARCHITECTURE.md` (post-solve panel on the
-  shared analysis board; ownership & deletion cascade);
+- Architecture/decisions: `ARCHITECTURE.md` (solve view on the shared
+  analysis board; ownership & deletion cascade);
   `decisions/ADR-031`, `decisions/ADR-023`, `decisions/ADR-033`;
   optional `history/ADR-007/011/021/022` (history only)
 - Domain: `domain/tactical-training.md`, `domain/puzzle-model.md`,
@@ -587,13 +609,13 @@ implementation:
    is `solvedWithHelp` ("and/or after a retry"). Confirm this is the
    intended semantics for reporting, or whether a distinct "solved after
    error, no hint" bucket should exist for Features 013/014.
-3. **Post-solve depth.** The engine-free, stored-data-only post-solve
-   step (chosen here because stored game `MoveAnalysis` cannot supply
-   eval swings or multi-PV for novel wrong moves, and ADR-033 forbids
-   recomputing classification in the view) cannot explain *why* an
-   arbitrary novel wrong move loses. If the product later wants true
-   per-divergence engine evaluation, that is new scope built on the
-   Feature-006 live mode (engine runs, labelled live) — deferred.
+3. **Per-divergence engine depth.** Wrong moves are shown as move-list
+   variations without engine annotation (stored game `MoveAnalysis`
+   cannot supply eval swings or multi-PV for novel wrong moves, and
+   ADR-033 forbids recomputing classification in the view). If the
+   product later wants true per-divergence engine evaluation, that is
+   new scope built on the Feature-006 live mode (engine runs, labelled
+   live) — deferred.
 4. **Presentation-scoped defaults.** Restart semantics, wall-clock
    timing across backgrounded tabs, hint-button granularity and the
    "analyze opens automatically on failure" default are stated here as
