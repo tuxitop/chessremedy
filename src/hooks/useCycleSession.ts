@@ -133,17 +133,14 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * A clear notice for a refused resume. `all-mastered` is the auto-set
- * retirement outcome (every pool puzzle is mastered): there is nothing left to
- * train, so it is surfaced as a notice rather than a crash or a bare failure.
+ * A clear notice for a refused resume (an invalid persisted config or a cycle
+ * that is already terminal), so the failure is surfaced rather than crashing.
  */
 function resumeFailureNotice(result: {
   readonly reason: string;
   readonly message?: string;
 }): string {
   switch (result.reason) {
-    case 'all-mastered':
-      return 'Every puzzle in this set is mastered — there is nothing left to train.';
     case 'invalid-config':
       return result.message ?? 'The saved configuration is invalid.';
     case 'not-resumable':

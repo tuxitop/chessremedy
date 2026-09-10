@@ -54,7 +54,7 @@ export type {
   PuzzlePoolFilters,
   RetryFailed,
   SetSource,
-  AutoSetRecipe,
+  BlockRecipe,
   TacticalTrainingSetRow,
   TrainingCycleRow,
   TrainingCycleStatus,
@@ -63,14 +63,16 @@ export type {
 export { orderPuzzles, resolveSetMembership, setSourceLabel } from './set';
 export type { ResolveSetMembershipInput } from './set';
 export {
-  AUTO_SET_ALL_ID,
-  AUTO_SET_RANDOM_ID,
-  AUTO_SET_VERSION,
-  WOODPECKER_RANDOM_SIZE,
-  autoSetDefinitions,
-  deriveAutoSetMembership,
+  BLOCK_RECIPE_VERSION,
+  BLOCK_SIZE_OPTIONS,
+  DEFAULT_BLOCK_SIZE,
+  QUICK_TRAIN_SET_ID,
+  RECOMMENDED_MIN_BLOCK_SIZE,
+  WOODPECKER_PLAN_CYCLES,
+  derivePool,
+  formWoodpeckerBlock,
 } from './autoSet';
-export type { AutoSetDefinition, DeriveAutoSetMembershipInput } from './autoSet';
+export type { DerivePoolInput, FormWoodpeckerBlockInput } from './autoSet';
 export {
   MASTERY_REQUIRED_CYCLES,
   MASTERY_VERSION,
@@ -96,12 +98,20 @@ export type {
   SnapshotCycleInput,
   ValidateCycleConfigResult,
 } from './cycle';
-export { compareCycleMetrics, computeCycleMetrics } from './cycleMetrics';
+export {
+  compareCycleMetrics,
+  computeCycleMetrics,
+  cycleTimeGoal,
+  spacingNudgeFor,
+} from './cycleMetrics';
+export { FIRST_CYCLE_FIRST_TRY_BAND, SPACING_RECOMMENDED_MS } from './cycleMetrics';
 export type {
   ComputeCycleMetricsInput,
   CycleComparison,
   CycleMetricDeltas,
   CycleMetricKey,
   CycleMetrics,
+  CycleSpacingNudge,
+  CycleTimeGoal,
   SolvingTimeMetrics,
 } from './cycleMetrics';

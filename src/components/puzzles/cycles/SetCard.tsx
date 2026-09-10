@@ -14,14 +14,9 @@ export interface SetCardProps {
   readonly lastActivityAt: number | null;
   /** Route to the set detail page. */
   readonly to: string;
-  /** Optional textual badge (e.g. `Auto`) shown next to the set name. */
-  readonly badge?: string;
-  /** Optional short note under the title (e.g. the auto-set refresh note). */
-  readonly note?: string;
   /**
    * Text shown in place of the count when `puzzleCount` is `0`. Defaults to
-   * `No puzzles yet`; an auto set whose pool is fully mastered passes
-   * `All puzzles mastered` so the absence is never a bare `0`.
+   * `No puzzles yet`, so the absence is never a bare `0`.
    */
   readonly emptyCountLabel?: string;
 }
@@ -29,7 +24,9 @@ export interface SetCardProps {
 /**
  * One training-set card for the training home. Deliberate card layout (not a
  * shrunk table); absent data is stated in words — a set with no puzzles, no
- * cycles or no activity never renders a bare `0`.
+ * cycles or no activity never renders a bare `0`. A one-click Woodpecker block
+ * (`source.kind === 'auto'`) is badged and shows its fixed recipe size; custom
+ * sets render without the block badge.
  */
 export function SetCard({
   set,
@@ -37,26 +34,26 @@ export function SetCard({
   cycle,
   lastActivityAt,
   to,
-  badge,
-  note,
   emptyCountLabel,
 }: SetCardProps): React.JSX.Element {
   const activity = formatTimestamp(lastActivityAt);
+  const isBlock = set.source.kind === 'auto';
+  const blockSize = set.source.kind === 'auto' ? set.source.recipe.size : null;
   return (
     <article className={styles.card} data-testid={`set-card-${set.id}`}>
       <h2 className={styles.title}>
-        {badge !== undefined ? (
+        {isBlock ? (
           <span className={styles.badge} data-testid={`set-card-badge-${set.id}`}>
-            {badge}
+            Woodpecker block
           </span>
         ) : null}
         <Link className={styles.link} to={to} data-testid={`set-card-open-${set.id}`}>
           {set.name}
         </Link>
       </h2>
-      {note !== undefined ? (
+      {isBlock ? (
         <p className={styles.note} data-testid={`set-card-note-${set.id}`}>
-          {note}
+          Fixed membership — new puzzles wait for the next block.
         </p>
       ) : null}
       <dl className={styles.facts}>
@@ -68,6 +65,12 @@ export function SetCard({
               : `${puzzleCount} ${puzzleCount === 1 ? 'puzzle' : 'puzzles'}`}
           </dd>
         </div>
+        {blockSize !== null ? (
+          <div className={styles.row}>
+            <dt>Block size</dt>
+            <dd data-testid={`set-card-block-size-${set.id}`}>{blockSize} puzzles</dd>
+          </div>
+        ) : null}
         <div className={styles.row}>
           <dt>Current cycle</dt>
           <dd data-testid={`set-card-cycle-${set.id}`}>

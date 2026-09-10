@@ -4,8 +4,10 @@
  * Real Dexie over fake-indexeddb (shared test setup), with a deterministic
  * injected clock/id. Covers: create from a game and from the pool (platform /
  * time-control filters), a zero-resolution empty set (explicit flag, still
- * persisted), manual selection order with missing ids dropped, and the typed
- * rename/config/archive/unarchive/delete lifecycle. No engine, no network.
+ * persisted), manual selection order with missing ids dropped, the typed
+ * rename/config/archive/unarchive/delete lifecycle, and the block model — the
+ * derived pool, one-click Woodpecker block formation/refusals and the
+ * close/return-to-pool lifecycle. No engine, no network.
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
@@ -18,7 +20,11 @@ import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import type { PuzzleRow } from '@/domain/puzzle/types';
-import { AUTO_SET_ALL_ID, AUTO_SET_RANDOM_ID, DEFAULT_CYCLE_CONFIG } from '@/domain/training';
+import {
+  DEFAULT_CYCLE_CONFIG,
+  WOODPECKER_PLAN_CYCLES,
+  type TacticalTrainingSetRow,
+} from '@/domain/training';
 import { legitimateFirstTryRows } from '@/domain/training/test-support';
 import { TrainingSetsService } from './training-sets-service';
 
@@ -42,11 +48,30 @@ function gamePuzzle(gameId: string, ply: number, overrides: Partial<PuzzleRow> =
   return { ...puzzleRowFixture('mate-one'), sourceGameId: gameId, sourcePly: ply, ...overrides };
 }
 
+/** A synthetic pool row with overridable difficulty (provenance is deterministic). */
+function poolPuzzle(index: number, difficulty: number): PuzzleRow {
+  return gamePuzzle(`game:pool-${index}`, index, { difficulty });
+}
+
+function idOf(puzzle: PuzzleRow): string {
+  return puzzleIdOf(puzzle.sourceGameId, puzzle.sourcePly);
+}
+
 /** Persist three clean first-try rows (three distinct cycles) for one puzzle. */
 async function masterPuzzle(puzzleId: string): Promise<void> {
   for (const row of legitimateFirstTryRows(puzzleId, ['cycle:1', 'cycle:2', 'cycle:3'])) {
     await attemptsRepository.addAttempt(row);
   }
+}
+
+/** Create a block and return its persisted row (fails the test when refused). */
+async function createBlock(
+  service: TrainingSetsService,
+  size: number,
+): Promise<TacticalTrainingSetRow> {
+  const result = await service.createWoodpeckerBlock({ size });
+  if (!result.ok) throw new Error(`expected block create to succeed (got ${result.reason})`);
+  return result.set;
 }
 
 describe('TrainingSetsService', () => {
@@ -225,93 +250,156 @@ describe('TrainingSetsService', () => {
     expect(stored?.config).toEqual(created.set.config);
   });
 
-  it('ensureAutoSets seeds both auto sets idempotently with derived membership', async () => {
-    await puzzlesRepository.addIfAbsent([
-      gamePuzzle('game:auto', 6, { difficulty: 30 }),
-      gamePuzzle('game:auto', 8, { difficulty: 10 }),
-    ]);
+  it('derives the pool from owned puzzles minus mastered and the open block members', async () => {
     const service = makeService();
-    await service.ensureAutoSets();
+    const pool = [poolPuzzle(1, 10), poolPuzzle(2, 20), poolPuzzle(3, 30)];
+    await puzzlesRepository.addIfAbsent(pool);
+    await masterPuzzle(idOf(pool[0]!));
 
-    const all = await trainingSetsRepository.get(AUTO_SET_ALL_ID);
-    expect(all?.name).toBe('All puzzles');
-    expect(all?.status).toBe('active');
-    expect(all?.source).toEqual({ kind: 'auto', recipe: { kind: 'allPuzzles' } });
-    expect(all?.config.targetAccuracy).toBe(1);
-    expect(all?.puzzleIds).toEqual(['game:auto:8', 'game:auto:6']);
+    expect((await service.listPool()).map(idOf)).toEqual([idOf(pool[1]!), idOf(pool[2]!)]);
 
-    const random = await trainingSetsRepository.get(AUTO_SET_RANDOM_ID);
-    expect(random?.name).toBe('Woodpecker random');
-    expect(random?.source).toEqual({
+    await trainingSetsRepository.create({
+      id: 'block:one',
+      name: 'Woodpecker block',
+      createdAt: NOW,
+      updatedAt: NOW,
+      status: 'active',
+      source: { kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: 200 } },
+      puzzleIds: [idOf(pool[1]!)],
+      targetSize: 200,
+      config: DEFAULT_CYCLE_CONFIG,
+    });
+
+    expect((await service.listPool()).map(idOf)).toEqual([idOf(pool[2]!)]);
+    expect(await service.getOpenBlock()).toMatchObject({ id: 'block:one' });
+  });
+
+  it('creates a one-click Woodpecker block as the easiest-N pool snapshot', async () => {
+    const service = makeService();
+    const pool = [poolPuzzle(1, 50), poolPuzzle(2, 10), poolPuzzle(3, 30), poolPuzzle(4, 20)];
+    await puzzlesRepository.addIfAbsent(pool);
+    await masterPuzzle(idOf(pool[0]!));
+
+    const result = await service.createWoodpeckerBlock({ size: 2 });
+
+    if (!result.ok) throw new Error('expected block create to succeed');
+    expect(result.selectedCount).toBe(2);
+    expect(result.set.puzzleIds).toEqual([idOf(pool[1]!), idOf(pool[3]!)]);
+    expect(result.set.status).toBe('active');
+    expect(result.set.source).toEqual({
       kind: 'auto',
-      recipe: { kind: 'woodpeckerRandom', size: 200 },
+      recipe: { kind: 'woodpeckerBlock', size: 2 },
     });
-    expect(random?.puzzleIds).toEqual(['game:auto:8', 'game:auto:6']);
-
-    // Idempotent and never overwriting: a tampered row survives a re-seed and
-    // no duplicate row is created.
-    await db.trainingSets.put({ ...all!, puzzleIds: ['tampered:1'] });
-    await service.ensureAutoSets();
-    expect((await trainingSetsRepository.get(AUTO_SET_ALL_ID))?.puzzleIds).toEqual(['tampered:1']);
-    expect(await db.trainingSets.count()).toBe(2);
+    expect(result.set.targetSize).toBe(2);
+    expect(result.set.name).toBe('Woodpecker block');
+    expect(result.set.config).toEqual({
+      ...DEFAULT_CYCLE_CONFIG,
+      ordering: 'difficultyAsc',
+      retryFailed: 'endOfCycle',
+      allowSkip: true,
+      targetAccuracy: null,
+      targetSolvingTimeMs: null,
+      plannedCycles: WOODPECKER_PLAN_CYCLES,
+    });
+    expect(await service.getOpenBlock()).toEqual(result.set);
   });
 
-  it('ensureAutoSets excludes mastered puzzles from the initial membership', async () => {
-    await puzzlesRepository.addIfAbsent([
-      gamePuzzle('game:auto', 6, { difficulty: 10 }),
-      gamePuzzle('game:auto', 8, { difficulty: 20 }),
-    ]);
-    await masterPuzzle('game:auto:6');
-
-    await makeService().ensureAutoSets();
-
-    const all = await trainingSetsRepository.get(AUTO_SET_ALL_ID);
-    expect(all?.puzzleIds).toEqual(['game:auto:8']);
-  });
-
-  it('refuses every mutation of a system-managed auto set', async () => {
-    await makeService().ensureAutoSets();
+  it('takes all of the pool when it is smaller than the requested size', async () => {
     const service = makeService();
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 30), poolPuzzle(2, 10)]);
 
-    expect(await service.rename(AUTO_SET_ALL_ID, 'Nope')).toEqual({
-      ok: false,
-      reason: 'auto-set-immutable',
-    });
-    expect(await service.updateConfig(AUTO_SET_ALL_ID, DEFAULT_CYCLE_CONFIG)).toEqual({
-      ok: false,
-      reason: 'auto-set-immutable',
-    });
-    expect(await service.archive(AUTO_SET_ALL_ID)).toEqual({
-      ok: false,
-      reason: 'auto-set-immutable',
-    });
-    expect(await service.unarchive(AUTO_SET_RANDOM_ID)).toEqual({
-      ok: false,
-      reason: 'auto-set-immutable',
-    });
-    expect(await service.delete(AUTO_SET_ALL_ID)).toEqual({
-      ok: false,
-      reason: 'auto-set-immutable',
-    });
+    const result = await service.createWoodpeckerBlock({ size: 400 });
 
-    const stored = await trainingSetsRepository.get(AUTO_SET_ALL_ID);
-    expect(stored?.name).toBe('All puzzles');
-    expect(stored?.status).toBe('active');
+    if (!result.ok) throw new Error('expected block create to succeed');
+    expect(result.selectedCount).toBe(2);
+    expect(result.set.puzzleIds).toEqual([idOf(poolPuzzle(2, 10)), idOf(poolPuzzle(1, 30))]);
   });
 
-  it('list returns the seeded auto sets alongside user sets', async () => {
-    await makeService().ensureAutoSets();
-    const created = await makeService().createFromGame({
-      gameId: 'game:list',
-      name: 'From game',
+  it('freezes the block membership: a later puzzle joins the pool, not the block', async () => {
+    const service = makeService();
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
+    const block = await createBlock(service, 200);
+    await puzzlesRepository.addIfAbsent([poolPuzzle(2, 5)]);
+
+    expect((await service.getOpenBlock())?.puzzleIds).toEqual(block.puzzleIds);
+    expect((await service.listPool()).map(idOf)).toEqual([idOf(poolPuzzle(2, 5))]);
+  });
+
+  it('refuses a second block while one is open and an empty pool', async () => {
+    const service = makeService();
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
+    const block = await createBlock(service, 200);
+
+    const second = await service.createWoodpeckerBlock({ size: 200 });
+    expect(second).toEqual({ ok: false, reason: 'block-open', block });
+
+    await service.closeBlock(block.id);
+    await db.puzzles.clear();
+    expect(await service.createWoodpeckerBlock({ size: 200 })).toEqual({
+      ok: false,
+      reason: 'empty-pool',
+    });
+  });
+
+  it('closeBlock archives the block and returns its unmastered members to the pool', async () => {
+    const service = makeService();
+    const pool = [poolPuzzle(1, 10), poolPuzzle(2, 20), poolPuzzle(3, 30)];
+    await puzzlesRepository.addIfAbsent(pool);
+    const block = await createBlock(service, 2);
+    await masterPuzzle(block.puzzleIds[0]!);
+
+    expect((await service.listPool()).map(idOf)).toEqual([idOf(pool[2]!)]);
+
+    const closed = await service.closeBlock(block.id);
+    if (!closed.ok) throw new Error('expected close to succeed');
+    expect(closed.set.status).toBe('archived');
+    expect(closed.set.updatedAt).toBe(NOW);
+    expect(await service.getOpenBlock()).toBeUndefined();
+    // Unmastered members return; the mastered member stays outside the pool.
+    expect((await service.listPool()).map(idOf)).toEqual([idOf(pool[1]!), idOf(pool[2]!)]);
+
+    // Idempotent, and a non-block / missing id is a typed refusal.
+    expect(await service.closeBlock(block.id)).toEqual({ ok: true, set: closed.set });
+    expect(await service.closeBlock('missing')).toEqual({ ok: false, reason: 'not-found' });
+
+    const custom = await service.createFromGame({
+      gameId: 'game:custom',
+      name: 'Custom',
       ordering: 'difficultyAsc',
       targetSize: 10,
     });
-    if (!created.ok) throw new Error('expected create to succeed');
+    if (!custom.ok) throw new Error('expected custom create to succeed');
+    expect(await service.closeBlock(custom.set.id)).toEqual({ ok: false, reason: 'not-a-block' });
+  });
 
-    const ids = (await makeService().list()).map((set) => set.id);
-    expect(ids).toContain(AUTO_SET_ALL_ID);
-    expect(ids).toContain(AUTO_SET_RANDOM_ID);
-    expect(ids).toContain(created.set.id);
+  it('refuses every mutation of a Woodpecker block except closeBlock', async () => {
+    const service = makeService();
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
+    const block = await createBlock(service, 200);
+
+    expect(await service.rename(block.id, 'Nope')).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.updateConfig(block.id, DEFAULT_CYCLE_CONFIG)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.archive(block.id)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.unarchive(block.id)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.delete(block.id)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+
+    const stored = await service.getOpenBlock();
+    expect(stored?.id).toBe(block.id);
+    expect(stored?.status).toBe('active');
   });
 });

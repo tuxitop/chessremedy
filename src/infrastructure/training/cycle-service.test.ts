@@ -5,8 +5,9 @@
  * injected clock/id. Covers: start snapshot/numbering, reject-empty (no cycle),
  * reject invalid persisted config, resume after a simulated reload (no stored
  * cursor, idempotent), the bounded retry modes, completion, abandon, repeat,
- * results + same-set comparison, missing puzzle rows, and write-failure
- * containment. No engine, no network.
+ * results + same-set comparison, missing puzzle rows, write-failure
+ * containment, the fixed block membership and the Quick-train sentinel session.
+ * No engine, no network.
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
@@ -19,11 +20,9 @@ import type { PuzzleAttemptsRepository } from '@/infrastructure/db/attempts-repo
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import {
-  AUTO_SET_ALL_ID,
-  AUTO_SET_RANDOM_ID,
   DEFAULT_CYCLE_CONFIG,
-  deriveAutoSetMembership,
-  type AutoSetRecipe,
+  QUICK_TRAIN_SET_ID,
+  masteryOf,
   type CycleConfig,
   type PuzzleAttemptRow,
   type RetryFailed,
@@ -33,7 +32,7 @@ import {
 } from '@/domain/training';
 import {
   autoPoolRowFixture,
-  autoSetFixture,
+  blockSetFixture,
   cycleAttemptFixture,
   legitimateFirstTryRows,
   setFixture,
@@ -159,6 +158,22 @@ describe('CycleService', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected rejection');
     expect(result.reason).toBe('invalid-config');
+  });
+
+  it("start snapshots a block's fixed stored membership without re-deriving it", async () => {
+    const stored = autoPoolRowFixture(1, 10);
+    await puzzlesRepository.addIfAbsent([stored]);
+    const block = blockSetFixture({ id: 'block:one', puzzleIds: [idOf(stored)] });
+    await trainingSetsRepository.create(block);
+    // A newly generated puzzle joins the pool, never the frozen block.
+    await puzzlesRepository.addIfAbsent([autoPoolRowFixture(2, 5)]);
+
+    const result = await makeService().start(block.id);
+
+    if (!result.ok) throw new Error('expected start to succeed');
+    expect(result.cycle.puzzleIds).toEqual([idOf(stored)]);
+    expect(result.missingPuzzleIds).toEqual([]);
+    expect((await trainingSetsRepository.get(block.id))?.puzzleIds).toEqual([idOf(stored)]);
   });
 
   it('resume after reload reconstructs the same pending queue with no stored cursor', async () => {
@@ -444,117 +459,81 @@ describe('CycleService', () => {
     expect(results.reason).toBe('invalid-config');
   });
 
-  it('start on an auto set re-derives membership from the pool, persists it and snapshots the cycle', async () => {
+  it('startQuickTrain snapshots the pool under the sentinel and creates no set row', async () => {
     await puzzlesRepository.addIfAbsent([
       autoPoolRowFixture(1, 50),
       autoPoolRowFixture(2, 10),
       autoPoolRowFixture(3, 30),
     ]);
-    const set = autoSetFixture(AUTO_SET_ALL_ID, { puzzleIds: ['stale:1'] });
-    await trainingSetsRepository.create(set);
 
-    const result = await makeService().start(set.id);
+    const result = await makeService().startQuickTrain();
 
-    if (!result.ok) throw new Error('expected start to succeed');
+    if (!result.ok) throw new Error('expected quick train to succeed');
+    expect(result.cycle.trainingSetId).toBe(QUICK_TRAIN_SET_ID);
+    expect(result.cycle.cycleNumber).toBe(1);
+    expect(result.cycle.status).toBe('inProgress');
+    expect(result.cycle.startedAt).toBe(NOW);
     expect(result.cycle.puzzleIds).toEqual([
       'fixture:auto-2:2',
       'fixture:auto-3:3',
       'fixture:auto-1:1',
     ]);
     expect(result.missingPuzzleIds).toEqual([]);
-    expect((await trainingSetsRepository.get(set.id))?.puzzleIds).toEqual(result.cycle.puzzleIds);
+    expect(await trainingSetsRepository.get(QUICK_TRAIN_SET_ID)).toBeUndefined();
+    expect(await trainingSetsRepository.list()).toEqual([]);
+    expect(await trainingCyclesRepository.get(result.cycle.id)).toEqual(result.cycle);
   });
 
-  it('start excludes mastered puzzles and backfills woodpeckerRandom to its size', async () => {
-    const pool = [
-      autoPoolRowFixture(1, 10),
-      autoPoolRowFixture(2, 20),
-      autoPoolRowFixture(3, 30),
-      autoPoolRowFixture(4, 40),
-      autoPoolRowFixture(5, 50),
-    ];
+  it('startQuickTrain excludes mastered puzzles and the open block members', async () => {
+    const pool = [autoPoolRowFixture(1, 10), autoPoolRowFixture(2, 20), autoPoolRowFixture(3, 30)];
     await puzzlesRepository.addIfAbsent(pool);
-    const recipe: AutoSetRecipe = { kind: 'woodpeckerRandom', size: 3 };
-    const set = autoSetFixture(AUTO_SET_RANDOM_ID, {
-      source: { kind: 'auto', recipe },
-    });
-    await trainingSetsRepository.create(set);
-
-    const before = deriveAutoSetMembership({
-      recipe,
-      pool,
-      masteredIds: new Set(),
-      setId: AUTO_SET_RANDOM_ID,
-    });
-    expect(before).toHaveLength(3);
-    const first = await makeService().start(set.id);
-    if (!first.ok) throw new Error('expected start to succeed');
-    expect(first.cycle.puzzleIds).toEqual(before);
-
-    const mastered = before[0]!;
-    for (const row of legitimateFirstTryRows(mastered, ['c1', 'c2', 'c3'])) {
+    for (const row of legitimateFirstTryRows(idOf(pool[0]!), ['c1', 'c2', 'c3'])) {
       await attemptsRepository.addAttempt(row);
     }
+    await trainingSetsRepository.create(
+      blockSetFixture({ id: 'block:one', puzzleIds: [idOf(pool[1]!)] }),
+    );
 
-    const after = deriveAutoSetMembership({
-      recipe,
-      pool,
-      masteredIds: new Set([mastered]),
-      setId: AUTO_SET_RANDOM_ID,
-    });
-    const second = await makeService().repeat(set.id);
-    if (!second.ok) throw new Error('expected repeat to succeed');
-    expect(second.cycle.puzzleIds).toEqual(after);
-    expect(second.cycle.puzzleIds).toHaveLength(3);
-    expect(second.cycle.puzzleIds).not.toContain(mastered);
-    expect(after).not.toEqual(before);
+    const result = await makeService().startQuickTrain();
+
+    if (!result.ok) throw new Error('expected quick train to succeed');
+    expect(result.cycle.puzzleIds).toEqual([idOf(pool[2]!)]);
   });
 
-  it('a newly generated puzzle becomes eligible on the next auto cycle', async () => {
+  it('startQuickTrain assigns the next sentinel cycle number', async () => {
     await puzzlesRepository.addIfAbsent([autoPoolRowFixture(1, 10)]);
-    const set = autoSetFixture(AUTO_SET_ALL_ID);
-    await trainingSetsRepository.create(set);
-
-    const first = await makeService().start(set.id);
-    if (!first.ok) throw new Error('expected start to succeed');
-    expect(first.cycle.puzzleIds).toEqual(['fixture:auto-1:1']);
-
-    await puzzlesRepository.addIfAbsent([autoPoolRowFixture(2, 5)]);
-    const second = await makeService().repeat(set.id);
-    if (!second.ok) throw new Error('expected repeat to succeed');
+    const service = makeService();
+    const first = await service.startQuickTrain();
+    const second = await service.startQuickTrain();
+    if (!first.ok || !second.ok) throw new Error('expected quick trains to succeed');
+    expect(first.cycle.cycleNumber).toBe(1);
     expect(second.cycle.cycleNumber).toBe(2);
-    expect(second.cycle.puzzleIds).toEqual(['fixture:auto-2:2', 'fixture:auto-1:1']);
+    expect(second.cycle.id).not.toBe(first.cycle.id);
   });
 
-  it('blocks cycle start on an auto set with no pool (empty) or all puzzles mastered', async () => {
-    const all = autoSetFixture(AUTO_SET_ALL_ID);
-    await trainingSetsRepository.create(all);
-    expect(await makeService().start(all.id)).toEqual({ ok: false, reason: 'empty-set' });
-    expect(await trainingCyclesRepository.listForSet(all.id)).toEqual([]);
+  it('startQuickTrain rejects an empty pool and creates no cycle', async () => {
+    expect(await makeService().startQuickTrain()).toEqual({ ok: false, reason: 'empty-pool' });
+    expect(await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID)).toEqual([]);
+  });
 
-    const pool = [autoPoolRowFixture(1, 10), autoPoolRowFixture(2, 20)];
-    await puzzlesRepository.addIfAbsent(pool);
-    for (const puzzle of pool) {
-      for (const row of legitimateFirstTryRows(idOf(puzzle), ['c1', 'c2', 'c3'])) {
-        await attemptsRepository.addAttempt(row);
-      }
+  it('Quick-train attempts are ordinary and count toward mastery', async () => {
+    await puzzlesRepository.addIfAbsent([autoPoolRowFixture(1, 10)]);
+    const service = makeService();
+    const puzzleId = 'fixture:auto-1:1';
+    for (let index = 0; index < 3; index += 1) {
+      const started = await service.startQuickTrain();
+      if (!started.ok) throw new Error('expected quick train to succeed');
+      await attemptsRepository.addAttempt(
+        cycleAttemptFixture({
+          cycleId: started.cycle.id,
+          trainingSetId: QUICK_TRAIN_SET_ID,
+          puzzleId,
+          presentationIndex: 1,
+          result: 'solvedFirstTry',
+        }),
+      );
     }
-    const random = autoSetFixture(AUTO_SET_RANDOM_ID);
-    await trainingSetsRepository.create(random);
-    expect(await makeService().start(random.id)).toEqual({ ok: false, reason: 'all-mastered' });
-    expect(await trainingCyclesRepository.listForSet(random.id)).toEqual([]);
-  });
-
-  it('does not refresh a game/pool/manual set from the pool at cycle start', async () => {
-    const stored = puzzleFor('game:one', 6);
-    const set = await seedSet([stored], { id: 'set:manual', source: { kind: 'manual' } });
-    await puzzlesRepository.addIfAbsent([puzzleFor('game:one', 8)]);
-
-    const result = await makeService().start(set.id);
-
-    if (!result.ok) throw new Error('expected start to succeed');
-    expect(result.cycle.puzzleIds).toEqual([idOf(stored)]);
-    expect((await trainingSetsRepository.get(set.id))?.puzzleIds).toEqual([idOf(stored)]);
+    expect(masteryOf(puzzleId, await attemptsRepository.listAll())).toBe(true);
   });
 });
 

@@ -3,14 +3,18 @@ import type * as React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { SolveScreen } from '@/components/puzzles/solve';
+import { SpacingNudge } from '@/components/puzzles/cycles';
 import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
 import { useCycleSession } from '@/hooks/useCycleSession';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { PuzzleRow } from '@/domain/puzzle';
-import type {
-  PresentationOutcome,
-  TacticalTrainingSetRow,
-  TrainingCycleRow,
+import {
+  QUICK_TRAIN_SET_ID,
+  spacingNudgeFor,
+  type CycleSpacingNudge,
+  type PresentationOutcome,
+  type TacticalTrainingSetRow,
+  type TrainingCycleRow,
 } from '@/domain/training';
 import {
   CycleService,
@@ -33,6 +37,8 @@ interface SessionData {
   readonly set: TacticalTrainingSetRow;
   readonly cycle: TrainingCycleRow;
   readonly puzzles: ReadonlyMap<string, PuzzleRow>;
+  /** The same-block spacing nudge to show before solving, or `null`. */
+  readonly spacing: CycleSpacingNudge | null;
 }
 
 export interface CycleSessionPageProps {
@@ -67,6 +73,10 @@ export function CycleSessionPage({
 }: CycleSessionPageProps = {}): React.JSX.Element {
   const { setId = '', cycleNumber: cycleNumberParam = '' } = useParams<'setId' | 'cycleNumber'>();
   const cycleNumber = Number.parseInt(cycleNumberParam, 10);
+  // Quick train has no `trainingSets` row; its cycle lives under the sentinel
+  // `trainingSetId` (spec §3c), so the set lookup is skipped and a synthetic
+  // "Quick train" set is supplied to the session host.
+  const isQuickTrain = setId === QUICK_TRAIN_SET_ID;
 
   const setsRepo = providedSets ?? trainingSetsRepository;
   const cyclesRepo = providedCyclesRepo ?? trainingCyclesRepository;
@@ -106,22 +116,28 @@ export function CycleSessionPage({
           }
           return;
         }
-        const set = await setsRepo.get(setId);
-        const cycle =
-          set === undefined ? undefined : await cyclesRepo.getByNumber(setId, cycleNumber);
-        if (set === undefined || cycle === undefined) {
+        const set = isQuickTrain ? undefined : await setsRepo.get(setId);
+        const cycle = await cyclesRepo.getByNumber(setId, cycleNumber);
+        if (cycle === undefined || (!isQuickTrain && set === undefined)) {
           if (!cancelled) {
             setError('This cycle could not be found.');
             setLoading(false);
           }
           return;
         }
+        const resolvedSet = isQuickTrain ? quickTrainSet(cycle) : set!;
         const rows = await puzzlesRepo.getPuzzles(cycle.puzzleIds);
         if (cancelled) {
           return;
         }
         const map = new Map(rows.map((row) => [puzzleIdOf(row.sourceGameId, row.sourcePly), row]));
-        setData({ set, cycle, puzzles: map });
+        // The spacing nudge is a block rule (spec §4): find the previous cycle of
+        // this block and nudge when it ended less than ~1 day before this one.
+        const spacing =
+          resolvedSet.source.kind === 'auto'
+            ? spacingNudgeFor(await cyclesRepo.listForSet(setId), cycle)
+            : null;
+        setData({ set: resolvedSet, cycle, puzzles: map, spacing });
         setError(null);
         setLoading(false);
       } catch {
@@ -134,7 +150,7 @@ export function CycleSessionPage({
     return () => {
       cancelled = true;
     };
-  }, [setId, cycleNumber, setsRepo, cyclesRepo, puzzlesRepo]);
+  }, [setId, isQuickTrain, cycleNumber, setsRepo, cyclesRepo, puzzlesRepo]);
 
   if (loading) {
     return (
@@ -165,6 +181,7 @@ export function CycleSessionPage({
       set={data.set}
       cycle={data.cycle}
       puzzles={data.puzzles}
+      spacing={data.spacing}
       recorder={recorder}
       attemptsRepository={attemptsRepo}
       cycleService={cycleService}
@@ -173,10 +190,30 @@ export function CycleSessionPage({
   );
 }
 
+/**
+ * The synthetic set for a Quick-train session: there is no `trainingSets` row,
+ * so the host is given the sentinel id and a "Quick train" label. The cycle's
+ * own snapshot is authoritative for the membership and config.
+ */
+function quickTrainSet(cycle: TrainingCycleRow): TacticalTrainingSetRow {
+  return {
+    id: QUICK_TRAIN_SET_ID,
+    name: 'Quick train',
+    createdAt: cycle.startedAt,
+    updatedAt: cycle.startedAt,
+    status: 'active',
+    source: { kind: 'manual' },
+    puzzleIds: cycle.puzzleIds,
+    targetSize: cycle.puzzleIds.length,
+    config: cycle.config,
+  };
+}
+
 interface CycleSessionViewProps {
   readonly set: TacticalTrainingSetRow;
   readonly cycle: TrainingCycleRow;
   readonly puzzles: ReadonlyMap<string, PuzzleRow>;
+  readonly spacing: CycleSpacingNudge | null;
   readonly recorder: PuzzleAttemptRecorderLike;
   readonly attemptsRepository: PuzzleAttemptsRepository;
   readonly cycleService: CycleService;
@@ -188,6 +225,7 @@ function CycleSessionView({
   set,
   cycle,
   puzzles,
+  spacing,
   recorder,
   attemptsRepository,
   cycleService,
@@ -196,6 +234,7 @@ function CycleSessionView({
   const navigate = useNavigate();
   const { showPuzzleTimer } = usePuzzleTimerSetting();
   const [restartTick, setRestartTick] = useState(0);
+  const [spacingAcknowledged, setSpacingAcknowledged] = useState(false);
 
   const session = useCycleSession({
     set,
@@ -207,7 +246,13 @@ function CycleSessionView({
     now,
   });
 
-  const resultsPath = puzzlesCycleResultsPath(set.id, cycle.cycleNumber);
+  const isQuickTrain = set.id === QUICK_TRAIN_SET_ID;
+  // A Quick-train cycle has no set detail or set-scoped results view, so it
+  // returns to the training home on completion/exit; a set-backed cycle lands
+  // on its results/set detail as before.
+  const resultsPath = isQuickTrain
+    ? ROUTES.puzzles
+    : puzzlesCycleResultsPath(set.id, cycle.cycleNumber);
 
   // Completion (the queue emptied and the cycle was marked completed, or the
   // cycle was already terminal on load) lands on the results view.
@@ -220,8 +265,8 @@ function CycleSessionView({
   const handleExit = useCallback((): void => {
     // Leave the cycle inProgress and resumable; discard the presentation.
     session.exit();
-    navigate(puzzlesSetPath(set.id));
-  }, [session, navigate, set.id]);
+    navigate(isQuickTrain ? ROUTES.puzzles : puzzlesSetPath(set.id));
+  }, [session, navigate, isQuickTrain, set.id]);
 
   const handleOutcome = useCallback(
     (outcome: PresentationOutcome | null): void => {
@@ -232,6 +277,9 @@ function CycleSessionView({
 
   const current = session.current;
   const total = session.progress.total;
+  // The spacing nudge gates the first presentation of a too-soon block cycle;
+  // "Start anyway" acknowledges it and the session proceeds. It never blocks.
+  const showSpacingNudge = spacing !== null && !spacingAcknowledged && session.status === 'solving';
 
   return (
     <div className={styles.page} data-testid="cycle-session">
@@ -275,7 +323,13 @@ function CycleSessionView({
         </p>
       ) : null}
 
-      {current !== null ? (
+      {showSpacingNudge ? (
+        <SpacingNudge
+          setName={set.name}
+          previousCycleNumber={spacing.previousCycleNumber}
+          onStartAnyway={() => setSpacingAcknowledged(true)}
+        />
+      ) : current !== null ? (
         <SolveScreen
           key={`${current.row.sourceGameId}:${current.row.sourcePly}:${current.context.presentationIndex}:${restartTick}`}
           row={current.row}

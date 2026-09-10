@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { SetCard } from '@/components/puzzles/cycles';
 import { Button } from '@/components/ui/Button';
 import { ROUTES, puzzlesCyclePath, puzzlesSetPath } from '@/app/routes';
 import {
-  deriveAutoSetMembership,
+  BLOCK_SIZE_OPTIONS,
+  DEFAULT_BLOCK_SIZE,
+  QUICK_TRAIN_SET_ID,
+  derivePool,
   masteredPuzzleIds,
   type TacticalTrainingSetRow,
   type TrainingCycleRow,
@@ -27,10 +30,6 @@ interface SetSummary {
   /** Latest cycle by number, if the set has any. */
   readonly cycle: TrainingCycleRow | null;
   readonly lastActivityAt: number;
-  /** True for a system-managed `auto` set (badge + refresh note, derived count). */
-  readonly isAuto: boolean;
-  /** Text for a zero derived count (e.g. `All puzzles mastered`), else `null`. */
-  readonly emptyCountLabel: string | null;
 }
 
 /** The in-progress cycle surfaced by the resume banner. */
@@ -40,12 +39,27 @@ interface ResumeTarget {
 }
 
 interface HomeData {
-  readonly active: readonly SetSummary[];
+  /** Active custom (game/pool/manual) sets, excluding the one open block. */
+  readonly customActive: readonly SetSummary[];
+  /** Archived sets, including closed Woodpecker blocks (history is retained). */
   readonly archived: readonly SetSummary[];
-  readonly resume: ResumeTarget | null;
-  /** Total persisted puzzles; `0` means the pool is empty (generate-puzzles state). */
+  /** The single open Woodpecker block, if one exists. */
+  readonly openBlock: SetSummary | null;
+  /** The derived pool: unmastered puzzles not in the open block. */
   readonly poolCount: number;
+  /** Total persisted puzzles; `0` means no puzzles have been generated yet. */
+  readonly totalPuzzleCount: number;
+  readonly resume: ResumeTarget | null;
 }
+
+const EMPTY_HOME: HomeData = {
+  customActive: [],
+  archived: [],
+  openBlock: null,
+  poolCount: 0,
+  totalPuzzleCount: 0,
+  resume: null,
+};
 
 export interface TrainingHomePageProps {
   /** Injectable for tests; defaults to the singleton-backed service. */
@@ -59,10 +73,12 @@ export interface TrainingHomePageProps {
 }
 
 /**
- * Training home (`/puzzles`): the user's active training sets as cards, a
- * resume banner for an in-progress cycle, an archived-sets affordance, a New set
- * action and an explicit empty state pointing at the Game Library. Absent data
- * is stated in words (never a bare `0`).
+ * Training home (`/puzzles`): the derived puzzle pool and the one-click
+ * Woodpecker block, a Quick train action, the active custom sets as cards, a
+ * resume banner for an in-progress cycle, an archived-sets affordance, a New
+ * set action and an explicit empty state pointing at the Game Library. The app
+ * never forms a block on its own; absent data is stated in words (never a bare
+ * `0`).
  */
 export function TrainingHomePage({
   setsService: providedSets,
@@ -70,6 +86,7 @@ export function TrainingHomePage({
   puzzles: providedPuzzles,
   attempts: providedAttempts,
 }: TrainingHomePageProps = {}): React.JSX.Element {
+  const navigate = useNavigate();
   const setsService = useMemo(
     () =>
       providedSets ??
@@ -98,13 +115,12 @@ export function TrainingHomePage({
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<HomeData>({
-    active: [],
-    archived: [],
-    resume: null,
-    poolCount: 0,
-  });
+  const [data, setData] = useState<HomeData>(EMPTY_HOME);
   const [showArchived, setShowArchived] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [blockSize, setBlockSize] = useState<number>(DEFAULT_BLOCK_SIZE);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
   const reload = useCallback(() => setReloadTick((tick) => tick + 1), []);
@@ -122,7 +138,7 @@ export function TrainingHomePage({
       } catch {
         if (!cancelled) {
           setError('Could not load your training sets from local storage.');
-          setData({ active: [], archived: [], resume: null, poolCount: 0 });
+          setData(EMPTY_HOME);
           setLoading(false);
         }
       }
@@ -132,13 +148,55 @@ export function TrainingHomePage({
     };
   }, [setsService, cycleService, puzzlesRepo, attemptsRepo, reloadTick]);
 
-  // The two system-managed auto sets always exist after `ensureAutoSets`, so
-  // "no sets yet" is really "no user sets and no puzzles to train" — the
-  // explicit generate-puzzles empty state.
   const hasUserSets =
-    data.active.some((summary) => !summary.isAuto) ||
-    data.archived.some((summary) => !summary.isAuto);
-  const showEmptyState = !hasUserSets && data.poolCount === 0;
+    data.customActive.length > 0 || data.archived.length > 0 || data.openBlock !== null;
+  const showEmptyState = !hasUserSets && data.totalPuzzleCount === 0;
+  const poolEmpty = data.poolCount === 0;
+  const openBlock = data.openBlock;
+
+  const run = async (action: () => Promise<void>): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await action();
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createBlock = (): void =>
+    void run(async () => {
+      const result = await setsService.createWoodpeckerBlock({ size: blockSize });
+      if (!result.ok) {
+        if (result.reason === 'block-open') {
+          setNotice(
+            'A Woodpecker block is already open. Finish or abandon it before creating the next one.',
+          );
+          reload();
+          return;
+        }
+        setNotice('The puzzle pool is empty. Generate puzzles from a game first.');
+        return;
+      }
+      navigate(puzzlesSetPath(result.set.id));
+    });
+
+  const quickTrain = (): void =>
+    void run(async () => {
+      const result = await cycleService.startQuickTrain();
+      if (!result.ok) {
+        setNotice(
+          result.reason === 'empty-pool'
+            ? 'The puzzle pool is empty. Generate puzzles from a game first.'
+            : 'Could not start Quick train.',
+        );
+        return;
+      }
+      navigate(puzzlesCyclePath(QUICK_TRAIN_SET_ID, result.cycle.cycleNumber));
+    });
 
   return (
     <div className={styles.page} data-testid="training-home">
@@ -146,7 +204,7 @@ export function TrainingHomePage({
         <div>
           <h1 className={styles.heading}>Training</h1>
           <p className={styles.subtitle}>
-            Build fixed sets from your own puzzles and train them in repeated cycles.
+            Build fixed Woodpecker blocks from your own puzzles and train them in repeated cycles.
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -192,7 +250,7 @@ export function TrainingHomePage({
 
       {loading ? (
         <p className={styles.state} data-testid="training-home-loading">
-          Loading your training sets…
+          Loading your training…
         </p>
       ) : error !== null ? (
         <section className={styles.statePanel} role="alert" data-testid="training-home-error">
@@ -208,11 +266,11 @@ export function TrainingHomePage({
           aria-labelledby="training-home-empty-title"
         >
           <h2 className={styles.stateTitle} id="training-home-empty-title">
-            No training sets yet
+            No puzzles yet
           </h2>
           <p className={styles.state}>
-            Puzzles must first be generated from your games before you can build a set. Open the
-            Game Library, analyze a game and generate its puzzles.
+            Puzzles must first be generated from your games before you can build a block or a set.
+            Open the Game Library, analyze a game and generate its puzzles.
           </p>
           <Link
             className={styles.primaryLink}
@@ -224,13 +282,116 @@ export function TrainingHomePage({
         </section>
       ) : (
         <>
-          {data.active.length > 0 ? (
-            <section aria-labelledby="training-active-title" data-testid="training-active">
-              <h2 className={styles.sectionTitle} id="training-active-title">
-                Active sets
-              </h2>
+          <section
+            className={styles.blockSection}
+            aria-labelledby="training-block-title"
+            data-testid="training-block"
+          >
+            <h2 className={styles.sectionTitle} id="training-block-title">
+              Woodpecker block
+            </h2>
+
+            {openBlock !== null ? (
+              <>
+                <SetCard
+                  set={openBlock.set}
+                  puzzleCount={openBlock.puzzleCount}
+                  cycle={openBlock.cycle}
+                  lastActivityAt={openBlock.lastActivityAt}
+                  to={puzzlesSetPath(openBlock.set.id)}
+                />
+                <p className={styles.state} data-testid="training-block-open-note">
+                  A block is open. Finish or abandon it before creating the next block.
+                </p>
+              </>
+            ) : null}
+
+            <div className={styles.poolCard} data-testid="training-pool">
+              <h3 className={styles.poolTitle}>Puzzle pool</h3>
+              <p className={styles.poolCount} data-testid="training-pool-count">
+                {data.poolCount > 0
+                  ? `${data.poolCount} ${data.poolCount === 1 ? 'puzzle' : 'puzzles'} ready to train`
+                  : data.totalPuzzleCount > 0
+                    ? 'No puzzles ready to train — every puzzle is mastered or already in the open block.'
+                    : 'No puzzles yet — generate puzzles from a game to fill the pool.'}
+              </p>
+              <p className={styles.poolGuidance} data-testid="training-pool-guidance">
+                A block is fixed once created; new puzzles wait for the next block. Recommended
+                200–400; below ~100 risks memorising diagrams.
+              </p>
+
+              {openBlock === null ? (
+                <div className={styles.poolActions}>
+                  <Button
+                    data-testid="training-block-create"
+                    aria-label={`Create Woodpecker block (${blockSize} puzzles, fixed membership)`}
+                    disabled={busy || poolEmpty}
+                    onClick={createBlock}
+                  >
+                    Create Woodpecker block
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    aria-expanded={showAdvanced}
+                    aria-controls="training-block-advanced"
+                    data-testid="training-block-advanced-toggle"
+                    onClick={() => setShowAdvanced((current) => !current)}
+                  >
+                    Advanced
+                  </Button>
+                </div>
+              ) : null}
+
+              {openBlock === null && showAdvanced ? (
+                <div id="training-block-advanced" data-testid="training-block-advanced">
+                  <label className={styles.sizeField}>
+                    <span className={styles.label}>Block size</span>
+                    <select
+                      className={styles.select}
+                      value={blockSize}
+                      data-testid="training-block-size"
+                      onChange={(event) => setBlockSize(Number(event.target.value))}
+                    >
+                      {BLOCK_SIZE_OPTIONS.map((size) => (
+                        <option key={size} value={size}>
+                          {size} puzzles
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+
+              <div className={styles.poolActions}>
+                <Button
+                  variant="secondary"
+                  data-testid="training-quick-train"
+                  aria-label="Quick train over the puzzle pool"
+                  disabled={busy || poolEmpty}
+                  onClick={quickTrain}
+                >
+                  Quick train
+                </Button>
+                <span className={styles.poolHint}>
+                  Practise the pool now without committing a block.
+                </span>
+              </div>
+            </div>
+
+            {notice !== null ? (
+              <p className={styles.notice} role="status" data-testid="training-block-notice">
+                {notice}
+              </p>
+            ) : null}
+          </section>
+
+          <section aria-labelledby="training-active-title" data-testid="training-active">
+            <h2 className={styles.sectionTitle} id="training-active-title">
+              Your sets
+            </h2>
+            {data.customActive.length > 0 ? (
               <div className={styles.cards} data-testid="training-sets">
-                {data.active.map((summary) => (
+                {data.customActive.map((summary) => (
                   <SetCard
                     key={summary.set.id}
                     set={summary.set}
@@ -238,24 +399,15 @@ export function TrainingHomePage({
                     cycle={summary.cycle}
                     lastActivityAt={summary.lastActivityAt}
                     to={puzzlesSetPath(summary.set.id)}
-                    {...(summary.isAuto
-                      ? {
-                          badge: 'Auto',
-                          note: 'Membership refreshes each cycle.',
-                          ...(summary.emptyCountLabel === null
-                            ? {}
-                            : { emptyCountLabel: summary.emptyCountLabel }),
-                        }
-                      : {})}
                   />
                 ))}
               </div>
-            </section>
-          ) : (
-            <p className={styles.state} data-testid="training-no-active">
-              No active sets. Restore an archived set or create a new one.
-            </p>
-          )}
+            ) : (
+              <p className={styles.state} data-testid="training-no-active">
+                No custom sets. Restore an archived set or create a new one.
+              </p>
+            )}
+          </section>
 
           {data.archived.length > 0 ? (
             <section aria-labelledby="training-archived-title" data-testid="training-archived">
@@ -294,28 +446,38 @@ export function TrainingHomePage({
   );
 }
 
-/** Load the active/archived set summaries and the resume target. */
+/** Load the derived pool, the open block, custom set summaries and the resume target. */
 async function loadHome(
   setsService: TrainingSetsService,
   cycleService: CycleService,
   puzzlesRepo: PuzzlesRepository,
   attemptsRepo: PuzzleAttemptsRepository,
 ): Promise<HomeData> {
-  // Seed the two system-managed auto sets idempotently so a fresh install with
-  // generated puzzles has something to train without manual set creation.
-  await setsService.ensureAutoSets();
-  const [activeSets, archivedSets, pool, attempts] = await Promise.all([
+  const [activeSets, archivedSets, puzzles, attempts, openBlockRow] = await Promise.all([
     setsService.list({ status: 'active' }),
     setsService.list({ status: 'archived' }),
     puzzlesRepo.listAll(),
     attemptsRepo.listAll(),
+    setsService.getOpenBlock(),
   ]);
-  const all = [...activeSets, ...archivedSets];
-  const cyclesBySet = await Promise.all(all.map((set) => cycleService.listForSet(set.id)));
-  const masteredIds = masteredPuzzleIds(attempts);
+
+  const pool = derivePool({
+    puzzles,
+    masteredIds: masteredPuzzleIds(attempts),
+    openBlockPuzzleIds: new Set(openBlockRow?.puzzleIds ?? []),
+  });
+
+  const customActiveSets = activeSets.filter((set) => set.source.kind !== 'auto');
+  const summarySets = [
+    ...customActiveSets,
+    ...archivedSets,
+    ...(openBlockRow === undefined ? [] : [openBlockRow]),
+  ];
+  const cyclesBySet = await Promise.all(summarySets.map((set) => cycleService.listForSet(set.id)));
+
   const summaries = new Map<string, SetSummary>();
   let resume: ResumeTarget | null = null;
-  all.forEach((set, index) => {
+  summarySets.forEach((set, index) => {
     const cycles = cyclesBySet[index]!;
     const current = cycles.length > 0 ? cycles[cycles.length - 1]! : null;
     let lastActivityAt = set.updatedAt;
@@ -326,31 +488,11 @@ async function loadHome(
         }
       }
     }
-    // Auto sets are virtual: show the derived count for the next cycle
-    // (current pool minus mastered), never the last cycle's stored snapshot.
-    let puzzleCount = set.puzzleIds.length;
-    let isAuto = false;
-    let emptyCountLabel: string | null = null;
-    if (set.source.kind === 'auto') {
-      isAuto = true;
-      const derived = deriveAutoSetMembership({
-        recipe: set.source.recipe,
-        pool,
-        masteredIds,
-        setId: set.id,
-      });
-      puzzleCount = derived.length;
-      if (derived.length === 0) {
-        emptyCountLabel = pool.length === 0 ? 'No puzzles yet' : 'All puzzles mastered';
-      }
-    }
     summaries.set(set.id, {
       set,
-      puzzleCount,
+      puzzleCount: set.puzzleIds.length,
       cycle: current,
       lastActivityAt,
-      isAuto,
-      emptyCountLabel,
     });
     for (const cycle of cycles) {
       if (cycle.status === 'inProgress') {
@@ -360,10 +502,13 @@ async function loadHome(
       }
     }
   });
+
   return {
-    active: activeSets.map((set) => summaries.get(set.id)!),
+    customActive: customActiveSets.map((set) => summaries.get(set.id)!),
     archived: archivedSets.map((set) => summaries.get(set.id)!),
-    resume,
+    openBlock: openBlockRow === undefined ? null : summaries.get(openBlockRow.id)!,
     poolCount: pool.length,
+    totalPuzzleCount: puzzles.length,
+    resume,
   };
 }

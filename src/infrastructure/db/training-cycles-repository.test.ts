@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { db } from './database';
 import { trainingCyclesRepository } from './training-cycles-repository';
+import { QUICK_TRAIN_SET_ID } from '@/domain/training';
 import { cycleFixture } from '@/domain/training/test-support';
 
 describe('training cycles repository', () => {
@@ -85,5 +86,22 @@ describe('training cycles repository', () => {
     expect((await trainingCyclesRepository.listForSet('set:b')).map((c) => c.id)).toEqual([
       'cycle:b1',
     ]);
+  });
+
+  it('createQuickTrain persists a sentinel cycle and rejects a non-sentinel id', async () => {
+    const quick = cycleFixture({
+      id: 'cycle:quick',
+      trainingSetId: QUICK_TRAIN_SET_ID,
+      cycleNumber: 1,
+    });
+    await trainingCyclesRepository.createQuickTrain(quick);
+
+    expect(await trainingCyclesRepository.get('cycle:quick')).toEqual(quick);
+    expect(await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID)).toEqual([quick]);
+    await expect(
+      trainingCyclesRepository.createQuickTrain(
+        cycleFixture({ id: 'cycle:bad', trainingSetId: 'set:a', cycleNumber: 1 }),
+      ),
+    ).rejects.toThrow();
   });
 });

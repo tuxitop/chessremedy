@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import {
   CycleComparison,
+  CycleGuidance,
   CycleMetricsPanel,
   PuzzleOutcomeList,
   cycleStatusLabel,
@@ -308,6 +309,20 @@ export function CycleResultsPage({
           Aggregate results
         </h2>
         <CycleMetricsPanel metrics={results.metrics} testId="cycle-results-metrics" />
+      </section>
+
+      <section aria-labelledby="cycle-results-guidance-title">
+        <h2 className={styles.sectionTitle} id="cycle-results-guidance-title">
+          Training guidance
+        </h2>
+        <CycleGuidance
+          metrics={results.metrics}
+          previous={results.previous?.metrics ?? null}
+          previousCycleNumber={results.previous?.cycle.cycleNumber ?? null}
+          cycleNumber={cycle.cycleNumber}
+          plannedCycles={cycle.config.plannedCycles}
+          testId="cycle-results-guidance"
+        />
       </section>
 
       {comparison !== null && results.previous !== null ? (

@@ -13,6 +13,7 @@
  */
 
 import type { TrainingCycleRow, TrainingCycleStatus } from '@/domain/training';
+import { QUICK_TRAIN_SET_ID } from '@/domain/training';
 import { db, type ChessRemedyDatabase } from './database';
 
 /**
@@ -38,6 +39,15 @@ export interface TrainingCyclesRepository {
   getByNumber(setId: string, cycleNumber: number): Promise<TrainingCyclesRow | undefined>;
   /** Insert or replace one cycle row. */
   create(row: TrainingCyclesRow): Promise<void>;
+  /**
+   * Insert one **Quick-train** cycle: a real `trainingCycles` row under the
+   * reserved `QUICK_TRAIN_SET_ID` sentinel with **no** owning `trainingSets`
+   * row (spec §3c). The sentinel row is excluded from set-scoped reads and is
+   * removed only by the game-deletion/puzzle cascade. Rejects a row whose
+   * `trainingSetId` is not the sentinel so the ad-hoc identity cannot be
+   * misused for an ordinary set cycle.
+   */
+  createQuickTrain(row: TrainingCyclesRow): Promise<void>;
   /**
    * Apply a lifecycle status/timestamp patch to one cycle. Returns the stored
    * row, or `undefined` when the id is absent (no row is created).
@@ -71,6 +81,15 @@ export class DexieTrainingCyclesRepository implements TrainingCyclesRepository {
   }
 
   async create(row: TrainingCyclesRow): Promise<void> {
+    await this.database.trainingCycles.put(row);
+  }
+
+  async createQuickTrain(row: TrainingCyclesRow): Promise<void> {
+    if (row.trainingSetId !== QUICK_TRAIN_SET_ID) {
+      throw new Error(
+        `createQuickTrain requires the ${QUICK_TRAIN_SET_ID} sentinel trainingSetId.`,
+      );
+    }
     await this.database.trainingCycles.put(row);
   }
 

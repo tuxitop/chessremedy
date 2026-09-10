@@ -5,7 +5,13 @@
  * Stage-B `trainingCycles`/`trainingSets`/`puzzles`/`puzzleAttempts`
  * persistence. It owns:
  *
- * - `start` — snapshot a set's membership + config into a new 1-based cycle;
+ * - `start` — snapshot a set's **fixed stored membership** + config into a new
+ *   1-based cycle (a block's membership is frozen at creation and never
+ *   re-derived per cycle; this supersedes the former virtual/auto-refresh
+ *   rule);
+ * - `startQuickTrain` — an ad-hoc session over the whole derived pool under the
+ *   reserved `QUICK_TRAIN_SET_ID` sentinel, with **no** `trainingSets` row
+ *   (spec §3c);
  * - `resume` — reconstruct the pending queue from persisted attempt rows (no
  *   stored cursor) and mark the cycle `completed` when nothing is pending;
  * - `abandon` — terminal user action that keeps the attempts;
@@ -24,8 +30,12 @@
  */
 
 import {
+  CYCLE_METRICS_VERSION,
+  DEFAULT_CYCLE_CONFIG,
+  QUICK_TRAIN_SET_ID,
   computeCycleMetrics,
-  deriveAutoSetMembership,
+  derivePool,
+  formWoodpeckerBlock,
   masteredPuzzleIds,
   nextCycleNumber,
   reconstructResume,
@@ -35,7 +45,6 @@ import {
   type CycleMetrics,
   type CycleResolution,
   type ResumeQueue,
-  type TacticalTrainingSetRow,
   type TrainingCycleRow,
   type TrainingCycleStatus,
 } from '@/domain/training';
@@ -64,13 +73,10 @@ export interface CycleEmptySet {
   readonly reason: 'empty-set';
 }
 
-/**
- * An auto set's derived membership is empty because every pool puzzle is
- * mastered; cycle start is blocked (never a fake count or an empty cycle).
- */
-export interface CycleAllMastered {
+/** Quick train was refused because the derived pool is empty (spec §3c). */
+export interface CycleEmptyPool {
   readonly ok: false;
-  readonly reason: 'all-mastered';
+  readonly reason: 'empty-pool';
 }
 
 /** The cycle is already terminal and cannot be started/resumed/abandoned. */
@@ -97,7 +103,21 @@ export type CycleStartResult =
     }
   | CycleNotFound
   | CycleEmptySet
-  | CycleAllMastered
+  | CycleInvalidConfig;
+
+/**
+ * Result of `startQuickTrain`: a real `trainingCycles` row under the
+ * `QUICK_TRAIN_SET_ID` sentinel (no `trainingSets` row) whose snapshot is the
+ * difficulty-ascending pool. The pool is derived from persisted rows, so its
+ * snapshot can never contain a missing puzzle id.
+ */
+export type CycleQuickTrainResult =
+  | {
+      readonly ok: true;
+      readonly cycle: TrainingCycleRow;
+      readonly missingPuzzleIds: readonly string[];
+    }
+  | CycleEmptyPool
   | CycleInvalidConfig;
 
 /** Result of `resume`: the reconstructed queue and completion state. */
@@ -145,11 +165,11 @@ export type CycleResultsResult =
 export interface CycleServiceOptions {
   /** Feature-013 cycle rows. */
   readonly cycles: TrainingCyclesRepository;
-  /** Feature-013 set rows (the cycle source). */
+  /** Feature-013 set rows (the cycle source; also the open-block read for Quick train). */
   readonly sets: TrainingSetsRepository;
   /** Feature-011 puzzle rows (membership hydration / missing-id tracking). */
   readonly puzzles: PuzzlesRepository;
-  /** Feature-012 attempt rows (resume/metrics reads). */
+  /** Feature-012 attempt rows (resume/metrics/mastery reads). */
   readonly attempts: PuzzleAttemptsRepository;
   /** Wall clock for cycle timestamps (Unix epoch millis); defaults to `Date.now`. */
   readonly now?: () => number;
@@ -175,16 +195,11 @@ export class CycleService {
   }
 
   /**
-   * Start a new cycle over a set: snapshot the stored membership and validated
-   * config under the next 1-based cycle number. Rejected with `empty-set` when
-   * the set has no surviving puzzle row (no empty cycle is created).
-   *
-   * An **auto** set's membership is virtual: it is re-derived here from the
-   * current puzzle pool minus the derived mastery, persisted back onto the set
-   * (so the training home's derived count is fresh) and snapshotted onto the
-   * cycle. A derived-empty auto set is blocked as `empty-set` (no pool) or
-   * `all-mastered` (every pool puzzle mastered); an existing in-progress cycle
-   * is never touched. Game/pool/manual sets keep their stored membership.
+   * Start a new cycle over a set: snapshot the set's **fixed stored membership**
+   * and validated config under the next 1-based cycle number. A Woodpecker
+   * block's membership was frozen at creation, so it is snapshotted verbatim
+   * and never re-derived here. Rejected with `empty-set` when the set has no
+   * membership or no surviving puzzle row (no empty cycle is created).
    */
   async start(setId: string): Promise<CycleStartResult> {
     const set = await this.sets.get(setId);
@@ -195,16 +210,9 @@ export class CycleService {
     if (!check.ok) {
       return { ok: false, reason: 'invalid-config', message: check.message };
     }
-    const membership = await this.resolveStartMembership(set);
-    if (membership.kind === 'empty') {
-      return { ok: false, reason: 'empty-set' };
-    }
-    if (membership.kind === 'all-mastered') {
-      return { ok: false, reason: 'all-mastered' };
-    }
-    const puzzleIds = membership.puzzleIds;
+    const puzzleIds = set.puzzleIds;
     const missingPuzzleIds = await this.missingPuzzleIdsFor(puzzleIds);
-    if (missingPuzzleIds.length === puzzleIds.length) {
+    if (puzzleIds.length === 0 || missingPuzzleIds.length === puzzleIds.length) {
       return { ok: false, reason: 'empty-set' };
     }
     const existing = await this.cycles.listForSet(setId);
@@ -222,35 +230,50 @@ export class CycleService {
   }
 
   /**
-   * Resolve the membership to snapshot at cycle start. Game/pool/manual sets
-   * return their stored membership unchanged. An auto set re-derives from the
-   * current pool + mastery, persists the refreshed ids on the set, and reports
-   * a derived-empty pool as `empty` (no puzzles) or `all-mastered` (pool
-   * non-empty but every puzzle mastered).
+   * Start a **Quick train** ad-hoc session over the whole derived pool (spec
+   * §3c): the unmastered puzzles not in the currently-open block, in
+   * `difficultyAsc` order. It creates **no** `trainingSets` row; it writes a
+   * real `trainingCycles` row under the reserved `QUICK_TRAIN_SET_ID` sentinel
+   * so every attempt keeps a real `cycleId`/`trainingSetId` and counts toward
+   * mastery like any other cycle. Refused with `empty-pool` when the pool is
+   * empty (no cycle row is created).
    */
-  private async resolveStartMembership(
-    set: TacticalTrainingSetRow,
-  ): Promise<
-    | { readonly kind: 'ready'; readonly puzzleIds: readonly string[] }
-    | { readonly kind: 'empty' }
-    | { readonly kind: 'all-mastered' }
-  > {
-    if (set.source.kind !== 'auto') {
-      return { kind: 'ready', puzzleIds: set.puzzleIds };
+  async startQuickTrain(): Promise<CycleQuickTrainResult> {
+    const check = validateCycleConfig(DEFAULT_CYCLE_CONFIG);
+    if (!check.ok) {
+      return { ok: false, reason: 'invalid-config', message: check.message };
     }
-    const [pool, attempts] = await Promise.all([this.puzzles.listAll(), this.attempts.listAll()]);
+    const [puzzles, attempts, openBlock] = await Promise.all([
+      this.puzzles.listAll(),
+      this.attempts.listAll(),
+      this.sets.getOpenBlock(),
+    ]);
     const masteredIds = masteredPuzzleIds(attempts);
-    const puzzleIds = deriveAutoSetMembership({
-      recipe: set.source.recipe,
-      pool,
+    const pool = derivePool({
+      puzzles,
       masteredIds,
-      setId: set.id,
+      openBlockPuzzleIds: new Set(openBlock?.puzzleIds ?? []),
     });
-    await this.sets.update(set.id, { puzzleIds });
-    if (puzzleIds.length > 0) {
-      return { kind: 'ready', puzzleIds };
+    const puzzleIds = formWoodpeckerBlock({ pool, masteredIds, size: pool.length });
+    if (puzzleIds.length === 0) {
+      return { ok: false, reason: 'empty-pool' };
     }
-    return pool.length === 0 ? { kind: 'empty' } : { kind: 'all-mastered' };
+    const existing = await this.cycles.listForSet(QUICK_TRAIN_SET_ID);
+    const cycleNumber = nextCycleNumber(existing.map((cycle) => cycle.cycleNumber));
+    const cycle: TrainingCycleRow = {
+      id: this.newId(),
+      trainingSetId: QUICK_TRAIN_SET_ID,
+      cycleNumber,
+      status: 'inProgress',
+      startedAt: this.now(),
+      completedAt: null,
+      abandonedAt: null,
+      puzzleIds: [...puzzleIds],
+      config: check.config,
+      cycleMetricsVersion: CYCLE_METRICS_VERSION,
+    };
+    await this.cycles.createQuickTrain(cycle);
+    return { ok: true, cycle, missingPuzzleIds: [] };
   }
 
   /**
@@ -320,8 +343,8 @@ export class CycleService {
 
   /**
    * Start the next cycle over the current set (a new 1-based number and a fresh
-   * membership/config snapshot). Semantic alias of `start` for the results
-   * view's "Start next cycle" action.
+   * snapshot of the set's fixed stored membership/config). Semantic alias of
+   * `start` for the results view's "Start next cycle" action.
    */
   async repeat(setId: string): Promise<CycleStartResult> {
     return this.start(setId);

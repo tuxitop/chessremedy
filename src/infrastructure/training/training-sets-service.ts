@@ -7,6 +7,14 @@
  * fixed membership snapshot, and exposes the set lifecycle
  * (create/rename/configure/archive/unarchive/delete/list) as typed results.
  *
+ * This revision owns the **derived pool** and the one-click **Woodpecker
+ * block** (spec §3a): the app never seeds or auto-forms a set, so there is no
+ * `ensureAutoSets()`. A block is created only by an explicit
+ * `createWoodpeckerBlock` call, freezes the easiest-N pool selection as its
+ * `puzzleIds`, and is closed (`status: 'archived'`) by `closeBlock`; its
+ * still-unmastered members return to the pool implicitly because the pool
+ * excludes only the currently-**open** block's members.
+ *
  * Determinism: the wall clock and id factory are injectable (`now`/`newId`,
  * plan R-8). No engine, network, React or worker import; the only side effects
  * are repository writes.
@@ -18,13 +26,12 @@
 
 import {
   DEFAULT_CYCLE_CONFIG,
-  DEFAULT_TARGET_SIZE,
-  autoSetDefinitions,
-  deriveAutoSetMembership,
+  WOODPECKER_PLAN_CYCLES,
+  derivePool,
+  formWoodpeckerBlock,
   masteredPuzzleIds,
   resolveSetMembership,
   validateCycleConfig,
-  type AutoSetDefinition,
   type CycleConfig,
   type OrderingPolicy,
   type PuzzlePoolEntry,
@@ -83,6 +90,15 @@ export interface CreateSetManualInput {
   readonly targetSize: number;
 }
 
+/** Inputs to `TrainingSetsService.createWoodpeckerBlock`. */
+export interface CreateWoodpeckerBlockInput {
+  /**
+   * Requested cap (`100 | 200 | 400`, default `DEFAULT_BLOCK_SIZE`). When the
+   * pool is smaller, the block takes all of it.
+   */
+  readonly size: number;
+}
+
 /** A create succeeded: the persisted set plus its real resolved membership size. */
 export interface CreateSetSuccess {
   readonly ok: true;
@@ -91,6 +107,28 @@ export interface CreateSetSuccess {
   readonly resolvedCount: number;
   /** True when the source resolved no puzzle row (an explicit empty set). */
   readonly empty: boolean;
+}
+
+/** A Woodpecker block was created: the frozen snapshot plus its real size. */
+export interface CreateBlockSuccess {
+  readonly ok: true;
+  readonly set: TacticalTrainingSetRow;
+  /** Number of pool puzzles actually selected (may be below the requested size). */
+  readonly selectedCount: number;
+}
+
+/** Block creation was refused because a block is already open (spec §3a). */
+export interface BlockAlreadyOpen {
+  readonly ok: false;
+  readonly reason: 'block-open';
+  /** The currently-open block the UI should show instead. */
+  readonly block: TacticalTrainingSetRow;
+}
+
+/** Block creation was refused because the derived pool is empty (spec §3a). */
+export interface BlockEmptyPool {
+  readonly ok: false;
+  readonly reason: 'empty-pool';
 }
 
 /** A config failed validation; nothing was persisted. */
@@ -107,24 +145,34 @@ export interface SetNotFound {
 }
 
 /**
- * A mutation was refused because the set is a system-managed `auto` set: auto
- * sets are non-editable, non-archivable and non-deletable in V1 (they are
- * re-seeded idempotently and their membership is derived at cycle start).
+ * A mutation was refused because the set is a one-click Woodpecker block: a
+ * block has no rename, no membership editing and no per-cycle refresh; it
+ * closes via `closeBlock` (Finish/Abandon) only.
  */
 export interface AutoSetImmutable {
   readonly ok: false;
   readonly reason: 'auto-set-immutable';
 }
 
+/** `closeBlock` was called for a set that is not a Woodpecker block. */
+export interface NotABlock {
+  readonly ok: false;
+  readonly reason: 'not-a-block';
+}
+
 /** Result of a create: the empty set is still a success. */
 export type CreateSetResult = CreateSetSuccess | InvalidSetConfig;
+
+/** Result of a block create: the frozen snapshot or a typed refusal. */
+export type CreateBlockResult = CreateBlockSuccess | BlockAlreadyOpen | BlockEmptyPool;
 
 /** Result of a set mutation: the stored row or a typed rejection. */
 export type SetMutationResult =
   | { readonly ok: true; readonly set: TacticalTrainingSetRow }
   | SetNotFound
   | InvalidSetConfig
-  | AutoSetImmutable;
+  | AutoSetImmutable
+  | NotABlock;
 
 /** Result of a set deletion: success or a typed rejection. */
 export type SetDeleteResult = { readonly ok: true } | SetNotFound | AutoSetImmutable;
@@ -138,9 +186,10 @@ export interface TrainingSetsServiceOptions {
   /** Feature-004 games (pool platform/time-control enrichment). */
   readonly games: GamesRepository;
   /**
-   * Feature-012 attempt rows. Accepted as part of the documented Stage-C
-   * dependency surface; set-owned attempt removal is performed transactionally
-   * by `TrainingSetsRepository.delete`, so the service never writes here.
+   * Feature-012 attempt rows. Used for the derived-mastery read behind the
+   * pool (`masteredPuzzleIds`); set-owned attempt removal is performed
+   * transactionally by `TrainingSetsRepository.delete`, so the service never
+   * writes here.
    */
   readonly attempts: PuzzleAttemptsRepository;
   /** Wall clock for create timestamps (Unix epoch millis); defaults to `Date.now`. */
@@ -224,6 +273,108 @@ export class TrainingSetsService {
     return this.persistNewSet(input.name, source, puzzleIds, input.ordering, input.targetSize);
   }
 
+  /**
+   * Derive the training **pool** at read time: every owned puzzle that is
+   * neither mastered (a legitimate first-try solve in 3 distinct cycles) nor a
+   * member of the currently-open block (spec §1/§3). The pool is a view — it is
+   * never stored as a set.
+   */
+  async listPool(): Promise<PuzzleRow[]> {
+    const [puzzles, attempts, openBlock] = await Promise.all([
+      this.puzzles.listAll(),
+      this.attempts.listAll(),
+      this.sets.getOpenBlock(),
+    ]);
+    return derivePool({
+      puzzles,
+      masteredIds: masteredPuzzleIds(attempts),
+      openBlockPuzzleIds: new Set(openBlock?.puzzleIds ?? []),
+    });
+  }
+
+  /** The single open Woodpecker block, or `undefined` when none is open. */
+  async getOpenBlock(): Promise<TacticalTrainingSetRow | undefined> {
+    return this.sets.getOpenBlock();
+  }
+
+  /**
+   * Form and persist a one-click **Woodpecker block** from the derived pool
+   * (spec §3a). The selection is the easiest-`size` pool puzzles in
+   * `difficultyAsc` order (ties by `sourcePly`, then `puzzleId`); when the pool
+   * is smaller than `size` the block holds all of it. Membership is frozen as
+   * the block's `puzzleIds` and is never re-derived per cycle.
+   *
+   * Refused with `block-open` while a block is already open (only one at a
+   * time) and with `empty-pool` when there is nothing to select — never an
+   * empty or fabricated block.
+   */
+  async createWoodpeckerBlock(input: CreateWoodpeckerBlockInput): Promise<CreateBlockResult> {
+    const openBlock = await this.sets.getOpenBlock();
+    if (openBlock !== undefined) {
+      return { ok: false, reason: 'block-open', block: openBlock };
+    }
+    const [puzzles, attempts] = await Promise.all([
+      this.puzzles.listAll(),
+      this.attempts.listAll(),
+    ]);
+    const masteredIds = masteredPuzzleIds(attempts);
+    const pool = derivePool({
+      puzzles,
+      masteredIds,
+      openBlockPuzzleIds: new Set(),
+    });
+    const puzzleIds = formWoodpeckerBlock({ pool, masteredIds, size: input.size });
+    if (puzzleIds.length === 0) {
+      return { ok: false, reason: 'empty-pool' };
+    }
+    const config = blockConfig();
+    const check = validateCycleConfig(config);
+    if (!check.ok) {
+      // Unreachable for the fixed block preset; kept so a future edit cannot
+      // persist an invalid config silently.
+      throw new Error(`Invalid block config: ${check.message}`);
+    }
+    const now = this.now();
+    const set: TacticalTrainingSetRow = {
+      id: this.newId(),
+      name: 'Woodpecker block',
+      createdAt: now,
+      updatedAt: now,
+      status: 'active',
+      source: { kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: input.size } },
+      puzzleIds,
+      targetSize: input.size,
+      config: check.config,
+    };
+    await this.sets.create(set);
+    return { ok: true, set, selectedCount: puzzleIds.length };
+  }
+
+  /**
+   * Close an open Woodpecker block: Finish/Abandon reuses `status: 'archived'`
+   * (no new field, schema stays v10). Its still-unmastered members return to
+   * the pool implicitly — the pool excludes only the **open** block's members,
+   * so no membership is mutated here. Idempotent: an already-closed block is
+   * returned unchanged.
+   */
+  async closeBlock(id: string): Promise<SetMutationResult> {
+    const existing = await this.sets.get(id);
+    if (existing === undefined) {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (!isBlock(existing)) {
+      return { ok: false, reason: 'not-a-block' };
+    }
+    if (existing.status === 'archived') {
+      return { ok: true, set: existing };
+    }
+    const closed = await this.sets.closeBlock(id, this.now());
+    if (closed === undefined) {
+      return { ok: false, reason: 'not-found' };
+    }
+    return { ok: true, set: closed };
+  }
+
   /** Rename a set; `not-found` when the id is absent. */
   async rename(id: string, name: string): Promise<SetMutationResult> {
     return this.mutate(id, { name });
@@ -255,15 +406,15 @@ export class TrainingSetsService {
   /**
    * Delete a set and everything it owns (its cycles and their attempt rows, in
    * the repository's transaction). Puzzles are untouched. Idempotent result
-   * reporting: an absent id is `not-found`; a system-managed auto set is
-   * refused (`auto-set-immutable`).
+   * reporting: an absent id is `not-found`; a Woodpecker block is refused
+   * (`auto-set-immutable`) — a block is closed, never deleted.
    */
   async delete(id: string): Promise<SetDeleteResult> {
     const existing = await this.sets.get(id);
     if (existing === undefined) {
       return { ok: false, reason: 'not-found' };
     }
-    if (isAutoSet(existing)) {
+    if (isBlock(existing)) {
       return { ok: false, reason: 'auto-set-immutable' };
     }
     await this.sets.delete(id);
@@ -275,59 +426,6 @@ export class TrainingSetsService {
     options: { readonly status?: TrainingSetStatus } = {},
   ): Promise<TacticalTrainingSetRow[]> {
     return this.sets.list(options);
-  }
-
-  /**
-   * Idempotently seed the two system-managed auto sets ("All puzzles" and
-   * "Woodpecker random") from `autoSetDefinitions()`.
-   *
-   * Each absent definition is created once with its deterministic id, preset
-   * name/config and recipe in `source` (`kind: 'auto'`), active status, and an
-   * initial derived membership from the current pool minus mastery (so the
-   * training home shows a real count before the first cycle). An existing row
-   * — auto or not — is **never** overwritten or duplicated. Re-seeding after a
-   * mastery change is intentionally a no-op: membership is refreshed at each
-   * cycle start, not here.
-   */
-  async ensureAutoSets(): Promise<void> {
-    const definitions = autoSetDefinitions();
-    const missing: AutoSetDefinition[] = [];
-    for (const definition of definitions) {
-      if ((await this.sets.get(definition.id)) === undefined) {
-        missing.push(definition);
-      }
-    }
-    if (missing.length === 0) {
-      return;
-    }
-    const [pool, attempts] = await Promise.all([this.puzzles.listAll(), this.attempts.listAll()]);
-    const masteredIds = masteredPuzzleIds(attempts);
-    const now = this.now();
-    for (const definition of missing) {
-      // Re-check immediately before writing so a concurrent seed can never be
-      // overwritten (the write is a `put`).
-      if ((await this.sets.get(definition.id)) !== undefined) {
-        continue;
-      }
-      const puzzleIds = deriveAutoSetMembership({
-        recipe: definition.recipe,
-        pool,
-        masteredIds,
-        setId: definition.id,
-      });
-      const set: TacticalTrainingSetRow = {
-        id: definition.id,
-        name: definition.name,
-        createdAt: now,
-        updatedAt: now,
-        status: 'active',
-        source: { kind: 'auto', recipe: definition.recipe },
-        puzzleIds,
-        targetSize: DEFAULT_TARGET_SIZE,
-        config: definition.config,
-      };
-      await this.sets.create(set);
-    }
   }
 
   /** Persist a freshly resolved set with the default config for its ordering. */
@@ -361,14 +459,14 @@ export class TrainingSetsService {
 
   /**
    * Apply a partial patch, mapping an absent id to the typed `not-found` and a
-   * system-managed auto set to the typed `auto-set-immutable`.
+   * one-click block to the typed `auto-set-immutable`.
    */
   private async mutate(id: string, patch: TrainingSetUpdate): Promise<SetMutationResult> {
     const existing = await this.sets.get(id);
     if (existing === undefined) {
       return { ok: false, reason: 'not-found' };
     }
-    if (isAutoSet(existing)) {
+    if (isBlock(existing)) {
       return { ok: false, reason: 'auto-set-immutable' };
     }
     const updated = await this.sets.update(id, patch);
@@ -379,8 +477,8 @@ export class TrainingSetsService {
   }
 }
 
-/** Whether a set is system-managed (`source.kind === 'auto'`). */
-function isAutoSet(set: TacticalTrainingSetRow): boolean {
+/** Whether a set is a one-click Woodpecker block (`source.kind === 'auto'`). */
+function isBlock(set: TacticalTrainingSetRow): boolean {
   return set.source.kind === 'auto';
 }
 
@@ -389,6 +487,28 @@ function defaultConfigFor(ordering: OrderingPolicy): CycleConfig {
   return {
     ...DEFAULT_CYCLE_CONFIG,
     ordering,
+    hints: {
+      ...DEFAULT_CYCLE_CONFIG.hints,
+      enabledLevels: [...DEFAULT_CYCLE_CONFIG.hints.enabledLevels],
+    },
+  };
+}
+
+/**
+ * The fixed Woodpecker block preset (spec §3a, `domain/tactical-training.md`):
+ * `difficultyAsc`, retry `endOfCycle`, hints enabled, skipping allowed, no
+ * accuracy gate (`targetAccuracy`/`targetSolvingTimeMs` unset), and the
+ * suggested ~6-cycle plan as the informational `plannedCycles`.
+ */
+function blockConfig(): CycleConfig {
+  return {
+    ...DEFAULT_CYCLE_CONFIG,
+    ordering: 'difficultyAsc',
+    retryFailed: 'endOfCycle',
+    allowSkip: true,
+    targetAccuracy: null,
+    targetSolvingTimeMs: null,
+    plannedCycles: WOODPECKER_PLAN_CYCLES,
     hints: {
       ...DEFAULT_CYCLE_CONFIG.hints,
       enabledLevels: [...DEFAULT_CYCLE_CONFIG.hints.enabledLevels],

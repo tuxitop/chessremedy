@@ -247,6 +247,34 @@ describe('CycleResultsPage (Feature 013, Stage F)', () => {
     expect(screen.getByTestId('cycle-results-comparison-delta-firstTryAccuracy')).toHaveTextContent(
       '+50%',
     );
+    expect(
+      screen.getByTestId('cycle-results-comparison-delta-solvingTimeTotalMs'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('cycle-results-guidance-time-goal')).toHaveTextContent(
+      'Target: beat',
+    );
+    expect(screen.getByTestId('cycle-results-guidance-plan')).toHaveTextContent('Cycle 2 of ~6');
+  });
+
+  it('shows first-cycle time guidance and the optional ~6-cycle plan', async () => {
+    const [p1, p2] = await seedSet();
+    const service = makeService();
+    await seedCycle({
+      cycleNumber: 1,
+      status: 'completed',
+      puzzleIds: [idOf(p1), idOf(p2)],
+      results: { [idOf(p1)]: ['solvedFirstTry'], [idOf(p2)]: ['solvedFirstTry'] },
+    });
+
+    renderResults(1, service);
+    await waitForResults();
+
+    const timeGoal = screen.getByTestId('cycle-results-guidance-time-goal');
+    expect(timeGoal).toHaveTextContent('first cycle');
+    expect(timeGoal).not.toHaveTextContent('Target: beat');
+    expect(screen.getByTestId('cycle-results-guidance-band')).toHaveTextContent('60–75%');
+    expect(screen.getByTestId('cycle-results-guidance-plan')).toHaveTextContent('Cycle 1 of ~6');
+    expect(screen.getByTestId('cycle-results-guidance-note')).toHaveTextContent('never blocks');
   });
 
   it('starts the next cycle and opens its session', async () => {

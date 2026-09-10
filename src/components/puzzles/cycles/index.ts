@@ -12,6 +12,10 @@ export { CycleMetricsPanel } from './CycleMetricsPanel';
 export type { CycleMetricsPanelProps } from './CycleMetricsPanel';
 export { CycleComparison } from './CycleComparison';
 export type { CycleComparisonProps } from './CycleComparison';
+export { CycleGuidance } from './CycleGuidance';
+export type { CycleGuidanceProps } from './CycleGuidance';
+export { SpacingNudge } from './SpacingNudge';
+export type { SpacingNudgeProps } from './SpacingNudge';
 export { PuzzleOutcomeList, puzzleOutcomeLabel } from './PuzzleOutcomeList';
 export type { PuzzleOutcomeListProps } from './PuzzleOutcomeList';
 export {

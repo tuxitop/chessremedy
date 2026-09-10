@@ -24,7 +24,7 @@ import { DETECTION_VERSION } from '@/domain/tactics';
 import type { PuzzleOrigin, PuzzleRow } from '@/domain/puzzle/types';
 import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle/types';
 import { buildAttemptRow, type OutcomeTrigger } from './outcome';
-import { AUTO_SET_ALL_ID, autoSetDefinitions } from './autoSet';
+import { DEFAULT_BLOCK_SIZE } from './autoSet';
 import {
   CYCLE_METRICS_VERSION,
   DEFAULT_CYCLE_CONFIG,
@@ -418,32 +418,29 @@ export function attemptRowsForCycle(input: AttemptRowsForCycleInput): PuzzleAtte
   return rows;
 }
 
-// --- Feature-013 auto-set/mastery fixtures ----------------------------------
+// --- Feature-013 block/mastery fixtures -------------------------------------
+
+/** Default id of the block fixture (`setFixture` defaults to the manual set). */
+export const DEFAULT_BLOCK_SET_ID = 'fixture:block';
 
 /**
- * A deterministic auto-set row fixture tied to the real preset definitions.
- * Defaults to the "All puzzles" set; pass `AUTO_SET_RANDOM_ID` for "Woodpecker
- * random". The membership is empty (virtual), per the auto-set rule.
+ * A deterministic Woodpecker-block set row: `source.kind === 'auto'` with the
+ * default block recipe and an empty membership snapshot. Override `source`
+ * and/or `puzzleIds` to shape a specific block.
  */
-export function autoSetFixture(
-  id: string = AUTO_SET_ALL_ID,
-  overrides: SetFixtureOverrides = {},
-): TacticalTrainingSetRow {
-  const definitions = autoSetDefinitions();
-  const definition = definitions.find((candidate) => candidate.id === id) ?? definitions[0]!;
+export function blockSetFixture(overrides: SetFixtureOverrides = {}): TacticalTrainingSetRow {
   return setFixture({
-    id: definition.id,
-    name: definition.name,
-    source: { kind: 'auto', recipe: definition.recipe },
-    config: definition.config,
+    id: overrides.id ?? DEFAULT_BLOCK_SET_ID,
+    name: overrides.name ?? 'Woodpecker block',
+    source: { kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: DEFAULT_BLOCK_SIZE } },
     puzzleIds: [],
     ...overrides,
   });
 }
 
 /**
- * A synthetic pool row for auto-set derivation: provenance/difficulty only, all
- * other fields copied from the `mate-one` fixture.
+ * A synthetic pool row for block/pool derivation: provenance/difficulty only,
+ * all other fields copied from the `mate-one` fixture.
  */
 export function autoPoolRowFixture(index: number, difficulty: number): PuzzleRow {
   return {

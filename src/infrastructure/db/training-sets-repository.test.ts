@@ -5,7 +5,12 @@ import { trainingCyclesRepository } from './training-cycles-repository';
 import { attemptsRepository } from './attempts-repository';
 import { puzzlesRepository } from './puzzles-repository';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
-import { cycleAttemptFixture, cycleFixture, setFixture } from '@/domain/training/test-support';
+import {
+  blockSetFixture,
+  cycleAttemptFixture,
+  cycleFixture,
+  setFixture,
+} from '@/domain/training/test-support';
 
 describe('training sets repository', () => {
   beforeEach(async () => {
@@ -137,5 +142,30 @@ describe('training sets repository', () => {
       'set:late',
     ]);
     expect(await trainingSetsRepository.listContainingPuzzle('missing')).toEqual([]);
+  });
+
+  it('getOpenBlock returns the single active auto block; closeBlock archives it', async () => {
+    const block = blockSetFixture({
+      id: 'block:one',
+      createdAt: 2,
+      updatedAt: 2,
+      puzzleIds: ['p1'],
+    });
+    await trainingSetsRepository.create(
+      setFixture({ id: 'set:custom', createdAt: 1, updatedAt: 1 }),
+    );
+    await trainingSetsRepository.create(block);
+    await trainingSetsRepository.create(
+      blockSetFixture({ id: 'block:archived', status: 'archived', createdAt: 3, updatedAt: 3 }),
+    );
+
+    expect(await trainingSetsRepository.getOpenBlock()).toEqual(block);
+
+    const closed = await trainingSetsRepository.closeBlock('block:one', 999);
+    expect(closed?.status).toBe('archived');
+    expect(closed?.updatedAt).toBe(999);
+    expect(closed?.puzzleIds).toEqual(['p1']);
+    expect(await trainingSetsRepository.getOpenBlock()).toBeUndefined();
+    expect(await trainingSetsRepository.closeBlock('missing', 999)).toBeUndefined();
   });
 });

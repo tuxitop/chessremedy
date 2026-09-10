@@ -82,32 +82,28 @@ export interface PuzzlePoolFilters {
 }
 
 /**
- * The system-seeded auto-set recipe. The recipe defines the deterministic
- * selection over the unmastered puzzle pool; it is stored in the set's
- * `source` and is not user-editable in V1.
- *
- * - `allPuzzles` — every unmastered pool puzzle;
- * - `woodpeckerRandom` — a deterministic `size`-puzzle subset of the unmastered
- *   pool (V1 `size = 200`), ranked by a stable hash of `setId + "\u0000" +
- *   puzzleId`.
+ * The one-click Woodpecker block recipe. The app never forms a block on its
+ * own; the user commits with the create button. `size` is the requested cap
+ * (`100 | 200 | 400`, default `DEFAULT_BLOCK_SIZE`); a pool smaller than `size`
+ * yields a block of the whole pool. The recipe is stored in the set's `source`
+ * for provenance/versioning and is not user-editable in V1.
  */
-export type AutoSetRecipe =
-  { readonly kind: 'allPuzzles' } | { readonly kind: 'woodpeckerRandom'; readonly size: number };
+export type BlockRecipe = { readonly kind: 'woodpeckerBlock'; readonly size: number };
 
 /**
  * Provenance of a set's membership. Display/provenance only — the
- * authoritative membership is the set's stored `puzzleIds` for game/pool/manual
- * sets and the per-cycle derived membership for `auto` sets.
+ * authoritative membership is always the set's stored `puzzleIds` snapshot.
  *
- * An `auto` source carries the system-seeded recipe; its membership is virtual
- * (re-derived from the pool and mastery at each cycle start), so its stored
- * `puzzleIds` is empty and non-authoritative (spec §3a).
+ * An `auto` source identifies the one-click **Woodpecker block** and carries
+ * its recipe for provenance/versioning; it does not mean the app created the
+ * set — creation is always an explicit user action. Its resolved `puzzleIds`
+ * snapshot is stored at creation and never re-derived per cycle (spec §1/§3a).
  */
 export type SetSource =
   | { readonly kind: 'game'; readonly gameId: string }
   | { readonly kind: 'pool'; readonly filters: PuzzlePoolFilters }
   | { readonly kind: 'manual' }
-  | { readonly kind: 'auto'; readonly recipe: AutoSetRecipe };
+  | { readonly kind: 'auto'; readonly recipe: BlockRecipe };
 
 /**
  * One puzzle in the pool view: the immutable row plus the source game's
@@ -132,17 +128,17 @@ export interface TacticalTrainingSetRow {
   readonly status: TrainingSetStatus;
   /**
    * Provenance/recipe. For game/pool/manual sets it is display only and
-   * `puzzleIds` is authoritative; for `auto` sets it carries the recipe and the
-   * membership is derived per cycle.
+   * `puzzleIds` is authoritative; for an `auto` (Woodpecker block) set it
+   * carries the recipe and `puzzleIds` is the frozen membership snapshot.
    */
   readonly source: SetSource;
   /**
-   * Resolved membership, in the set's base order. Authoritative for
-   * game/pool/manual sets; empty and non-authoritative for `auto` sets (whose
-   * membership is derived at each cycle start).
+   * Resolved membership, in the set's base order. Always the authoritative
+   * snapshot: for a block it is the frozen easiest-N pool selection, never
+   * re-derived per cycle.
    */
   readonly puzzleIds: readonly string[];
-  /** Creation target/cap (default 10); ignored for `auto` sets (the recipe caps). */
+  /** Creation target/cap (default 10); for a block, the recipe size. */
   readonly targetSize: number;
   /** Current config; snapshotted onto each cycle at start. */
   readonly config: CycleConfig;

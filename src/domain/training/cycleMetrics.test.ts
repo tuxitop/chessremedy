@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { compareCycleMetrics, computeCycleMetrics } from './cycleMetrics';
-import { attemptRowsForCycle } from './test-support';
+import {
+  SPACING_RECOMMENDED_MS,
+  compareCycleMetrics,
+  computeCycleMetrics,
+  cycleTimeGoal,
+  spacingNudgeFor,
+} from './cycleMetrics';
+import { attemptRowsForCycle, cycleFixture } from './test-support';
 
 describe('computeCycleMetrics', () => {
   it('computes every canonical aggregate from a scripted cycle', () => {
@@ -128,5 +134,114 @@ describe('compareCycleMetrics', () => {
     expect(comparison.absoluteDelta.firstTryAccuracy).toBeNull();
     expect(comparison.relativeDelta.firstTryAccuracy).toBeNull();
     expect(comparison.absoluteDelta.solvingTimeAverageMs).toBeNull();
+  });
+});
+
+describe('cycleTimeGoal', () => {
+  function measured(solvingMs: number) {
+    return computeCycleMetrics({
+      puzzleIds: ['p1'],
+      attempts: attemptRowsForCycle({
+        puzzleIds: ['p1'],
+        results: { p1: ['solvedFirstTry'] },
+        solvingTimes: { p1: [solvingMs] },
+      }),
+    });
+  }
+
+  it('frames the first cycle without a fabricated target or delta', () => {
+    const goal = cycleTimeGoal(measured(6_000), null);
+    expect(goal).toEqual({
+      currentTotalMs: 6_000,
+      currentMeasured: true,
+      previousTotalMs: null,
+      deltaMs: null,
+      targetMs: null,
+    });
+  });
+
+  it('derives the half-time target and delta from a measured previous cycle', () => {
+    const goal = cycleTimeGoal(measured(4_000), measured(10_000));
+    expect(goal.previousTotalMs).toBe(10_000);
+    expect(goal.targetMs).toBe(5_000);
+    expect(goal.deltaMs).toBe(-6_000);
+  });
+
+  it('treats a previous cycle with no definite puzzle as no previous time', () => {
+    const empty = computeCycleMetrics({ puzzleIds: [], attempts: [] });
+    const goal = cycleTimeGoal(measured(4_000), empty);
+    expect(goal.previousTotalMs).toBeNull();
+    expect(goal.targetMs).toBeNull();
+    expect(goal.deltaMs).toBeNull();
+  });
+
+  it('marks the current cycle unmeasured when it has no definite puzzle', () => {
+    const empty = computeCycleMetrics({ puzzleIds: [], attempts: [] });
+    const goal = cycleTimeGoal(empty, measured(10_000));
+    expect(goal.currentMeasured).toBe(false);
+    expect(goal.deltaMs).toBeNull();
+    expect(goal.targetMs).toBe(5_000);
+  });
+});
+
+describe('spacingNudgeFor', () => {
+  const BASE = 1_700_000_000_000;
+
+  function previousCycle(overrides: Parameters<typeof cycleFixture>[0] = {}) {
+    return cycleFixture({ id: 'c1', cycleNumber: 1, status: 'completed', ...overrides });
+  }
+
+  it('nudges when the previous cycle of the same block ended less than a day ago', () => {
+    const previous = previousCycle({ startedAt: BASE, completedAt: BASE });
+    const current = cycleFixture({
+      id: 'c2',
+      cycleNumber: 2,
+      startedAt: BASE + 2 * 60 * 60 * 1000,
+    });
+    const nudge = spacingNudgeFor([previous, current], current);
+    expect(nudge).toEqual({
+      previousCycleNumber: 1,
+      previousEndedAt: BASE,
+      elapsedMs: 2 * 60 * 60 * 1000,
+    });
+  });
+
+  it('does not nudge once the gap meets the recommendation', () => {
+    const previous = previousCycle({ startedAt: BASE, completedAt: BASE });
+    const current = cycleFixture({
+      id: 'c2',
+      cycleNumber: 2,
+      startedAt: BASE + SPACING_RECOMMENDED_MS,
+    });
+    expect(spacingNudgeFor([previous, current], current)).toBeNull();
+  });
+
+  it('uses an abandoned previous cycle end and the immediately preceding cycle', () => {
+    const first = previousCycle({ id: 'c1', cycleNumber: 1, completedAt: BASE });
+    const second = previousCycle({
+      id: 'c2',
+      cycleNumber: 2,
+      status: 'abandoned',
+      startedAt: BASE + 60_000,
+      completedAt: null,
+      abandonedAt: BASE + 90_000,
+    });
+    const current = cycleFixture({ id: 'c3', cycleNumber: 3, startedAt: BASE + 120_000 });
+    const nudge = spacingNudgeFor([first, second, current], current);
+    expect(nudge?.previousCycleNumber).toBe(2);
+    expect(nudge?.previousEndedAt).toBe(BASE + 90_000);
+  });
+
+  it('does not nudge without a previous cycle or when it never ended', () => {
+    const current = cycleFixture({ id: 'c2', cycleNumber: 2, startedAt: BASE });
+    expect(spacingNudgeFor([current], current)).toBeNull();
+
+    const running = cycleFixture({
+      id: 'c1',
+      cycleNumber: 1,
+      status: 'inProgress',
+      startedAt: BASE - 1_000,
+    });
+    expect(spacingNudgeFor([running, current], current)).toBeNull();
   });
 });

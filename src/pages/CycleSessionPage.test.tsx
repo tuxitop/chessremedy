@@ -15,8 +15,8 @@ import { Route, Routes } from 'react-router-dom';
 import type { PuzzleRow } from '@/domain/puzzle';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
-import { DEFAULT_CYCLE_CONFIG } from '@/domain/training';
-import { cycleFixture, setFixture } from '@/domain/training/test-support';
+import { DEFAULT_CYCLE_CONFIG, QUICK_TRAIN_SET_ID } from '@/domain/training';
+import { blockSetFixture, cycleFixture, setFixture } from '@/domain/training/test-support';
 import { db } from '@/infrastructure/db/database';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
@@ -111,7 +111,7 @@ async function seedCycle(options: { readonly allowSkip?: boolean } = {}): Promis
   return { rows, service };
 }
 
-function renderSession(service: CycleService): void {
+function renderSession(service: CycleService, cycleNumber = 1): void {
   renderWithProviders(
     <Routes>
       <Route
@@ -124,12 +124,74 @@ function renderSession(service: CycleService): void {
       />
       <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
     </Routes>,
-    { initialEntries: [`/puzzles/sets/${SET_ID}/cycles/1`] },
+    { initialEntries: [`/puzzles/sets/${SET_ID}/cycles/${cycleNumber}`] },
   );
 }
 
 async function waitForChrome(): Promise<void> {
   await waitFor(() => expect(screen.getByTestId('solve-stub')).toBeInTheDocument());
+}
+
+/** Render a Quick-train session at the reserved sentinel path. */
+function renderQuickTrain(service: CycleService): void {
+  renderWithProviders(
+    <Routes>
+      <Route
+        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        element={<CycleSessionPage cycleService={service} now={() => NOW} />}
+      />
+      <Route path="/puzzles" element={<div data-testid="training-home-stub" />} />
+    </Routes>,
+    { initialEntries: [`/puzzles/sets/${QUICK_TRAIN_SET_ID}/cycles/1`] },
+  );
+}
+
+const BLOCK_ID = 'set-block';
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Seed a block with a terminal previous cycle and a current in-progress cycle. */
+async function seedBlockWithPreviousCycle(gapMs: number): Promise<CycleService> {
+  const rows = [puzzleFor(6)];
+  await puzzlesRepository.addIfAbsent(rows);
+  await trainingSetsRepository.create(
+    blockSetFixture({ id: BLOCK_ID, name: 'Woodpecker block', puzzleIds: rows.map(idOf) }),
+  );
+  const previousEnd = NOW - gapMs;
+  await trainingCyclesRepository.create(
+    cycleFixture({
+      id: 'cycle-prev',
+      trainingSetId: BLOCK_ID,
+      cycleNumber: 1,
+      status: 'completed',
+      startedAt: previousEnd - 60_000,
+      completedAt: previousEnd,
+      puzzleIds: rows.map(idOf),
+    }),
+  );
+  await trainingCyclesRepository.create(
+    cycleFixture({
+      id: 'cycle-current',
+      trainingSetId: BLOCK_ID,
+      cycleNumber: 2,
+      status: 'inProgress',
+      startedAt: NOW,
+      puzzleIds: rows.map(idOf),
+    }),
+  );
+  return makeService();
+}
+
+function renderBlockSession(service: CycleService): void {
+  renderWithProviders(
+    <Routes>
+      <Route
+        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        element={<CycleSessionPage cycleService={service} now={() => NOW} />}
+      />
+      <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
+    </Routes>,
+    { initialEntries: [`/puzzles/sets/${BLOCK_ID}/cycles/2`] },
+  );
 }
 
 describe('CycleSessionPage (Feature 013, Stage F)', () => {
@@ -276,44 +338,103 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     }
   });
 
-  it('surfaces an all-mastered resume notice without crashing', async () => {
+  it('renders a Quick train session from the sentinel and completes to training home', async () => {
+    const rows = [puzzleFor(6), puzzleFor(8)];
+    await puzzlesRepository.addIfAbsent(rows);
+    const service = makeService();
+    const started = await service.startQuickTrain();
+    if (!started.ok) {
+      throw new Error('expected the quick-train cycle to start');
+    }
+    renderQuickTrain(service);
+    await waitForChrome();
+
+    expect(screen.getByTestId('cycle-session-set-name')).toHaveTextContent('Quick train');
+    expect(screen.getByTestId('cycle-session-progress')).toHaveTextContent('Puzzle 1 of 2');
+
+    fireEvent.click(screen.getByTestId('solve-stub-solve'));
+    await waitFor(() =>
+      expect(screen.getByTestId('cycle-session-progress')).toHaveTextContent('Puzzle 2 of 2'),
+    );
+    fireEvent.click(screen.getByTestId('solve-stub-solve'));
+
+    await screen.findByTestId('training-home-stub');
+    const cycles = await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID);
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0]!.status).toBe('completed');
+  });
+
+  it('exits a Quick train session back to training without completing it', async () => {
+    await puzzlesRepository.addIfAbsent([puzzleFor(6)]);
+    const service = makeService();
+    const started = await service.startQuickTrain();
+    if (!started.ok) {
+      throw new Error('expected the quick-train cycle to start');
+    }
+    renderQuickTrain(service);
+    await waitForChrome();
+
+    fireEvent.click(screen.getByTestId('cycle-session-exit'));
+
+    await screen.findByTestId('training-home-stub');
+    const cycles = await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID);
+    expect(cycles[0]!.status).toBe('inProgress');
+  });
+
+  it('shows a non-blocking spacing nudge for a same-day block restart', async () => {
+    const service = await seedBlockWithPreviousCycle(2 * 60 * 60 * 1000);
+    renderBlockSession(service);
+
+    const nudge = await screen.findByTestId('cycle-spacing-nudge');
+    expect(nudge).toHaveTextContent('Woodpecker block');
+    expect(screen.getByTestId('cycle-spacing-nudge-text')).toHaveTextContent('cycle 1');
+    expect(screen.getByTestId('cycle-spacing-nudge-text')).toHaveAttribute('aria-live', 'polite');
+    // The nudge gates the first presentation until the user proceeds.
+    expect(screen.queryByTestId('solve-stub')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('cycle-spacing-nudge-start'));
+    await screen.findByTestId('solve-stub');
+    expect(screen.queryByTestId('cycle-spacing-nudge')).not.toBeInTheDocument();
+  });
+
+  it('does not nudge when the previous block cycle ended a day or more ago', async () => {
+    const service = await seedBlockWithPreviousCycle(2 * DAY_MS);
+    renderBlockSession(service);
+
+    await screen.findByTestId('solve-stub');
+    expect(screen.queryByTestId('cycle-spacing-nudge')).not.toBeInTheDocument();
+  });
+
+  it('does not nudge for a custom (non-block) set', async () => {
+    const rows = [puzzleFor(6)];
+    await puzzlesRepository.addIfAbsent(rows);
     await trainingSetsRepository.create(
-      setFixture({
-        id: SET_ID,
-        name: 'Auto set',
-        source: { kind: 'auto', recipe: { kind: 'allPuzzles' } },
-        puzzleIds: [],
+      setFixture({ id: SET_ID, name: 'Tactics set', puzzleIds: rows.map(idOf) }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle-prev',
+        trainingSetId: SET_ID,
+        cycleNumber: 1,
+        status: 'completed',
+        startedAt: NOW - 3 * 60 * 60 * 1000,
+        completedAt: NOW - 2 * 60 * 60 * 1000,
+        puzzleIds: rows.map(idOf),
       }),
     );
     await trainingCyclesRepository.create(
       cycleFixture({
-        id: 'cycle-empty',
+        id: 'cycle-current',
         trainingSetId: SET_ID,
-        cycleNumber: 1,
-        puzzleIds: [],
+        cycleNumber: 2,
+        status: 'inProgress',
+        startedAt: NOW,
+        puzzleIds: rows.map(idOf),
       }),
     );
-    const fakeService = {
-      resume: async () => ({ ok: false, reason: 'all-mastered' }),
-    } as unknown as CycleService;
+    renderSession(makeService(), 2);
 
-    renderWithProviders(
-      <Routes>
-        <Route
-          path="/puzzles/sets/:setId/cycles/:cycleNumber"
-          element={<CycleSessionPage cycleService={fakeService} now={() => NOW} />}
-        />
-        <Route
-          path="/puzzles/sets/:setId/cycles/:cycleNumber/results"
-          element={<div data-testid="cycle-results-stub" />}
-        />
-        <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
-      </Routes>,
-      { initialEntries: [`/puzzles/sets/${SET_ID}/cycles/1`] },
-    );
-
-    await screen.findByTestId('cycle-session-notice');
-    expect(screen.getByTestId('cycle-session-notice')).toHaveTextContent(/mastered/i);
-    expect(screen.getByTestId('cycle-session')).toBeInTheDocument();
+    await screen.findByTestId('solve-stub');
+    expect(screen.queryByTestId('cycle-spacing-nudge')).not.toBeInTheDocument();
   });
 });

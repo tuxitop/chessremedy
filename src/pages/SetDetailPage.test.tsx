@@ -11,18 +11,17 @@ import { fixtureGame } from '@/domain/chess/fixtures';
 import { puzzleFixtures } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { PuzzleRow } from '@/domain/puzzle';
-import { AUTO_SET_ALL_ID } from '@/domain/training';
 import {
-  autoSetFixture,
+  blockSetFixture,
   cycleAttemptFixture,
   cycleFixture,
-  legitimateFirstTryRows,
   setFixture,
 } from '@/domain/training/test-support';
 import { renderWithProviders } from '@/test/test-utils';
 
 const GAME = fixtureGame('cc-bullet-blunder');
 const SET_ID = 'set-1';
+const BLOCK_ID = 'block-1';
 const PUZZLE_IDS = [puzzleIdOf(GAME.id, 6), puzzleIdOf(GAME.id, 12)];
 
 function puzzleRow(ply: number, kind: 'mate-one' | 'exchange-win'): PuzzleRow {
@@ -34,6 +33,14 @@ async function seedSet(): Promise<void> {
   await puzzlesRepository.addIfAbsent([puzzleRow(6, 'mate-one'), puzzleRow(12, 'exchange-win')]);
   await trainingSetsRepository.create(
     setFixture({ id: SET_ID, name: 'Tactics set', puzzleIds: PUZZLE_IDS }),
+  );
+}
+
+async function seedBlock(): Promise<void> {
+  await gamesRepository.saveGame(GAME);
+  await puzzlesRepository.addIfAbsent([puzzleRow(6, 'mate-one'), puzzleRow(12, 'exchange-win')]);
+  await trainingSetsRepository.create(
+    blockSetFixture({ id: BLOCK_ID, name: 'Woodpecker block', puzzleIds: PUZZLE_IDS }),
   );
 }
 
@@ -51,19 +58,12 @@ function renderDetail(setId: string = SET_ID): void {
   );
 }
 
-/** Write a legitimate first-try solve for `puzzleId` in 3 distinct cycles. */
-async function masterPuzzle(puzzleId: string): Promise<void> {
-  for (const row of legitimateFirstTryRows(puzzleId, ['c1', 'c2', 'c3'])) {
-    await attemptsRepository.addAttempt(row);
-  }
-}
-
 async function waitForDetail(): Promise<void> {
   await waitFor(() => expect(screen.getByTestId('set-detail-name')).toBeInTheDocument());
 }
 
 describe('SetDetailPage', () => {
-  it('shows membership and cycle history', async () => {
+  it('shows membership and cycle history for a custom set', async () => {
     await seedSet();
     await trainingCyclesRepository.create(
       cycleFixture({
@@ -198,59 +198,76 @@ describe('SetDetailPage', () => {
     expect(await trainingSetsRepository.get(SET_ID)).toBeDefined();
   });
 
-  it('renders an auto set as read-only with a badge, refresh note and start action', async () => {
-    await puzzlesRepository.addIfAbsent([puzzleRow(6, 'mate-one')]);
-    await trainingSetsRepository.create(autoSetFixture(AUTO_SET_ALL_ID, { puzzleIds: [] }));
-
-    renderDetail(AUTO_SET_ALL_ID);
+  it('renders a block read-only with its recipe, fixed membership and close actions', async () => {
+    await seedBlock();
+    renderDetail(BLOCK_ID);
     await waitForDetail();
 
-    expect(screen.getByTestId('set-detail-auto-badge')).toHaveTextContent('Auto');
-    expect(screen.getByTestId('set-detail-auto-note')).toHaveTextContent(/refresh/i);
-    expect(screen.getByTestId('set-detail-auto-config')).toBeInTheDocument();
+    expect(screen.getByTestId('set-detail-block-badge')).toHaveTextContent('Woodpecker block');
+    expect(screen.getByTestId('set-detail-block-note')).toHaveTextContent(/fixed/i);
+    expect(screen.getByTestId('set-detail-block-recipe')).toHaveTextContent('Block size: 200');
+    expect(screen.getByTestId('set-detail-block-guidance')).toHaveTextContent(/200–400/);
+    expect(screen.getByTestId('set-detail-membership-count')).toHaveTextContent(
+      '2 puzzles in this block (fixed)',
+    );
 
-    // No rename, config editing, archive or delete for a system-managed set.
+    // No rename, config editing, archive or delete for a block.
     expect(screen.queryByTestId('set-detail-name-input')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-save-name')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-save-config')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-archive')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-delete')).not.toBeInTheDocument();
 
-    // Starting a cycle still works.
+    // Finish/Abandon and starting a cycle are available.
+    expect(screen.getByTestId('set-detail-finish-block')).toBeInTheDocument();
+    expect(screen.getByTestId('set-detail-abandon-block')).toBeInTheDocument();
     expect(screen.getByTestId('set-detail-start-cycle')).toBeEnabled();
   });
 
-  it('starts a cycle for an auto set with eligible puzzles', async () => {
-    await puzzlesRepository.addIfAbsent([puzzleRow(6, 'mate-one')]);
-    await trainingSetsRepository.create(autoSetFixture(AUTO_SET_ALL_ID, { puzzleIds: [] }));
+  it('finishes a block after a confirmation naming it and closes it', async () => {
+    await seedBlock();
+    renderDetail(BLOCK_ID);
+    await waitForDetail();
 
-    renderDetail(AUTO_SET_ALL_ID);
+    fireEvent.click(screen.getByTestId('set-detail-finish-block'));
+    const dialog = screen.getByTestId('set-detail-close-dialog');
+    expect(dialog).toHaveTextContent('Finish “Woodpecker block”?');
+    fireEvent.click(screen.getByTestId('set-detail-close-dialog-confirm'));
+
+    await waitFor(async () => {
+      expect((await trainingSetsRepository.get(BLOCK_ID))?.status).toBe('archived');
+    });
+    await screen.findByTestId('set-detail-block-closed');
+    expect(screen.queryByTestId('set-detail-finish-block')).not.toBeInTheDocument();
+  });
+
+  it('abandons a block after a confirmation naming it and closes it', async () => {
+    await seedBlock();
+    renderDetail(BLOCK_ID);
+    await waitForDetail();
+
+    fireEvent.click(screen.getByTestId('set-detail-abandon-block'));
+    expect(screen.getByTestId('set-detail-close-dialog')).toHaveTextContent(
+      'Abandon “Woodpecker block”?',
+    );
+    fireEvent.click(screen.getByTestId('set-detail-close-dialog-confirm'));
+
+    await waitFor(async () => {
+      expect((await trainingSetsRepository.get(BLOCK_ID))?.status).toBe('archived');
+    });
+    await screen.findByTestId('set-detail-block-closed');
+  });
+
+  it('starts a cycle on a block and opens the session', async () => {
+    await seedBlock();
+    renderDetail(BLOCK_ID);
     await waitForDetail();
 
     fireEvent.click(screen.getByTestId('set-detail-start-cycle'));
 
     await screen.findByTestId('cycle-session-stub');
-    const cycles = await trainingCyclesRepository.listForSet(AUTO_SET_ALL_ID);
+    const cycles = await trainingCyclesRepository.listForSet(BLOCK_ID);
     expect(cycles).toHaveLength(1);
     expect(cycles[0]!.status).toBe('inProgress');
-  });
-
-  it('explains the all-mastered start result without starting a cycle', async () => {
-    const puzzle = puzzleRow(6, 'mate-one');
-    await puzzlesRepository.addIfAbsent([puzzle]);
-    await trainingSetsRepository.create(autoSetFixture(AUTO_SET_ALL_ID, { puzzleIds: [] }));
-    await masterPuzzle(puzzleIdOf(puzzle.sourceGameId, puzzle.sourcePly));
-
-    renderDetail(AUTO_SET_ALL_ID);
-    await waitForDetail();
-
-    expect(screen.getByTestId('set-detail-empty')).toHaveTextContent(/mastered/i);
-
-    fireEvent.click(screen.getByTestId('set-detail-start-cycle'));
-
-    await waitFor(() =>
-      expect(screen.getByTestId('set-detail-notice')).toHaveTextContent(/mastered/i),
-    );
-    expect(await trainingCyclesRepository.listForSet(AUTO_SET_ALL_ID)).toHaveLength(0);
   });
 });

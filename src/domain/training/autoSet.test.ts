@@ -1,187 +1,166 @@
 import { describe, expect, it } from 'vitest';
 import { puzzleIdOf } from '@/domain/puzzle/id';
+import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import type { PuzzleRow } from '@/domain/puzzle/types';
 import {
-  AUTO_SET_ALL_ID,
-  AUTO_SET_RANDOM_ID,
-  AUTO_SET_VERSION,
-  WOODPECKER_RANDOM_SIZE,
-  autoSetDefinitions,
-  deriveAutoSetMembership,
+  BLOCK_RECIPE_VERSION,
+  BLOCK_SIZE_OPTIONS,
+  DEFAULT_BLOCK_SIZE,
+  QUICK_TRAIN_SET_ID,
+  RECOMMENDED_MIN_BLOCK_SIZE,
+  WOODPECKER_PLAN_CYCLES,
+  derivePool,
+  formWoodpeckerBlock,
 } from './autoSet';
-import { CYCLE_CONFIG_VERSION } from './cycleTypes';
-import { autoPoolRowFixture } from './test-support';
 
-/** A pool of synthetic rows where row `index` has the given difficulty. */
-function pool(...difficulties: number[]): PuzzleRow[] {
-  return difficulties.map((difficulty, index) => autoPoolRowFixture(index, difficulty));
+const baseRow = puzzleRowFixture('mate-one');
+
+/** A synthetic row with overridable provenance/difficulty (all other fields fixed). */
+function row(sourceGameId: string, sourcePly: number, difficulty: number): PuzzleRow {
+  return { ...baseRow, sourceGameId, sourcePly, difficulty };
+}
+
+function idOf(puzzle: PuzzleRow): string {
+  return puzzleIdOf(puzzle.sourceGameId, puzzle.sourcePly);
 }
 
 function ids(rows: readonly PuzzleRow[]): string[] {
-  return rows.map((row) => puzzleIdOf(row.sourceGameId, row.sourcePly));
+  return rows.map(idOf);
 }
 
-function derive(
-  recipe: Parameters<typeof deriveAutoSetMembership>[0]['recipe'],
-  poolRows: readonly PuzzleRow[],
-  options: { readonly mastered?: readonly string[]; readonly setId?: string } = {},
-): string[] {
-  return deriveAutoSetMembership({
-    recipe,
-    pool: poolRows,
-    masteredIds: new Set(options.mastered ?? []),
-    setId: options.setId ?? AUTO_SET_RANDOM_ID,
-  });
-}
-
-describe('auto-set vocabulary', () => {
-  it('exposes the deterministic ids, size and version', () => {
-    expect(AUTO_SET_ALL_ID).toBe('auto:all-puzzles');
-    expect(AUTO_SET_RANDOM_ID).toBe('auto:woodpecker-random');
-    expect(WOODPECKER_RANDOM_SIZE).toBe(200);
-    expect(AUTO_SET_VERSION).toBe(1);
+describe('block vocabulary', () => {
+  it('exposes the default size, options, guidance and version', () => {
+    expect(DEFAULT_BLOCK_SIZE).toBe(200);
+    expect([...BLOCK_SIZE_OPTIONS]).toEqual([100, 200, 400]);
+    expect(RECOMMENDED_MIN_BLOCK_SIZE).toBe(100);
+    expect(WOODPECKER_PLAN_CYCLES).toBe(6);
+    expect(QUICK_TRAIN_SET_ID).toBe('__quick_train__');
+    expect(BLOCK_RECIPE_VERSION).toBe(1);
   });
 });
 
-describe('autoSetDefinitions', () => {
-  it('defines the two seeded sets in deterministic order', () => {
-    const definitions = autoSetDefinitions();
-    expect(definitions.map((definition) => definition.id)).toEqual([
-      AUTO_SET_ALL_ID,
-      AUTO_SET_RANDOM_ID,
-    ]);
-    expect(definitions.map((definition) => definition.name)).toEqual([
-      'All puzzles',
-      'Woodpecker random',
-    ]);
-    expect(definitions[0]!.recipe).toEqual({ kind: 'allPuzzles' });
-    expect(definitions[1]!.recipe).toEqual({ kind: 'woodpeckerRandom', size: 200 });
-  });
+describe('derivePool', () => {
+  function pool(): PuzzleRow[] {
+    return [row('g', 1, 10), row('g', 2, 20), row('g', 3, 30)];
+  }
 
-  it('applies the fixed auto-set config presets', () => {
-    for (const definition of autoSetDefinitions()) {
-      expect(definition.config).toMatchObject({
-        ordering: 'difficultyAsc',
-        retryFailed: 'endOfCycle',
-        allowSkip: true,
-        targetAccuracy: 1,
-        configVersion: CYCLE_CONFIG_VERSION,
-      });
-      expect(definition.config.hints.enabledLevels).toEqual([1, 2, 3, 4]);
-      expect(definition.config.hints.firstHintLevel).toBe(2);
-    }
-  });
-
-  it('returns fresh, non-aliased configs on each call', () => {
-    const first = autoSetDefinitions();
-    const second = autoSetDefinitions();
-    expect(first[0]!.config).not.toBe(second[0]!.config);
-    expect(first[0]!.config).not.toBe(first[1]!.config);
-    expect(first[0]!.config.hints.enabledLevels).not.toBe(second[0]!.config.hints.enabledLevels);
-  });
-});
-
-describe('deriveAutoSetMembership — allPuzzles', () => {
-  it('returns every unmastered pool puzzle ordered by difficulty ascending', () => {
-    const result = derive({ kind: 'allPuzzles' }, pool(30, 10, 20));
-    expect(result).toEqual(['fixture:auto-1:1', 'fixture:auto-2:2', 'fixture:auto-0:0']);
+  it('returns every owned puzzle not mastered and not in the open block', () => {
+    const result = derivePool({
+      puzzles: pool(),
+      masteredIds: new Set(),
+      openBlockPuzzleIds: new Set(),
+    });
+    expect(ids(result)).toEqual(['g:1', 'g:2', 'g:3']);
   });
 
   it('excludes mastered puzzles', () => {
-    const result = derive({ kind: 'allPuzzles' }, pool(30, 10, 20), {
-      mastered: ['fixture:auto-2:2'],
+    const result = derivePool({
+      puzzles: pool(),
+      masteredIds: new Set(['g:2']),
+      openBlockPuzzleIds: new Set(),
     });
-    expect(result).toEqual(['fixture:auto-1:1', 'fixture:auto-0:0']);
+    expect(ids(result)).toEqual(['g:1', 'g:3']);
   });
 
-  it('returns empty for an empty pool', () => {
-    expect(derive({ kind: 'allPuzzles' }, [])).toEqual([]);
+  it('excludes the currently-open block members', () => {
+    const result = derivePool({
+      puzzles: pool(),
+      masteredIds: new Set(),
+      openBlockPuzzleIds: new Set(['g:1', 'g:3']),
+    });
+    expect(ids(result)).toEqual(['g:2']);
   });
 
-  it('returns empty when every pool puzzle is mastered', () => {
-    const rows = pool(30, 10, 20);
-    expect(derive({ kind: 'allPuzzles' }, rows, { mastered: ids(rows) })).toEqual([]);
+  it('excludes both mastered and open-block puzzles', () => {
+    const result = derivePool({
+      puzzles: pool(),
+      masteredIds: new Set(['g:1']),
+      openBlockPuzzleIds: new Set(['g:2']),
+    });
+    expect(ids(result)).toEqual(['g:3']);
   });
 
-  it('deduplicates repeated puzzle ids', () => {
-    const rows = [autoPoolRowFixture(0, 5), { ...autoPoolRowFixture(0, 9) }];
-    expect(derive({ kind: 'allPuzzles' }, rows)).toEqual(['fixture:auto-0:0']);
+  it('deduplicates repeated puzzle ids (first occurrence wins)', () => {
+    const result = derivePool({
+      puzzles: [row('g', 1, 10), row('g', 1, 99)],
+      masteredIds: new Set(),
+      openBlockPuzzleIds: new Set(),
+    });
+    expect(ids(result)).toEqual(['g:1']);
+    expect(result[0]?.difficulty).toBe(10);
+  });
+
+  it('returns empty for an empty pool or a fully-excluded pool', () => {
+    expect(
+      derivePool({ puzzles: [], masteredIds: new Set(), openBlockPuzzleIds: new Set() }),
+    ).toEqual([]);
+    const all = pool();
+    expect(
+      derivePool({
+        puzzles: all,
+        masteredIds: new Set(ids(all)),
+        openBlockPuzzleIds: new Set(),
+      }),
+    ).toEqual([]);
+  });
+
+  it('does not mutate the input rows', () => {
+    const input = pool();
+    const snapshot = input.map((puzzle) => ({ ...puzzle }));
+    derivePool({ puzzles: input, masteredIds: new Set(), openBlockPuzzleIds: new Set() });
+    expect(input).toEqual(snapshot);
   });
 });
 
-describe('deriveAutoSetMembership — woodpeckerRandom', () => {
-  it('selects a deterministic lowest-priority subset', () => {
-    const rows = pool(0, 1, 2, 3, 4, 5);
-    const result = derive({ kind: 'woodpeckerRandom', size: 3 }, rows, {
-      setId: AUTO_SET_RANDOM_ID,
-    });
-    // Lowest hash priority indexes are 5, 4, 1; re-ordered by difficulty.
-    expect(result).toEqual(['fixture:auto-1:1', 'fixture:auto-4:4', 'fixture:auto-5:5']);
-  });
-
-  it('is stable for the same pool, seed and size', () => {
-    const rows = pool(0, 1, 2, 3, 4, 5);
-    const recipe = { kind: 'woodpeckerRandom', size: 3 } as const;
-    expect(derive(recipe, rows)).toEqual(derive(recipe, rows));
-  });
-
-  it('depends on the seed', () => {
-    const rows = pool(0, 1, 2, 3, 4, 5);
-    const recipe = { kind: 'woodpeckerRandom', size: 3 } as const;
-    expect(derive(recipe, rows, { setId: 'other-seed' })).toEqual([
-      'fixture:auto-1:1',
-      'fixture:auto-2:2',
-      'fixture:auto-3:3',
+describe('formWoodpeckerBlock', () => {
+  it('orders the selected ids by difficulty ascending', () => {
+    const pool = [row('g', 1, 30), row('g', 2, 10), row('g', 3, 20)];
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(), size: 3 })).toEqual([
+      'g:2',
+      'g:3',
+      'g:1',
     ]);
   });
 
-  it('caps the selection at the recipe size', () => {
-    const result = derive({ kind: 'woodpeckerRandom', size: 2 }, pool(0, 1, 2, 3, 4));
-    expect(result).toHaveLength(2);
-  });
-
-  it('returns every eligible puzzle when the pool is at or below the size', () => {
-    const rows = pool(30, 10, 20);
-    expect(derive({ kind: 'woodpeckerRandom', size: 10 }, rows)).toEqual([
-      'fixture:auto-1:1',
-      'fixture:auto-2:2',
-      'fixture:auto-0:0',
+  it('breaks difficulty ties by sourcePly then puzzleId', () => {
+    const pool = [row('b', 2, 10), row('a', 5, 10), row('a', 2, 10), row('b', 1, 10)];
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(), size: 10 })).toEqual([
+      'b:1',
+      'a:2',
+      'b:2',
+      'a:5',
     ]);
   });
 
-  it('backfills a mastered departure to size deterministically', () => {
-    const rows = pool(0, 1, 2, 3, 4, 5);
-    const result = derive({ kind: 'woodpeckerRandom', size: 3 }, rows, {
-      mastered: ['fixture:auto-5:5'],
-    });
-    expect(result).toEqual(['fixture:auto-0:0', 'fixture:auto-1:1', 'fixture:auto-4:4']);
+  it('caps the selection at the requested size', () => {
+    const pool = [row('g', 1, 1), row('g', 2, 2), row('g', 3, 3), row('g', 4, 4)];
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(), size: 2 })).toEqual(['g:1', 'g:2']);
   });
 
-  it('returns empty for size 0', () => {
-    expect(derive({ kind: 'woodpeckerRandom', size: 0 }, pool(0, 1, 2))).toEqual([]);
-  });
-
-  it('returns empty when all puzzles are mastered', () => {
-    const rows = pool(0, 1, 2);
-    expect(derive({ kind: 'woodpeckerRandom', size: 2 }, rows, { mastered: ids(rows) })).toEqual(
-      [],
+  it('takes all of the pool when it is smaller than size', () => {
+    const pool = [row('g', 1, 30), row('g', 2, 10)];
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(), size: DEFAULT_BLOCK_SIZE })).toEqual(
+      ['g:2', 'g:1'],
     );
   });
-});
 
-describe('deriveAutoSetMembership — determinism and purity', () => {
-  it('does not mutate the input pool', () => {
-    const rows = pool(30, 10, 20);
-    const snapshot = rows.map((row) => ({ ...row }));
-    derive({ kind: 'allPuzzles' }, rows);
-    derive({ kind: 'woodpeckerRandom', size: 2 }, rows);
-    expect(rows).toEqual(snapshot);
+  it('excludes mastered puzzles defensively', () => {
+    const pool = [row('g', 1, 10), row('g', 2, 20)];
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(['g:1']), size: 10 })).toEqual(['g:2']);
   });
 
-  it('is deterministic across calls for both recipes', () => {
-    const rows = pool(30, 10, 20, 40, 5, 25);
-    expect(derive({ kind: 'allPuzzles' }, rows)).toEqual(derive({ kind: 'allPuzzles' }, rows));
-    const recipe = { kind: 'woodpeckerRandom', size: 4 } as const;
-    expect(derive(recipe, rows)).toEqual(derive(recipe, rows));
+  it('returns empty for an empty pool, size 0 or a fully-mastered pool', () => {
+    expect(formWoodpeckerBlock({ pool: [], masteredIds: new Set(), size: 200 })).toEqual([]);
+    const pool = [row('g', 1, 10)];
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(), size: 0 })).toEqual([]);
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(ids(pool)), size: 10 })).toEqual([]);
+  });
+
+  it('is deterministic and does not mutate the input', () => {
+    const pool = [row('g', 1, 30), row('g', 2, 10), row('g', 3, 20)];
+    const snapshot = pool.map((puzzle) => ({ ...puzzle }));
+    const first = formWoodpeckerBlock({ pool, masteredIds: new Set(), size: 3 });
+    expect(formWoodpeckerBlock({ pool, masteredIds: new Set(), size: 3 })).toEqual(first);
+    expect(pool).toEqual(snapshot);
   });
 });

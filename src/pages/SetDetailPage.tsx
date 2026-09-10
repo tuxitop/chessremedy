@@ -14,8 +14,6 @@ import { ROUTES, puzzlesCyclePath, puzzlesCycleResultsPath } from '@/app/routes'
 import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
-  deriveAutoSetMembership,
-  masteredPuzzleIds,
   setSourceLabel,
   type CycleConfig,
   type TacticalTrainingSetRow,
@@ -37,13 +35,10 @@ interface DetailData {
   readonly membership: readonly PuzzleRow[];
   readonly cycles: readonly TrainingCycleRow[];
   readonly attemptCount: number;
-  /**
-   * Why an auto set's derived membership is empty: `no-puzzles` (pool empty),
-   * `all-mastered` (every pool puzzle mastered), or `null` when it has puzzles
-   * or is not an auto set.
-   */
-  readonly autoEmptyKind: 'no-puzzles' | 'all-mastered' | null;
 }
+
+/** Which close action the block confirmation dialog is asking about. */
+type CloseReason = 'finish' | 'abandon';
 
 export interface SetDetailPageProps {
   /** Injectable for tests; defaults to the singleton-backed service. */
@@ -55,8 +50,11 @@ export interface SetDetailPageProps {
 }
 
 /**
- * One training set's detail: rename, edit the cycle config, view membership and
- * cycle history, start/continue a cycle, archive/unarchive and delete (with a
+ * One training set's detail. A **Woodpecker block** is read-only: its fixed
+ * recipe/size and frozen membership are shown, with Finish/Abandon (both close
+ * it and return its still-unmastered members to the pool) and Start/Continue
+ * cycle; there is no rename, config editing or delete. A custom set keeps
+ * rename, config editing, membership, archive/unarchive and delete (with a
  * confirmation naming the set and its cycle/attempt counts).
  */
 export function SetDetailPage({
@@ -101,7 +99,6 @@ export function SetDetailPage({
     membership: [],
     cycles: [],
     attemptCount: 0,
-    autoEmptyKind: null,
   });
   const [name, setName] = useState('');
   const [config, setConfig] = useState<CycleConfig | null>(null);
@@ -109,6 +106,7 @@ export function SetDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [closeReason, setCloseReason] = useState<CloseReason | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
 
   const reload = useCallback(() => setReloadTick((tick) => tick + 1), []);
@@ -125,30 +123,12 @@ export function SetDetailPage({
           return;
         }
         if (set === undefined) {
-          setData({ set: null, membership: [], cycles: [], attemptCount: 0, autoEmptyKind: null });
+          setData({ set: null, membership: [], cycles: [], attemptCount: 0 });
           setLoading(false);
           return;
         }
-        // Auto sets are virtual: hydrate the membership derived for the next
-        // cycle (current pool minus mastered) rather than the last snapshot.
-        let membershipIds: readonly string[] = set.puzzleIds;
-        let autoEmptyKind: DetailData['autoEmptyKind'] = null;
-        if (set.source.kind === 'auto') {
-          const [pool, attempts] = await Promise.all([
-            puzzlesRepo.listAll(),
-            attemptsRepo.listAll(),
-          ]);
-          membershipIds = deriveAutoSetMembership({
-            recipe: set.source.recipe,
-            pool,
-            masteredIds: masteredPuzzleIds(attempts),
-            setId: set.id,
-          });
-          autoEmptyKind =
-            membershipIds.length > 0 ? null : pool.length === 0 ? 'no-puzzles' : 'all-mastered';
-        }
         const [membership, cycles] = await Promise.all([
-          puzzlesRepo.getPuzzles(membershipIds),
+          puzzlesRepo.getPuzzles(set.puzzleIds),
           cycleService.listForSet(setId),
         ]);
         const attemptRows = await Promise.all(
@@ -162,7 +142,6 @@ export function SetDetailPage({
           membership,
           cycles,
           attemptCount: attemptRows.reduce((sum, rows) => sum + rows.length, 0),
-          autoEmptyKind,
         });
         setName(set.name);
         setConfig(set.config);
@@ -270,6 +249,23 @@ export function SetDetailPage({
       navigate(ROUTES.puzzles);
     });
 
+  const confirmClose = (): void =>
+    void run(async () => {
+      const reason = closeReason;
+      setCloseReason(null);
+      const result = await setsService.closeBlock(setId);
+      if (!result.ok) {
+        setError('That block no longer exists.');
+        return;
+      }
+      setNotice(
+        reason === 'finish'
+          ? 'Block finished. Its still-unmastered puzzles are back in the pool.'
+          : 'Block abandoned. Its still-unmastered puzzles are back in the pool.',
+      );
+      reload();
+    });
+
   const startOrContinue = (): void =>
     void run(async () => {
       if (inProgress !== null) {
@@ -288,10 +284,6 @@ export function SetDetailPage({
       }
       const started = await cycleService.start(setId);
       if (!started.ok) {
-        if (started.reason === 'all-mastered') {
-          setNotice('Every puzzle in this set is mastered. There is nothing left to train here.');
-          return;
-        }
         setError(startErrorMessage(started));
         return;
       }
@@ -322,10 +314,8 @@ export function SetDetailPage({
     );
   }
 
-  const isAuto = set.source.kind === 'auto';
-  // For an auto set `data.membership` is the derived next-cycle membership; for
-  // a stored set it is the fixed membership. A start on an auto set is allowed
-  // even when empty so the service's empty/all-mastered explanation surfaces.
+  const isBlock = set.source.kind === 'auto';
+  const blockRecipe = set.source.kind === 'auto' ? set.source.recipe : null;
   const empty = data.membership.length === 0;
 
   return (
@@ -337,19 +327,19 @@ export function SetDetailPage({
           </Link>
           <h1 className={styles.heading} data-testid="set-detail-name">
             {set.name}
-            {isAuto ? (
-              <span className={styles.autoBadge} data-testid="set-detail-auto-badge">
-                Auto
+            {isBlock ? (
+              <span className={styles.autoBadge} data-testid="set-detail-block-badge">
+                Woodpecker block
               </span>
             ) : null}
           </h1>
           <p className={styles.subtitle} data-testid="set-detail-source">
-            {setSourceLabel(set.source)} · {set.status === 'active' ? 'Active' : 'Archived'}
+            {setSourceLabel(set.source)} · {set.status === 'active' ? 'Active' : 'Closed'}
           </p>
-          {isAuto ? (
-            <p className={styles.autoNote} data-testid="set-detail-auto-note">
-              This is a system-managed set. Its puzzles are derived from your pool and refresh at
-              each cycle start, so mastered puzzles are retired automatically.
+          {isBlock ? (
+            <p className={styles.autoNote} data-testid="set-detail-block-note">
+              This block is fixed. New puzzles are not added mid-plan; finishing or abandoning it
+              returns its still-unmastered puzzles to the pool.
             </p>
           ) : null}
         </div>
@@ -357,7 +347,7 @@ export function SetDetailPage({
           {inProgress !== null ? (
             <Button
               data-testid="set-detail-continue-cycle"
-              disabled={busy || (empty && !isAuto)}
+              disabled={busy || empty}
               onClick={startOrContinue}
             >
               Continue cycle {inProgress.cycleNumber}
@@ -365,7 +355,7 @@ export function SetDetailPage({
           ) : (
             <Button
               data-testid="set-detail-start-cycle"
-              disabled={busy || (empty && !isAuto)}
+              disabled={busy || empty}
               onClick={startOrContinue}
             >
               Start cycle
@@ -387,27 +377,13 @@ export function SetDetailPage({
 
       {empty ? (
         <section className={styles.statePanel} data-testid="set-detail-empty">
-          {data.autoEmptyKind === 'all-mastered' ? (
+          {isBlock ? (
             <>
-              <h2 className={styles.sectionTitle}>All puzzles mastered</h2>
+              <h2 className={styles.sectionTitle}>This block has no puzzles</h2>
               <p className={styles.state}>
-                Every puzzle in this auto set has been mastered, so there is nothing left to train
-                here. New puzzles from your games will join on a future cycle.
+                Its puzzles are no longer available. Finish or abandon the block to return to the
+                pool.
               </p>
-            </>
-          ) : data.autoEmptyKind === 'no-puzzles' ? (
-            <>
-              <h2 className={styles.sectionTitle}>No puzzles yet</h2>
-              <p className={styles.state}>
-                Generate puzzles from a game and they will appear in this auto set automatically.
-              </p>
-              <Link
-                className={styles.primaryLink}
-                to={ROUTES.games}
-                data-testid="set-detail-empty-games"
-              >
-                Go to the Game Library
-              </Link>
             </>
           ) : (
             <>
@@ -427,7 +403,7 @@ export function SetDetailPage({
         </section>
       ) : null}
 
-      {!isAuto ? (
+      {!isBlock ? (
         <section aria-labelledby="set-detail-rename-title">
           <h2 className={styles.sectionTitle} id="set-detail-rename-title">
             Name
@@ -457,14 +433,19 @@ export function SetDetailPage({
 
       <section aria-labelledby="set-detail-config-title">
         <h2 className={styles.sectionTitle} id="set-detail-config-title">
-          Cycle configuration
+          {isBlock ? 'Recipe' : 'Cycle configuration'}
         </h2>
-        {isAuto ? (
+        {isBlock ? (
           <>
-            <p className={styles.state} data-testid="set-detail-auto-config-note">
-              The recipe and configuration of an auto set are fixed and not editable.
+            <p className={styles.state} data-testid="set-detail-block-recipe">
+              Block size: {blockRecipe?.size ?? set.targetSize} puzzles · difficulty ascending
+              (easiest first) · fixed membership.
             </p>
-            <dl className={styles.snapshotList} data-testid="set-detail-auto-config">
+            <p className={styles.state} data-testid="set-detail-block-guidance">
+              Recommended 200–400 puzzles; below about 100 later cycles risk memorising diagrams.
+              There is no 100% accuracy gate — success is speed and automaticity.
+            </p>
+            <dl className={styles.snapshotList} data-testid="set-detail-block-config">
               {cycleConfigSummary(config ?? set.config).map((entry) => (
                 <div key={entry.label} className={styles.snapshotRow}>
                   <dt>{entry.label}</dt>
@@ -496,14 +477,16 @@ export function SetDetailPage({
         </h2>
         <p className={styles.previewCount} data-testid="set-detail-membership-count">
           {membershipItems.length === 0
-            ? 'No puzzles in this set.'
+            ? isBlock
+              ? 'No puzzles in this block.'
+              : 'No puzzles in this set.'
             : `${membershipItems.length} ${
                 membershipItems.length === 1 ? 'puzzle' : 'puzzles'
-              } ${isAuto ? 'derived for the next cycle' : 'in this set'}.`}
+              } ${isBlock ? 'in this block (fixed)' : 'in this set'}.`}
         </p>
         <MembershipList
           items={membershipItems}
-          emptyMessage="No puzzles in this set."
+          emptyMessage={isBlock ? 'No puzzles in this block.' : 'No puzzles in this set.'}
           testId="set-detail-membership"
           ariaLabel="Set membership"
         />
@@ -521,7 +504,36 @@ export function SetDetailPage({
         />
       </section>
 
-      {!isAuto ? (
+      {isBlock ? (
+        <section aria-labelledby="set-detail-manage-title">
+          <h2 className={styles.sectionTitle} id="set-detail-manage-title">
+            Manage block
+          </h2>
+          {set.status === 'active' ? (
+            <div className={styles.inlineActions}>
+              <Button
+                variant="secondary"
+                data-testid="set-detail-finish-block"
+                disabled={busy}
+                onClick={() => setCloseReason('finish')}
+              >
+                Finish block
+              </Button>
+              <Button
+                data-testid="set-detail-abandon-block"
+                disabled={busy}
+                onClick={() => setCloseReason('abandon')}
+              >
+                Abandon block
+              </Button>
+            </div>
+          ) : (
+            <p className={styles.state} data-testid="set-detail-block-closed">
+              This block is closed. Its still-unmastered puzzles are back in the pool.
+            </p>
+          )}
+        </section>
+      ) : (
         <section aria-labelledby="set-detail-manage-title">
           <h2 className={styles.sectionTitle} id="set-detail-manage-title">
             Manage
@@ -544,7 +556,7 @@ export function SetDetailPage({
             </Button>
           </div>
         </section>
-      ) : null}
+      )}
 
       {confirmDelete ? (
         <ConfirmDialog
@@ -558,6 +570,21 @@ export function SetDetailPage({
           confirmLabel="Delete set"
           onConfirm={confirmDeletion}
           onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
+
+      {closeReason !== null ? (
+        <ConfirmDialog
+          testId="set-detail-close-dialog"
+          title={closeReason === 'finish' ? `Finish “${set.name}”?` : `Abandon “${set.name}”?`}
+          message={
+            closeReason === 'finish'
+              ? 'This closes the block. Its still-unmastered puzzles return to the pool for the next block. Recorded attempts are kept. This cannot be undone.'
+              : 'This closes the block and returns its still-unmastered puzzles to the pool. Recorded attempts are kept. This cannot be undone.'
+          }
+          confirmLabel={closeReason === 'finish' ? 'Finish block' : 'Abandon block'}
+          onConfirm={confirmClose}
+          onCancel={() => setCloseReason(null)}
         />
       ) : null}
     </div>
@@ -581,8 +608,6 @@ function startErrorMessage(result: { readonly reason: string; readonly message?:
   switch (result.reason) {
     case 'empty-set':
       return 'This set has no puzzles to train.';
-    case 'all-mastered':
-      return 'Every puzzle in this set is mastered. There is nothing left to train here.';
     case 'not-found':
       return 'That set no longer exists.';
     case 'invalid-config':

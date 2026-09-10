@@ -53,6 +53,20 @@ export interface TrainingSetsRepository {
    */
   delete(id: string): Promise<void>;
   /**
+   * The single open **Woodpecker block**: the `active` set with
+   * `source.kind === 'auto'`, or `undefined` when none is open (spec §1/§3a).
+   * At most one may be open; the earliest `createdAt` wins defensively.
+   */
+  getOpenBlock(): Promise<TrainingSetsRow | undefined>;
+  /**
+   * Close an open block: set `status: 'archived'` with the caller-supplied
+   * `updatedAt` (deterministic; no hidden clock). Returns the stored row, or
+   * `undefined` when the id is absent. Closing returns the block's
+   * still-unmastered members to the derived pool implicitly — the pool excludes
+   * only the **open** block's members, so no membership is mutated here.
+   */
+  closeBlock(id: string, now: number): Promise<TrainingSetsRow | undefined>;
+  /**
    * Game-deletion cleanup: remove the given puzzle ids from every set's stored
    * membership and persist each changed set with a fresh `updatedAt`. Bounded
    * by the number of sets (a scan of the small set table), never by puzzle
@@ -82,6 +96,21 @@ export class DexieTrainingSetsRepository implements TrainingSetsRepository {
 
   async create(row: TrainingSetsRow): Promise<void> {
     await this.database.trainingSets.put(row);
+  }
+
+  async getOpenBlock(): Promise<TrainingSetsRow | undefined> {
+    const active = await this.database.trainingSets.where('status').equals('active').toArray();
+    return active.filter(isBlockSet).sort(compareSetRows)[0];
+  }
+
+  async closeBlock(id: string, now: number): Promise<TrainingSetsRow | undefined> {
+    const existing = await this.database.trainingSets.get(id);
+    if (!existing) {
+      return undefined;
+    }
+    const closed: TrainingSetsRow = { ...existing, status: 'archived', updatedAt: now };
+    await this.database.trainingSets.put(closed);
+    return closed;
   }
 
   async update(id: string, patch: TrainingSetUpdate): Promise<TrainingSetsRow | undefined> {
@@ -134,6 +163,11 @@ export class DexieTrainingSetsRepository implements TrainingSetsRepository {
 /** Deterministic listing order: `createdAt` ascending, ties by id. */
 function compareSetRows(a: TrainingSetsRow, b: TrainingSetsRow): number {
   return a.createdAt - b.createdAt || a.id.localeCompare(b.id);
+}
+
+/** Whether a set is a one-click Woodpecker block (`source.kind === 'auto'`). */
+function isBlockSet(row: TrainingSetsRow): boolean {
+  return row.source.kind === 'auto';
 }
 
 export const trainingSetsRepository: TrainingSetsRepository = new DexieTrainingSetsRepository();

@@ -10,6 +10,7 @@
  */
 
 import { resolvePuzzleCycle, type CycleResolution } from './cycle';
+import type { TrainingCycleRow } from './cycleTypes';
 import type { PuzzleAttemptRow } from './types';
 
 /** Aggregate solving time over a cycle's completed puzzles. */
@@ -254,4 +255,100 @@ function flatten(metrics: CycleMetrics): Readonly<Record<CycleMetricKey, number 
     solvingTimeAverageMs: metrics.solvingTime.averageMs,
     solvingTimeMedianMs: metrics.solvingTime.medianMs,
   };
+}
+
+// --- Woodpecker guidance (pure, derived; never stored) ----------------------
+
+/**
+ * The first-cycle first-try guidance band (spec §5, AC #17). **Guidance only**
+ * — never a gate; the UI frames it as text, never colour.
+ */
+export const FIRST_CYCLE_FIRST_TRY_BAND = { min: 0.6, max: 0.75 } as const;
+
+/** Recommended minimum spacing between cycles of the same block (spec §4). */
+export const SPACING_RECOMMENDED_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The Woodpecker time-halving guidance for one cycle against the previous cycle
+ * of the same block. Every field is derived and honest: a cycle with no definite
+ * puzzle is not a measured time, and a previous cycle without one yields no
+ * fabricated target or delta.
+ */
+export interface CycleTimeGoal {
+  /** The current cycle's total solving time in millis (`0` when unmeasured). */
+  readonly currentTotalMs: number;
+  /** True when the current cycle has at least one definite puzzle. */
+  readonly currentMeasured: boolean;
+  /** The previous cycle's total solving time, or `null` when unavailable. */
+  readonly previousTotalMs: number | null;
+  /** `current - previous`, or `null` when either side is unmeasured. */
+  readonly deltaMs: number | null;
+  /** "Beat half the previous cycle's time": `previous / 2`, or `null`. */
+  readonly targetMs: number | null;
+}
+
+/**
+ * Derive the time-halving guidance from the current cycle's metrics and the
+ * previous cycle's metrics (`null` when this is the first cycle of the block).
+ * Pure and side-effect free; it never invents a `0` for an empty sample.
+ */
+export function cycleTimeGoal(current: CycleMetrics, previous: CycleMetrics | null): CycleTimeGoal {
+  const currentMeasured = current.puzzlesCompleted > 0;
+  const previousTotalMs =
+    previous !== null && previous.puzzlesCompleted > 0 ? previous.solvingTime.totalMs : null;
+  return {
+    currentTotalMs: current.solvingTime.totalMs,
+    currentMeasured,
+    previousTotalMs,
+    deltaMs:
+      currentMeasured && previousTotalMs !== null
+        ? current.solvingTime.totalMs - previousTotalMs
+        : null,
+    targetMs: previousTotalMs === null ? null : previousTotalMs / 2,
+  };
+}
+
+/**
+ * A same-block spacing nudge: the immediately preceding cycle of the block and
+ * how long ago it ended. `null` when the block has no previous cycle, the
+ * previous cycle never ended, or the gap already meets the recommendation.
+ */
+export interface CycleSpacingNudge {
+  readonly previousCycleNumber: number;
+  readonly previousEndedAt: number;
+  /** `current.startedAt - previousEndedAt` in millis (may be negative). */
+  readonly elapsedMs: number;
+}
+
+/**
+ * Derive the spacing nudge for a cycle of a block (spec §4). Finds the
+ * immediately preceding cycle by number and returns a nudge when it ended less
+ * than `SPACING_RECOMMENDED_MS` before the current cycle started. Pure; the
+ * caller decides whether the set is a block and whether to surface it.
+ */
+export function spacingNudgeFor(
+  cycles: readonly TrainingCycleRow[],
+  current: TrainingCycleRow,
+): CycleSpacingNudge | null {
+  let previous: TrainingCycleRow | null = null;
+  for (const cycle of cycles) {
+    if (cycle.cycleNumber >= current.cycleNumber) {
+      continue;
+    }
+    if (previous === null || cycle.cycleNumber > previous.cycleNumber) {
+      previous = cycle;
+    }
+  }
+  if (previous === null) {
+    return null;
+  }
+  const endedAt = previous.completedAt ?? previous.abandonedAt;
+  if (endedAt === null) {
+    return null;
+  }
+  const elapsedMs = current.startedAt - endedAt;
+  if (elapsedMs >= SPACING_RECOMMENDED_MS) {
+    return null;
+  }
+  return { previousCycleNumber: previous.cycleNumber, previousEndedAt: endedAt, elapsedMs };
 }

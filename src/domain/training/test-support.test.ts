@@ -17,7 +17,7 @@ import {
   attemptRowFixture,
   attemptRowsForCycle,
   autoPoolRowFixture,
-  autoSetFixture,
+  blockSetFixture,
   cycleAttemptFixture,
   cycleContextFixture,
   cycleFixture,
@@ -31,7 +31,7 @@ import {
   trainingSupplementaryFixtures,
 } from './test-support';
 import { CYCLE_METRICS_VERSION, DEFAULT_CYCLE_CONFIG, DEFAULT_TARGET_SIZE } from './cycleTypes';
-import { AUTO_SET_ALL_ID, AUTO_SET_RANDOM_ID } from './autoSet';
+import { DEFAULT_BLOCK_SIZE } from './autoSet';
 
 describe('supplementary training fixtures', () => {
   it('covers the presentation cases Feature-011 does not', () => {
@@ -260,25 +260,23 @@ describe('Feature-013 set/cycle fixtures', () => {
   });
 });
 
-describe('Feature-013 auto-set/mastery fixtures', () => {
-  it('builds an auto-set fixture tied to the real presets', () => {
-    const all = autoSetFixture();
-    expect(all.id).toBe(AUTO_SET_ALL_ID);
-    expect(all.name).toBe('All puzzles');
-    expect(all.source).toEqual({ kind: 'auto', recipe: { kind: 'allPuzzles' } });
-    expect(all.puzzleIds).toEqual([]);
-    expect(all.config.targetAccuracy).toBe(1);
-
-    const random = autoSetFixture(AUTO_SET_RANDOM_ID);
-    expect(random.id).toBe(AUTO_SET_RANDOM_ID);
-    expect(random.name).toBe('Woodpecker random');
-    expect(random.source).toEqual({
+describe('Feature-013 block/mastery fixtures', () => {
+  it('builds a deterministic Woodpecker-block set fixture', () => {
+    const block = blockSetFixture();
+    expect(block.id).toBe('fixture:block');
+    expect(block.name).toBe('Woodpecker block');
+    expect(block.source).toEqual({
       kind: 'auto',
-      recipe: { kind: 'woodpeckerRandom', size: 200 },
+      recipe: { kind: 'woodpeckerBlock', size: DEFAULT_BLOCK_SIZE },
     });
+    expect(block.puzzleIds).toEqual([]);
+    expect(block.config).toEqual(DEFAULT_CYCLE_CONFIG);
+
+    const overridden = blockSetFixture({ puzzleIds: ['g:1'] });
+    expect(overridden.puzzleIds).toEqual(['g:1']);
   });
 
-  it('builds synthetic auto pool rows with derived ids', () => {
+  it('builds synthetic pool rows with derived ids', () => {
     const row = autoPoolRowFixture(3, 42);
     expect(puzzleIdOf(row.sourceGameId, row.sourcePly)).toBe('fixture:auto-3:3');
     expect(row.difficulty).toBe(42);

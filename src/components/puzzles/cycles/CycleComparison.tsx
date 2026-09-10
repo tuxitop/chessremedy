@@ -37,6 +37,7 @@ const ROWS: readonly ComparisonRow[] = [
   { key: 'totalWrongMoves', label: 'Wrong moves', kind: 'count' },
   { key: 'hintsUsed', label: 'Hints used', kind: 'count' },
   { key: 'retries', label: 'Retries', kind: 'count' },
+  { key: 'solvingTimeTotalMs', label: 'Total solving time', kind: 'duration' },
   { key: 'solvingTimeAverageMs', label: 'Average solving time', kind: 'duration' },
   { key: 'solvingTimeMedianMs', label: 'Median solving time', kind: 'duration' },
 ];

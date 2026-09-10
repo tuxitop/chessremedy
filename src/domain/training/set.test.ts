@@ -200,27 +200,21 @@ describe('setSourceLabel', () => {
   });
 });
 
-describe('auto-set sources', () => {
-  it('labels the auto recipes', () => {
-    expect(setSourceLabel({ kind: 'auto', recipe: { kind: 'allPuzzles' } })).toBe('All puzzles');
-    expect(setSourceLabel({ kind: 'auto', recipe: { kind: 'woodpeckerRandom', size: 200 } })).toBe(
-      'Woodpecker random (200)',
+describe('block sources', () => {
+  it('labels the Woodpecker block recipe with its size', () => {
+    expect(setSourceLabel({ kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: 200 } })).toBe(
+      'Woodpecker block (200)',
+    );
+    expect(setSourceLabel({ kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: 100 } })).toBe(
+      'Woodpecker block (100)',
     );
   });
 
-  it('seeds an auto set with empty membership (membership is derived per cycle)', () => {
+  it('never resolves a block source here (membership is a stored frozen snapshot)', () => {
     const puzzles = [row('g', 1, 1), row('g', 2, 2)];
     expect(
       resolveSetMembership({
-        source: { kind: 'auto', recipe: { kind: 'allPuzzles' } },
-        puzzles,
-        ordering: 'difficultyAsc',
-        targetSize: 10,
-      }),
-    ).toEqual([]);
-    expect(
-      resolveSetMembership({
-        source: { kind: 'auto', recipe: { kind: 'woodpeckerRandom', size: 200 } },
+        source: { kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: 200 } },
         puzzles,
         ordering: 'difficultyAsc',
         targetSize: 10,
