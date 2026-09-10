@@ -152,7 +152,7 @@ cycle:
 - puzzle id
 - training set id
 - cycle id
-- presentation index (0-based per `[cycleId, puzzleId]`; incremented for a
+- presentation index (1-based per `[cycleId, puzzleId]`; incremented for a
   retry presentation)
 - timestamp
 - result
