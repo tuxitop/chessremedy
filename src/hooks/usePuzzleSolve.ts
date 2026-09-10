@@ -199,6 +199,11 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
   const [foundAfterFail, setFoundAfterFail] = useState(false);
 
   useEffect(() => {
+    // Reset on every (re)mount: React StrictMode double-invokes mount effects
+    // in development (setup → cleanup → setup), so a ref set to `true` by the
+    // first cleanup would otherwise stay `true` and make `doRecord` bail before
+    // it can mark the attempt written (leaving the Next button disabled).
+    cancelledRef.current = false;
     return () => {
       cancelledRef.current = true;
     };

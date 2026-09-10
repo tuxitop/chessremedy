@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { StrictMode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { buildAttemptRow } from '@/domain/training';
 
@@ -100,6 +101,33 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(result.current.exitOutcome()).not.toBeNull();
     expect(rig.calls).toHaveLength(1);
     expect(result.current.wrongMovesTried).toEqual([]);
+  });
+
+  it('still records the outcome under React StrictMode (dev double-invoked effects)', async () => {
+    // Regression: the mount effect's cleanup sets `cancelledRef` true; StrictMode
+    // runs setup → cleanup → setup in development, so the ref must be reset on
+    // the second setup or `doRecord` bails and the write never completes.
+    const row = blunderRowFixture();
+    const rig = createRecorderRig();
+    const { result } = renderHook(
+      () =>
+        usePuzzleSolve({
+          row,
+          context: cycleContextFixture('fixture:cycle', `${row.sourceGameId}:${row.sourcePly}`, 1),
+          config: solveConfigFixture(),
+          recorder: rig.recorder,
+          now: () => NOW,
+        }),
+      { wrapper: StrictMode },
+    );
+
+    act(() => {
+      result.current.playBoardMove('h5', 'f7');
+    });
+
+    await waitFor(() => expect(result.current.writePhase).toBe('written'));
+    expect(result.current.exitOutcome()).not.toBeNull();
+    expect(rig.calls).toHaveLength(1);
   });
 
   it('records solvedWithHelp for a hint-then-clean-solve (no wrong move) with one write', async () => {
