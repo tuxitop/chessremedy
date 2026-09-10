@@ -446,6 +446,10 @@ Per-cycle aggregates (`sample.unit = 'puzzles'` for rate metrics):
   (only when mathematically appropriate and `previous !== 0`)
   `relativeDelta`. It never labels a change as proven improvement or
   causation (`domain/tactical-training.md`, `domain/statistics.md`).
+- **Mastery** reuses the same per-puzzle cycle resolution: a cycle credits a
+  puzzle when `firstTrySolved` holds for its first presentation and that row
+  records no hint, wrong move or restart; mastered = ≥3 distinct cycles (§11,
+  canonical `domain/tactical-training.md` "Mastery").
 - **Training aggregates do not take the game-analysis filters**
   (platform/time-control/date-range). A training set is a deliberate user
   artifact; the Dashboard labels training charts as set-scoped.
@@ -478,13 +482,24 @@ Per-cycle aggregates (`sample.unit = 'puzzles'` for rate metrics):
 
 ### 11. Mastered puzzle count
 
-- A puzzle is **mastered** when it has at least one `solvedFirstTry` attempt
-  (a clean first-try, hint-free solve) across its cycles. Mastery is
-  monotonic: once mastered, a later failure does not un-master it.
+- A puzzle is **mastered** when it has a **legitimate first-try solve in 3
+  distinct cycles** (the canonical rule of `domain/tactical-training.md`
+  "Mastery"): the cycle's first presentation (`presentationIndex === 1`) is
+  `solvedFirstTry` with **no hint, no wrong move and no restart**. A retry
+  presentation never adds a credit; multiple rows in one cycle count once.
+  Mastery is **global** per puzzle (across all sets/cycles) and monotonic: once
+  the 3-cycle threshold is met, a later failure does not un-master it.
+- This is the same derivation Feature 013 uses for auto-set retirement. Feature
+  014 **reuses the canonical pure `masteryOf` function** (no second
+  implementation) and carries `MASTERY_VERSION` in its version summary; a
+  change to the threshold/conditions bumps both `MASTERY_VERSION` and
+  `STATISTICS_VERSION` (§12).
 - `masteredPuzzleCountForGame(gameId)` counts distinct mastered puzzles whose
   `sourceGameId` is that game (the Game Library insight, read-only).
 - `masteredPuzzleCountForSet(setId)` counts distinct mastered puzzles in the
-  set's membership.
+  set's membership (membership is the set's stored/derived ids, independent of
+  which set earned the mastery).
+- `sample.unit = 'puzzles'`; absent attempts yield `empty`, never a fake `0`.
 - This definition is a product decision (see Owner decisions to confirm).
 
 ### Game Library integration
@@ -513,7 +528,8 @@ Per-cycle aggregates (`sample.unit = 'puzzles'` for rate metrics):
   bumped when aggregation semantics change (denominators, period rules,
   accuracy aggregation, phase grouping, mastered/repeatedly-failed
   definitions, category mapping, state thresholds). It is recorded per
-  `ARCHITECTURE.md` §9.
+  `ARCHITECTURE.md` §9. The mastered definition also carries the canonical
+  `MASTERY_VERSION` (Feature 013/domain), surfaced in the version summary.
 - Every result carries a `VersionSummary` of the contributing analyses:
   distinct `analysisVersion`, `classificationVersion`, `gamePhaseVersion`,
   `detectionVersion`, engine identities (`name version build`) and the
@@ -530,8 +546,10 @@ proceed. The owner may override any of them; each override is a small,
 localized change:
 
 1. **Week definition** — ISO-8601 weeks in the local time zone (default).
-2. **Mastered** — ever `solvedFirstTry`, monotonic (default); alternative:
-   the latest definite attempt is a solve.
+2. **Mastered** — a legitimate first-try solve in **3 distinct cycles**
+   (canonical `domain/tactical-training.md` "Mastery"; the earlier "ever
+   `solvedFirstTry`" wording is superseded). Alternative: the latest definite
+   attempt is a solve.
 3. **Repeatedly failed** — failed in ≥ 2 distinct cycles (default).
 4. **Training aggregates ignore game filters** — yes (default).
 5. **Pending re-analysis** — use the latest completed analysis and surface
@@ -748,7 +766,8 @@ Dashboard:
    no point.
 10. Training statistics provide per-set/per-cycle aggregates, cross-cycle
     deltas, weakest tactical categories, repeatedly failed puzzles and
-    mastered counts, and never mix with game-analysis metrics.
+    mastered counts (3 distinct legitimate first-try cycles, via the canonical
+    `masteryOf`), and never mix with game-analysis metrics.
 11. Each result carries `STATISTICS_VERSION` and the contributing-version
     summary, including mixed-engine/classification flags (ADR-020).
 12. The Dashboard performs no domain/statistical calculations; every value it
@@ -788,7 +807,10 @@ cover at least:
   multiple cycles with known accuracy/time deltas; an `inProgress` and an
   `abandoned` cycle; attempts with hints, retries, skips and varied solve
   times; a puzzle re-presented within a cycle; a puzzle failed across ≥ 2
-  cycles; tactical and blunder origins; a mastered and a non-mastered puzzle.
+  cycles; tactical and blunder origins; a mastered puzzle with legitimate
+  first-try solves in 3 distinct cycles (including across two sets) and a
+  non-mastered puzzle with 1–2 credits; a restart-disqualified row
+  (`restartCount > 0`) and a clean retry row that earns no credit.
 
 ### Test cases
 
@@ -810,7 +832,9 @@ cover at least:
 - **Training**: per-puzzle cycle resolution (skips, retries, re-presentation),
   first-try accuracy and solve-rate denominators, median/average solving
   time, cross-cycle deltas use the same set/metric, weakest-category ranking,
-  repeatedly-failed and mastered definitions.
+  repeatedly-failed and the canonical mastered definition (3 distinct
+  legitimate first-try cycles; hint/wrong-move/restart disqualify; retry rows
+  never credit; `masteryOf` is reused, not re-derived).
 - **Determinism**: identical inputs + `now` produce byte-identical results.
 - **Performance shape**: a large synthetic dataset (e.g. 1,000+ analyzed
   games) aggregates without blocking and within the plan's measured budget

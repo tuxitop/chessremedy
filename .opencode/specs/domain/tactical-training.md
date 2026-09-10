@@ -11,9 +11,19 @@ repeatedly cycling through a fixed set — and does not reproduce any
 particular published protocol. See ADR-031 and
 `specs/research/cycle-training.md`.
 
+Sets may be **user-authored** (game/pool/manual) or **auto-generated**
+(`auto`: "All puzzles" and "Woodpecker random"). Auto-set membership is
+**virtual**: it is derived from the puzzle pool and the derived
+**mastery** state at each cycle start and snapshotted onto the cycle;
+user-authored sets keep fixed stored membership. A puzzle is **mastered**
+after a legitimate first-try solve in 3 distinct cycles and is then
+retired from auto-set membership only.
+
 V1 does not schedule puzzles individually. FSRS or another individual
 scheduler is deferred; the model below must not prevent one from being
-added later.
+added later. Mastery is a derived, monotonic read-model property, not a
+scheduler state: it has no due date, interval or stability and is never
+written onto the puzzle (ADR-031).
 
 ## Puzzle
 
@@ -30,9 +40,10 @@ A `Puzzle` is the immutable definition of a tactical exercise:
 - generation version
 
 A `Puzzle` contains **no scheduling state**: no due date, no review
-interval, no stability, and no per-user difficulty. A puzzle may belong
-to zero, one or many `TacticalTrainingSet`s. Membership is tracked by
-the set, not stored on the puzzle.
+interval, no stability, no per-user difficulty, and no stored mastery
+flag. A puzzle may belong to zero, one or many `TacticalTrainingSet`s.
+Membership is tracked by the set (or derived for auto sets), not stored
+on the puzzle; mastery is derived from attempt history at read time.
 
 Puzzles are owned by their source game. Deleting a game removes its
 puzzles and, transitively, their attempts and set membership per the
@@ -48,19 +59,57 @@ trained together:
 - name
 - creation date
 - source/criteria (e.g. "blunders from games imported on 2026-06-01",
-  "missed tactical opportunities, classical time control", or a manual
-  selection)
-- puzzle IDs (the set membership, in the set's base order)
+  "missed tactical opportunities, classical time control", a manual
+  selection, or an `auto` recipe — see below)
+- puzzle IDs (the set membership, in the set's base order; **empty and
+  non-authoritative for `auto` sets**)
 - ordering policy (see Configuration)
-- target size
+- target size (ignored for `auto` sets; the recipe defines the size)
 - status (e.g. `active`, `archived`)
 - configuration/version (the training-configuration snapshot the set
-  was created or last edited with)
+  was created or last edited with; fixed for `auto` sets)
 
 A set is created by the user or generated from a puzzle source
-(Feature 011 output, game-review selections). Sets are deterministic
-and reproducible for testing; their membership and order are stored
-state, not derived from mutable query results.
+(Feature 011 output, game-review selections) or seeded by the system
+(`auto`). User-authored sets are deterministic and reproducible for
+testing; their membership and order are stored state, not derived from
+mutable query results. `auto` sets are deterministic functions of the
+pool, mastery and their seed (see Auto-generated sets).
+
+## Auto-generated sets
+
+Two sets are seeded by the system with deterministic ids and exist by
+default:
+
+| Recipe | Membership | Order |
+|---|---|---|
+| `allPuzzles` | every unmastered pool puzzle | difficulty ascending |
+| `woodpeckerRandom` | a deterministic `size`-puzzle subset of the unmastered pool (V1 `size = 200`) | difficulty ascending |
+
+Fixed presets: goal accuracy 100% (`targetAccuracy = 1`), hints enabled,
+retry-failed `endOfCycle`, ordering `difficultyAsc`. These are deliberate
+product choices, not part of any published protocol
+(`specs/research/cycle-training.md`).
+
+Membership is **virtual**:
+
+- it is derived at **cycle start** from the current puzzle pool minus
+  mastered puzzles, then snapshotted onto the cycle (`TrainingCycle.puzzleIds`);
+  it is fixed for the cycle and never mutated mid-cycle;
+- `woodpeckerRandom` selects deterministically: rank each eligible puzzle by a
+  stable, dependency-free hash of `setId + "\u0000" + puzzleId` and take the
+  lowest `size` (ties by puzzle id). The same eligible pool and set id yield
+  the same subset every cycle; mastered departures are backfilled to `size`;
+- newly generated puzzles are eligible from the next cycle (they enter
+  `allPuzzles` always, and `woodpeckerRandom` when the eligible pool is below
+  `size` or their priority ranks within the selection);
+- an empty derived membership (no puzzles, or all mastered) is a real `empty`
+  state and blocks cycle start, never a fake count;
+- auto sets are system-managed and idempotently re-seeded; they are not
+  user-editable in V1.
+
+User-authored sets never use this path: their membership is stored and is
+never auto-retired.
 
 ## TrainingCycle
 
@@ -158,24 +207,71 @@ cycle:
 - result
 - solving time
 - number of attempts (wrong moves / retries within this puzzle)
+- restart count (presentation restarts; see below)
 - hints used (count and highest level reached)
 - whether the puzzle was eventually solved
 
 Result values:
 
-- `solvedFirstTry` — solved on the first attempt without any hint and
-  without a wrong move
-- `solvedWithHelp` — solved using a hint, with no wrong move
+- `solvedFirstTry` — solved on the first attempt without any hint,
+  without a wrong move and **without a restart**
+- `solvedWithHelp` — solved using a hint, and/or after a restart (with no
+  wrong move)
 - `failed` — a wrong move was made (recorded immediately), or the
   presentation ended without solving; a presentation whose first wrong
   move is later corrected still records `failed`
 - `skipped` — left without solving (no result)
 
+**Restart disqualification.** A presentation-scoped restart clears the
+played line and any revealed hint content but keeps the counters and the
+clock; it does not create a new attempt. The presentation's `restartCount`
+is persisted, and a solve after a restart derives `solvedWithHelp` (a
+restart means the clean first-try line was reset), never `solvedFirstTry`.
+A presentation abandoned after a hint or restart is recorded durably so
+re-entry cannot launder a clean first-try credit; attempt rows are
+immutable and first-write-wins on
+`[cycleId, puzzleId, presentationIndex]`. Only a real cycle presentation
+produces an attempt (there is no ad-hoc/practice host).
+
 Attempt records are the atomic training data. Every cycle-level metric
 is derived from attempt records at read time (never stored as
 authoritative cycle state); attempts are never aggregated on the puzzle.
-Feature 013 and Feature 014 share one canonical cycle-metric function so
-the definitions cannot drift.
+Feature 013 and Feature 014 share one canonical cycle-metric function and
+one canonical mastery function so the definitions cannot drift.
+
+## Mastery
+
+A puzzle is **mastered** when it has a legitimate first-try solve in
+**3 distinct cycles**:
+
+```text
+isLegitimateFirstTrySolve(attempt) :=
+  attempt.presentationIndex === 1
+  && attempt.result === 'solvedFirstTry'
+  && attempt.hintCount === 0
+  && attempt.wrongMoveCount === 0
+  && attempt.restartCount === 0
+
+masteryOf(puzzleId) :=
+  mastered when distinctCycleCount(legitimate first-try rows) >= 3
+```
+
+- Only the cycle's **first presentation** can earn a credit; a retry
+  presentation (same cycle, `presentationIndex === 2`) never adds a
+  distinct-cycle credit even if its row is `solvedFirstTry`.
+- Hints, wrong moves and restarts disqualify; a `solvedFirstTry` row with
+  any of them is not produced by the result rules above, and the
+  derivation checks the counters defensively.
+- Mastery is **global** per puzzle (across all sets/cycles), **monotonic**
+  (a later failure never un-masters the retained history) and **derived at
+  read time** (no stored flag, no scheduler state; ADR-031). Deleting the
+  source game deletes the puzzle and its attempts, so mastery disappears
+  with it.
+- Mastery is versioned by `MASTERY_VERSION`; Feature 013 (auto-set
+  membership) and Feature 014 (mastered counts) both call the single
+  canonical function.
+- Mastered puzzles are excluded from **auto-set** membership only;
+  user-authored sets are never auto-retired.
 
 ## Cycle configuration
 
@@ -204,8 +300,15 @@ change is a default-value change):
 - target accuracy / target solving time: optional, unset by default
 - number of cycles: unset (open-ended) by default
 
+Auto-set configuration is fixed (not user-editable): goal accuracy 100%
+(`targetAccuracy = 1`), hints enabled, retry-failed `endOfCycle`, ordering
+`difficultyAsc`; the effective size is the recipe's (`allPuzzles`
+unbounded, `woodpeckerRandom` 200).
+
 These defaults are not derived from any specific Woodpecker protocol;
-they are ChessRemedy's initial product choices (ADR-031).
+they are ChessRemedy's initial product choices (ADR-031), and the
+auto-set 100% goal and retirement are deliberate deviations from the
+Woodpecker method documented in `specs/research/cycle-training.md`.
 
 ## Metrics
 
@@ -254,10 +357,12 @@ proves the training method caused it; it reports measured deltas only
 
 ## Future scheduling
 
-The immutable `Puzzle`, the `TacticalTrainingSet` membership and the
-attempt/cycle history are the entire V1 training data surface. A future
-individual scheduler (e.g. FSRS) can be layered on top of attempt
-history without changing the puzzle definition or discarding V1 data.
+The immutable `Puzzle`, the `TacticalTrainingSet` membership (stored or
+auto-derived), the attempt/cycle history and the derived mastery state
+are the entire V1 training data surface. A future individual scheduler
+(e.g. FSRS) can be layered on top of attempt history without changing the
+puzzle definition or discarding V1 data; mastery is derived and adds no
+scheduling state.
 No scheduler abstraction is introduced in V1 beyond this boundary:
 
 ```text

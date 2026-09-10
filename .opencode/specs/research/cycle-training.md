@@ -105,6 +105,46 @@ migration.
   (Feature 014/015).
 - No scheduler library in `package.json` for V1.
 
+## Woodpecker evidence digest (owner review, 2026)
+
+A focused re-read of the Woodpecker material (Smith & Tikkanen, *The
+Woodpecker Method*) to justify ChessRemedy's auto-set presets. These are
+coaching/practice observations, not controlled-study findings, and carry
+the same "no comparative claim" caveat as Limitations above.
+
+- **Set size.** The book's core set is **1128** exercises, split into
+  **Easy / Intermediate / Advanced** groups; roughly **984** are
+  recommended for most solvers. For a personal, mistake-derived pool,
+  practical sets are far smaller — around **200–400** puzzles.
+- **Cycle ladder.** The recommended progression compresses each pass:
+  **4 weeks → 2 weeks → 1 week → 4 days → 2 days → 1 day**, about
+  **6–7 cycles** in total, roughly **halving total solving time** each
+  step, with at least a **1-day break** between cycles.
+- **Order.** Exercises are solved in a **fixed, difficulty-ascending
+  order**; the set does not change between passes.
+- **No 100% gate, no retirement.** The method targets a near-perfect,
+  timed pass by repetition but has **no hard 100%-accuracy gate** and
+  **does not retire** solved puzzles from the set — the same fixed set is
+  re-solved.
+- **First-cycle performance.** A first pass typically lands around
+  **60–75%** accuracy, improving over the ladder.
+
+### Deliberate ChessRemedy deviations
+
+ChessRemedy's auto-set presets are a product adaptation, not a
+reproduction of the book:
+
+- **100% goal accuracy** on the auto sets (the method has no such gate);
+- **auto-retirement** of mastered puzzles (3 distinct-cycle legitimate
+  first-try solves) and **backfill** for the random set (the method keeps
+  the whole set and retires nothing);
+- **auto-refresh / virtual membership**: the auto sets re-derive from the
+  current pool each cycle so newly generated puzzles join (the method's
+  set is fixed for the whole training block).
+
+These deviations are intentional product decisions (Feature 013, ADR-031)
+and are recorded here so the method's actual protocol is not misstated.
+
 ## Open questions
 
 1. How should V1 tune the initial cycle defaults (set size, ordering,
@@ -113,3 +153,6 @@ migration.
    should its schedule derive from V1 attempt history?
 3. Do hinted/retried solves carry the same training value as clean
    solves, and should they weight accuracy differently?
+4. Should new puzzles ever displace an existing member of
+   "Woodpecker random", or should the selected 200 stay sticky until a
+   mastered departure (Feature 013 "Conflicts surfaced")?

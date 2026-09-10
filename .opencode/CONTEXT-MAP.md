@@ -75,7 +75,7 @@ features, ADRs, research, or the whole documentation tree.
 ### Feature 013 — Tactical Training Cycles
 - Required: `ARCHITECTURE.md` §7/§9/§10; ADRs `decisions/ADR-031`, `decisions/ADR-025` (difficulty ordering default); domain `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/game-library.md`, `domain/statistics.md`; research `research/cycle-training.md`.
 - Optional: `history/ADR-007/011/021/022` (rejected FSRS), research `research/fsrs-implementation.md` (deferred future scheduler).
-- Dependencies: Feature 011 (puzzle source), Feature 012 (solve interaction + attempt rows); consumers Features 014/015 (and Feature 016 for deletion tombstones). Feature 013 owns the canonical cycle metric function reused by Feature 014.
+- Dependencies: Feature 011 (puzzle source), Feature 012 (solve interaction + attempt rows); consumers Features 014/015 (and Feature 016 for deletion tombstones). Feature 013 owns the canonical cycle metric function and the canonical mastery/auto-set derivation (`masteryOf`, `deriveAutoSetMembership`) reused by Feature 014.
 
 ### Feature 014 — Game Analysis History & Statistics
 - Required: `ARCHITECTURE.md` §6a/§7/§9/§10; ADRs `decisions/ADR-013`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-031`; domain `domain/statistics.md`, `domain/game-model.md`, `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/time-control.md`, `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/tactics.md`, `domain/game-library.md` (row-view insights + per-analysis summaries); research `research/move-accuracy.md`, `research/move-classification.md`.
