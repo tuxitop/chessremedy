@@ -11,13 +11,12 @@ repeatedly cycling through a fixed set — and does not reproduce any
 particular published protocol. See ADR-031 and
 `specs/research/cycle-training.md`.
 
-Sets may be **user-authored** (game/pool/manual) or **auto-generated**
-(`auto`: "All puzzles" and "Woodpecker random"). Auto-set membership is
-**virtual**: it is derived from the puzzle pool and the derived
-**mastery** state at each cycle start and snapshotted onto the cycle;
-user-authored sets keep fixed stored membership. A puzzle is **mastered**
-after a legitimate first-try solve in 3 distinct cycles and is then
-retired from auto-set membership only.
+Sets may be **user-authored** (game/pool/manual) or one-click
+**Woodpecker blocks** (`auto` recipe). The app never creates a set or block
+on its own: a block is formed only by an explicit user action and is a
+**fixed snapshot** of the derived **pool** (unmastered puzzles not in the
+open block). A puzzle is **mastered** after a legitimate first-try solve in
+3 distinct cycles; mastery is informational and retires nothing.
 
 V1 does not schedule puzzles individually. FSRS or another individual
 scheduler is deferred; the model below must not prevent one from being
@@ -42,8 +41,8 @@ A `Puzzle` is the immutable definition of a tactical exercise:
 A `Puzzle` contains **no scheduling state**: no due date, no review
 interval, no stability, no per-user difficulty, and no stored mastery
 flag. A puzzle may belong to zero, one or many `TacticalTrainingSet`s.
-Membership is tracked by the set (or derived for auto sets), not stored
-on the puzzle; mastery is derived from attempt history at read time.
+Membership is tracked by the set; the derived **pool** is a view, not a
+stored set; mastery is derived from attempt history at read time.
 
 Puzzles are owned by their source game. Deleting a game removes its
 puzzles and, transitively, their attempts and set membership per the
@@ -60,56 +59,73 @@ trained together:
 - creation date
 - source/criteria (e.g. "blunders from games imported on 2026-06-01",
   "missed tactical opportunities, classical time control", a manual
-  selection, or an `auto` recipe — see below)
-- puzzle IDs (the set membership, in the set's base order; **empty and
-  non-authoritative for `auto` sets**)
+  selection, or an `auto` block recipe — see below)
+- puzzle IDs (the set membership, in the set's base order; **frozen** for a
+  Woodpecker block)
 - ordering policy (see Configuration)
-- target size (ignored for `auto` sets; the recipe defines the size)
-- status (e.g. `active`, `archived`)
+- target size (for a block, the recipe size; a block takes all of the pool
+  when it is smaller than the size)
+- status (`active` = open block, at most one; `archived` = closed or hidden)
 - configuration/version (the training-configuration snapshot the set
-  was created or last edited with; fixed for `auto` sets)
+  was created or last edited with; fixed for a block)
 
-A set is created by the user or generated from a puzzle source
-(Feature 011 output, game-review selections) or seeded by the system
-(`auto`). User-authored sets are deterministic and reproducible for
-testing; their membership and order are stored state, not derived from
-mutable query results. `auto` sets are deterministic functions of the
-pool, mastery and their seed (see Auto-generated sets).
+A set is created explicitly by the user: either a custom set from a puzzle
+source (Feature 011 output, game-review selections) or a one-click
+**Woodpecker block** from the derived pool. The app never seeds or
+auto-creates a set. Every set's membership and order are stored state, not
+derived from mutable query results; a block's membership is frozen at
+creation.
 
-## Auto-generated sets
+## Pool, Woodpecker block and Quick train
 
-Two sets are seeded by the system with deterministic ids and exist by
-default:
+The training model has three related concepts; none is created without an
+explicit user action.
 
-| Recipe | Membership | Order |
-|---|---|---|
-| `allPuzzles` | every unmastered pool puzzle | difficulty ascending |
-| `woodpeckerRandom` | a deterministic `size`-puzzle subset of the unmastered pool (V1 `size = 200`) | difficulty ascending |
+**Pool** — the derived set of every puzzle the user owns that is **not
+mastered** and **not a member of the currently-open block**:
 
-Fixed presets: goal accuracy 100% (`targetAccuracy = 1`), hints enabled,
-retry-failed `endOfCycle`, ordering `difficultyAsc`. These are deliberate
-product choices, not part of any published protocol
+- it is computed at read time from `Puzzle`s, the derived mastery state and
+  the open block; it is never stored as a set and there is no "pool set";
+- it grows as games are analyzed and puzzles are generated;
+- it is trained either through a **Woodpecker block** (a fixed snapshot) or
+  **Quick train** (ad-hoc).
+
+**Woodpecker block** — a fixed, difficulty-ascending snapshot formed from the
+pool by one click:
+
+- the user presses **Create Woodpecker block**; the app selects up to `N`
+  pool puzzles (default `N = 200`; `100`/`400` behind an "Advanced"
+  disclosure) in difficulty-ascending order (ties by `sourcePly` then
+  `puzzleId`) and stores them as the block's frozen membership;
+- if the pool is smaller than `N`, the block holds all of it;
+- membership is **fixed**: new puzzles are not added mid-plan and the block is
+  not re-derived per cycle (this supersedes the former virtual/per-cycle
+  membership);
+- only **one block is open at a time**; finishing or abandoning it closes it
+  and returns its still-unmastered members to the pool, and the next block is
+  formed from the remaining pool plus new puzzles;
+- guidance copy recommends **200–400** puzzles and warns that below about
+  **100** later cycles risk memorising diagrams; the order is never shuffled
+  (same easy→hard order every cycle).
+
+**Quick train** — an ad-hoc, non-stored session over the whole pool for a
+brand-new user (or any time) who wants to practise before committing a block:
+
+- it creates no `trainingSets` row;
+- it snapshots the pool into a real ad-hoc `TrainingCycle` row under a
+  reserved sentinel `trainingSetId` and writes ordinary immutable attempts;
+- the sentinel is excluded from set-scoped reads and set deletion.
+
+There is **no 100% accuracy gate** and no automatic retirement. Success is
+speed and automaticity: cycle results track total solving time against the
+previous cycle (target: beat half of it), suggest an optional ~6-cycle plan,
+surface the 60–75% first-cycle first-try band as guidance, and nudge for at
+least a 1-day spacing between cycles. None of these is enforced.
+
+Fixed presets for a block: hints enabled, retry-failed `endOfCycle`, ordering
+`difficultyAsc`; `targetAccuracy` is unset (informational only). These are
+ChessRemedy product choices, not part of any published protocol
 (`specs/research/cycle-training.md`).
-
-Membership is **virtual**:
-
-- it is derived at **cycle start** from the current puzzle pool minus
-  mastered puzzles, then snapshotted onto the cycle (`TrainingCycle.puzzleIds`);
-  it is fixed for the cycle and never mutated mid-cycle;
-- `woodpeckerRandom` selects deterministically: rank each eligible puzzle by a
-  stable, dependency-free hash of `setId + "\u0000" + puzzleId` and take the
-  lowest `size` (ties by puzzle id). The same eligible pool and set id yield
-  the same subset every cycle; mastered departures are backfilled to `size`;
-- newly generated puzzles are eligible from the next cycle (they enter
-  `allPuzzles` always, and `woodpeckerRandom` when the eligible pool is below
-  `size` or their priority ranks within the selection);
-- an empty derived membership (no puzzles, or all mastered) is a real `empty`
-  state and blocks cycle start, never a fake count;
-- auto sets are system-managed and idempotently re-seeded; they are not
-  user-editable in V1.
-
-User-authored sets never use this path: their membership is stored and is
-never auto-retired.
 
 ## TrainingCycle
 
@@ -267,11 +283,12 @@ masteryOf(puzzleId) :=
   read time** (no stored flag, no scheduler state; ADR-031). Deleting the
   source game deletes the puzzle and its attempts, so mastery disappears
   with it.
-- Mastery is versioned by `MASTERY_VERSION`; Feature 013 (auto-set
-  membership) and Feature 014 (mastered counts) both call the single
-  canonical function.
-- Mastered puzzles are excluded from **auto-set** membership only;
-  user-authored sets are never auto-retired.
+- Mastery is versioned by `MASTERY_VERSION`; Feature 013 (pool membership)
+  and Feature 014 (mastered counts) both call the single canonical function.
+- Mastery is **informational**: it performs no automatic action and mutates no
+  row. A mastered puzzle is outside the **pool** by definition (so it is not
+  selected into a future block), but it stays in any existing block and in any
+  custom set; nothing is retired or archived.
 
 ## Cycle configuration
 
@@ -291,24 +308,27 @@ Configurable fields:
 V1 defaults (product decisions; revisable without an ADR only when the
 change is a default-value change):
 
-- target size: 10 puzzles per set
-- ordering: by difficulty ascending (ties by puzzle id) — deterministic
+- target size: 10 puzzles per custom set; a Woodpecker block defaults to 200
+  (100/200/400)
+- ordering: by difficulty ascending (ties by `sourcePly` then `puzzleId`) —
+  deterministic
 - retry-failed: `endOfCycle`
 - hint-level availability: levels 1–4 enabled, first-hint level at the
   set's configured threshold
 - completion rules: skipping allowed; a skipped puzzle is not completed
-- target accuracy / target solving time: optional, unset by default
-- number of cycles: unset (open-ended) by default
+- target accuracy / target solving time: optional, unset by default; target
+  accuracy is informational only and is never a gate
+- number of cycles: unset (open-ended) by default; ~6 suggested as guidance
 
-Auto-set configuration is fixed (not user-editable): goal accuracy 100%
-(`targetAccuracy = 1`), hints enabled, retry-failed `endOfCycle`, ordering
-`difficultyAsc`; the effective size is the recipe's (`allPuzzles`
-unbounded, `woodpeckerRandom` 200).
+Woodpecker-block configuration is fixed (not user-editable): hints enabled,
+retry-failed `endOfCycle`, ordering `difficultyAsc`, no accuracy gate; the
+effective size is the recipe's (default 200).
 
-These defaults are not derived from any specific Woodpecker protocol;
-they are ChessRemedy's initial product choices (ADR-031), and the
-auto-set 100% goal and retirement are deliberate deviations from the
-Woodpecker method documented in `specs/research/cycle-training.md`.
+These defaults are not derived from any specific Woodpecker protocol; they are
+ChessRemedy's initial product choices (ADR-031). The time-halving goal, the
+~6-cycle plan, the 60–75% first-cycle band and the ≥1-day spacing nudge are
+guidance aligned with the method, not enforced gates
+(`specs/research/cycle-training.md`).
 
 ## Metrics
 
@@ -357,9 +377,10 @@ proves the training method caused it; it reports measured deltas only
 
 ## Future scheduling
 
-The immutable `Puzzle`, the `TacticalTrainingSet` membership (stored or
-auto-derived), the attempt/cycle history and the derived mastery state
-are the entire V1 training data surface. A future individual scheduler
+The immutable `Puzzle`, the `TacticalTrainingSet` membership (custom stored
+or block-frozen), the derived pool, the attempt/cycle history and the derived
+mastery state are the entire V1 training data surface. A future individual
+scheduler
 (e.g. FSRS) can be layered on top of attempt history without changing the
 puzzle definition or discarding V1 data; mastery is derived and adds no
 scheduling state.

@@ -489,16 +489,18 @@ Per-cycle aggregates (`sample.unit = 'puzzles'` for rate metrics):
   presentation never adds a credit; multiple rows in one cycle count once.
   Mastery is **global** per puzzle (across all sets/cycles) and monotonic: once
   the 3-cycle threshold is met, a later failure does not un-master it.
-- This is the same derivation Feature 013 uses for auto-set retirement. Feature
-  014 **reuses the canonical pure `masteryOf` function** (no second
-  implementation) and carries `MASTERY_VERSION` in its version summary; a
-  change to the threshold/conditions bumps both `MASTERY_VERSION` and
-  `STATISTICS_VERSION` (§12).
+- This is the same derivation Feature 013 uses for the derived pool (mastered
+  puzzles are outside the pool by definition). Mastery is **informational**:
+  it retires nothing, mutates no row, and does not remove a puzzle from an
+  existing block. Feature 014 **reuses the canonical pure `masteryOf`
+  function** (no second implementation) and carries `MASTERY_VERSION` in its
+  version summary; a change to the threshold/conditions bumps both
+  `MASTERY_VERSION` and `STATISTICS_VERSION` (§12).
 - `masteredPuzzleCountForGame(gameId)` counts distinct mastered puzzles whose
   `sourceGameId` is that game (the Game Library insight, read-only).
 - `masteredPuzzleCountForSet(setId)` counts distinct mastered puzzles in the
-  set's membership (membership is the set's stored/derived ids, independent of
-  which set earned the mastery).
+  set's stored membership (a block's frozen snapshot or a custom set's
+  membership, independent of which set earned the mastery).
 - `sample.unit = 'puzzles'`; absent attempts yield `empty`, never a fake `0`.
 - This definition is a product decision (see Owner decisions to confirm).
 

@@ -2,17 +2,22 @@
 
 ## Purpose
 
-Deliver the V1 **training lifecycle**: fixed **tactical training sets** and
-repeated **training cycles** over them (Woodpecker-inspired; ADR-031). This
-feature replaces the interim `/puzzles` practice host with the real cycle
-host, owns set creation/management and the cycle start → resume → complete →
-abandon → repeat lifecycle, and hosts Feature 012's solving screen and its
-immutable `puzzleAttempts` rows under **real cycle ids**.
+Deliver the V1 **training lifecycle**: explicit, one-click **Woodpecker
+blocks** and repeated **training cycles** over a fixed block (Woodpecker-
+inspired; ADR-031). This feature replaces the interim `/puzzles` practice host
+with the real cycle host, owns block formation and management and the cycle
+start → resume → complete → abandon → repeat lifecycle, and hosts Feature
+012's solving screen and its immutable `puzzleAttempts` rows under **real
+cycle ids**.
 
 It answers the product question "What should I train next?" by turning the
 user's own generated puzzles (Feature 011) into a deliberate, measurable
 training artifact, and produces the set/cycle records Feature 014 aggregates
 over and Feature 015 renders.
+
+The app **never forms a block on its own**: the user commits with a single
+primary button. Membership is machine-selected (the user never hand-picks
+puzzles) but only on explicit user action, and is frozen once created.
 
 This feature:
 
@@ -23,12 +28,12 @@ This feature:
 - never modifies, re-rates or deletes an immutable `PuzzleRow`;
 - never re-implements the Feature-012 solving interaction, hint content or
   outcome write;
-- owns the two **auto-generated Woodpecker sets** and derives their membership
-  from the puzzle pool at each cycle start (virtual membership, snapshotted per
-  cycle);
-- owns the canonical **puzzle-mastery** derivation (a legitimate first-try solve
-  in 3 distinct cycles) shared with Feature 014, and the auto-set retirement it
-  drives;
+- owns the derived **pool** (unmastered puzzles not in the open block), the
+  one-click **Woodpecker block** (a fixed, difficulty-ascending snapshot) and
+  the **Quick train** ad-hoc session over the pool;
+- owns the canonical **puzzle-mastery** derivation (a legitimate first-try
+  solve in 3 distinct cycles) shared with Feature 014 — **informational only**,
+  driving no automatic retirement;
 - never computes the Dashboard's statistics (Feature 014) or renders charts
   (Feature 015).
 
@@ -36,38 +41,53 @@ All domain behavior is deterministic for fixed inputs and a caller-supplied
 `now`, and is independently testable with fixtures — no engine, network or
 real IndexedDB required for domain tests.
 
+**Supersedes.** This revision replaces the earlier Feature-013 model of two
+system-seeded auto sets (`allPuzzles`, `woodpeckerRandom`) with per-cycle
+virtual membership and mastery-driven retirement. The app no longer seeds or
+forms any set automatically: a **Woodpecker block** is an explicit one-click,
+fixed snapshot, the **pool** is derived, and mastery is informational. The
+random-subset selection, per-cycle membership refresh and auto-retirement
+rules are removed.
+
 ---
 
 ## Scope
 
 ### In scope
 
-1. **Set management** — create a set from a puzzle source/criteria, name and
-   (re)configure it, select it for training, archive/unarchive it, delete it
-   (with confirmation).
-2. **Cycle lifecycle** — start a cycle over a set, present the set's puzzles
+1. **Set management** — create a custom set from a puzzle source/criteria,
+   name and (re)configure it, select it for training, archive/unarchive it,
+   delete it (with confirmation); create/close a **Woodpecker block** with one
+   click.
+2. **Cycle lifecycle** — start a cycle over a set/block, present its puzzles
    in the cycle's order, record every attempt through Feature 012, handle
    wrong answers/hints/skips/retries per the configured behavior, resume an
    interrupted cycle, complete it, abandon it, and start the next cycle.
-3. **Cycle configuration** — target size, ordering, retry-failed behavior,
-   hint-level availability and threshold, completion rules (skip allowed),
-   target accuracy, optional target solving time, planned number of cycles.
+3. **Cycle configuration** — ordering, retry-failed behavior, hint-level
+   availability and threshold, completion rules (skip allowed), optional
+   target solving time, and the optional planned number of cycles. There is
+   **no accuracy gate** (target accuracy is optional and informational only).
 4. **Cycle results** — the read-only per-cycle results view and the canonical
-   per-cycle aggregate metrics (shared with Feature 014).
+   per-cycle aggregate metrics (shared with Feature 014), including the
+   **total solving time and its delta vs the previous cycle**.
 5. **Persistence** — the `trainingSets` and `trainingCycles` tables (schema
    v10), their repositories, indexes, ownership and deletion cascade.
 6. **Host contract** — the cycle session host that drives Feature 012's
    `SolveScreen`/`usePuzzleSolve`/`PuzzleAttemptRecorder` and replaces the
    interim practice host.
-7. **Deterministic fixtures** for sets, cycles and attempt-driven aggregates.
-8. **Auto-generated sets** — the two system-seeded sets (`allPuzzles`,
-   `woodpeckerRandom`), their fixed presets, and the deterministic per-cycle
-   membership derivation that snapshots them.
-9. **Mastery & retirement** — the canonical 3-distinct-cycle legitimate
-   first-try mastery derivation, its exclusion of mastered puzzles from
-   auto-set membership (with backfill), and the read-only mastered-puzzles
-   surface.
-10. **Legitimate in-cycle solve rule** — the hint / wrong-move / restart
+7. **Deterministic fixtures** for sets, blocks, cycles and attempt-driven
+   aggregates.
+8. **Woodpecker block formation** — the one-click action that auto-selects up
+   to N (default 200) puzzles from the derived pool, easy→hard, and stores a
+   fixed membership snapshot; the close/return-to-pool lifecycle; the
+   one-open-block-at-a-time rule.
+9. **Derived pool & Quick train** — the derived unmastered pool (not stored as
+   a set) and the non-stored ad-hoc session over it, writing attempts under a
+   real ad-hoc cycle identity.
+10. **Mastery (informational)** — the canonical 3-distinct-cycle legitimate
+    first-try mastery derivation and the read-only mastered-puzzles surface;
+    mastery excludes nothing automatically and retires nothing.
+11. **Legitimate in-cycle solve rule** — the hint / wrong-move / restart
     disqualification and the immutable one-row-per-presentation guarantee that
     prevents re-rolling a clean first-try credit.
 
@@ -87,8 +107,18 @@ real IndexedDB required for domain tests.
 - Sync of sets/cycles/attempts as standalone values (Feature 016 tombstones
   only).
 - Semantic tactical-motif taxonomy (V1; `domain/tactics.md`).
-- User editing of auto-set membership or recipes: auto sets are system-managed
-  and derived; manual/game/pool sets keep editable stored membership.
+- **Automatic block/set creation or seeding** — the app never forms a block
+  or a set on its own; no `ensureAutoSets()` and no system-managed rows.
+- **Per-cycle membership refresh** — a block's membership is frozen at
+  creation and never re-derived per cycle (this supersedes the former
+  virtual/auto-refresh rule).
+- **Random-subset selection** — the former `woodpeckerRandom` recipe is
+  dropped; a block is always the easiest-N snapshot of the pool.
+- **An accuracy gate / enforced cycle count** — the Woodpecker method has no
+  100% gate and the ~6-cycle plan is guidance only; the app never blocks a
+  cycle or completion on accuracy or a cycle target.
+- User editing of a block's membership or recipe: a block is a fixed snapshot;
+  custom game/pool/manual sets keep editable stored membership.
 - An un-master action: mastery is monotonic and the mastered list is read-only
   in V1.
 - Storing mastery, per-puzzle progress or scheduler state on a puzzle or any
@@ -105,7 +135,7 @@ real IndexedDB required for domain tests.
 | 007 | Game Library and the canonical row/insight/action surface; set creation is reached from the per-game puzzle view. |
 | 011 | Immutable `PuzzleRow` source (both origins); hands the set-building entry point to this feature. |
 | 012 | The solving screen, hint/outcome rules and the immutable `puzzleAttempts` write; **Feature 013 hosts it** and consumes its outcomes. |
-| 014 | Aggregates over the set/cycle records and attempts this feature owns; the canonical cycle metric **and mastery** functions are shared, never duplicated. |
+| 014 | Aggregates over the set/cycle records and attempts this feature owns; the canonical cycle metric, **mastery** and pool functions are shared, never duplicated. |
 | 015 | Dashboard, read-only consumer of Feature 014. |
 | 016 | Deletion tombstones consistent with this feature's ownership rules. |
 
@@ -116,14 +146,12 @@ retry passes, resume, completion and every cycle-level metric. Feature 013
 never writes or mutates an attempt row itself — it drives the Feature-012
 recorder and reads the rows.
 
-**Feature-012 contract extension (restart disqualification).** The mastery
-rule requires that a solve after a **restart** is not a clean first-try solve
-(see "Legitimate in-cycle solves"). This is a small, explicit extension of the
-Feature-012 solve contract, not a re-implementation: `PresentationCounters`
-gains a `restartCount`, the immutable `PuzzleAttemptRow` persists it, and
-`deriveResult` returns `solvedWithHelp` for a `solved` trigger when
-`restartCount > 0` (in addition to the existing hint/wrong-move conditions).
-Feature 013 consumes the persisted counter and never re-derives it.
+**Feature-012 restart contract (consumed, not re-implemented).** Feature 012
+defines `restartCount` on `PresentationCounters` and the immutable
+`PuzzleAttemptRow`, and `deriveResult` returns `solvedWithHelp` for a `solved`
+trigger when `restartCount > 0` (in addition to the existing hint/wrong-move
+conditions). Feature 013 consumes the persisted counter for the mastery
+derivation and never re-derives it.
 
 ---
 
@@ -136,59 +164,66 @@ and behaviors are:
 
 ### 1. Training home (`/puzzles`)
 
-- Lists the user's **active** training sets with name, puzzle count, current
-  cycle number/status, and last-activity date; archived sets are reachable
-  behind an "Archived" affordance.
-- Always shows the two **auto-generated sets** ("All puzzles", "Woodpecker
-  random") by default. They are seeded idempotently on the training home (see
-  "Auto-generated sets"), so a fresh install with generated puzzles has a set
-  to train without any manual set creation.
-- For auto sets the displayed puzzle count is the **derived** count for the
-  next cycle (current pool minus mastered), never a stale stored count.
+- Shows the single **open Woodpecker block** when one exists (name, fixed
+  puzzle count, current cycle number/status, last-activity date) and a primary
+  **Create Woodpecker block** action when none is open.
+- Shows the derived **pool** size (unmastered puzzles not in the open block)
+  and a **Quick train** action that starts an ad-hoc session over the pool
+  without creating a set.
+- Lists any custom (game/pool/manual) training sets; archived sets are
+  reachable behind an "Archived" affordance.
+- **Guidance copy** (see "Woodpecker block + pool + Quick train"): a block is
+  fixed once created, the recommended size is 200–400 puzzles, and below about
+  100 puzzles later cycles risk memorising diagrams.
 - Shows a link to the read-only **Mastered puzzles** list (see "Mastered
   puzzles list").
 - Shows a **resume banner** when a cycle is `inProgress`, linking directly
   back into that cycle at the next unanswered puzzle.
-- Offers **New set** and, when no sets exist, an explicit empty state that
-  explains puzzles must first be generated from games (Feature 011) and
-  links to the Game Library.
-- Never shows a bare `0` for absent data (e.g. a set whose puzzles were all
-  removed by game deletion shows an empty/archived state, not a fake count).
+- Offers **New custom set** and, when no puzzles exist at all, an explicit
+  empty state that explains puzzles must first be generated from games
+  (Feature 011) and links to the Game Library.
+- Never shows a bare `0` for absent data (e.g. a custom set whose puzzles were
+  all removed by game deletion shows an empty/archived state, not a fake
+  count).
 
-### 2. Set creation
+### 2. Block and set creation
 
-- **From a game's puzzles** (primary hand-off): Feature 011's per-game puzzle
-  view exposes a "Create training set" action. The set is seeded from that
-  game's puzzles, optionally narrowed by origin/difficulty, honoring target
-  size and ordering.
-- **From the puzzle pool** (training home): a deterministic, filterable list
-  of all persisted puzzles (origin, tactical objective, difficulty bucket,
-  source game, platform, time-control category) with multi-select and
-  "Create set from selection". The pool never runs the engine.
-- **Manual selection** is the pool multi-select path; the set stores a
-  human-readable `source` descriptor plus the resolved membership snapshot.
-- **Auto sets are not created here.** The two auto-generated sets are seeded
-  by the system (see "Auto-generated sets"); their membership is virtual and
-  never user-resolved.
-- Creation resolves membership **once** and stores it: a game/pool/manual set
-  is a fixed collection, not a live query (domain rule). Auto sets are the one
-  exception: their membership is re-derived at each cycle start and snapshotted
-  onto the cycle (see Domain behavior §3a).
+- **Create Woodpecker block** (primary, one click): a single primary action
+  auto-selects up to N puzzles (default **200**) from the derived pool in
+  difficulty-ascending order. The user never hand-picks puzzles. Mastery is
+  handled automatically (mastered puzzles are excluded because they are not in
+  the pool). If the pool is smaller than N, the block takes all of the pool.
+  - **Minimal options.** The only option is block size (**100 / 200 / 400**),
+    and it lives behind an **"Advanced"** disclosure, never in the main flow;
+    the main flow is the single button at the default 200.
+  - **One open block at a time.** While a block is open the create action is
+    disabled; the open block must be finished or abandoned first.
+  - **Fixed membership.** The selected ids are stored as the block's frozen
+    `puzzleIds` snapshot. New puzzles are not added mid-plan and membership is
+    not re-derived per cycle.
+- **Custom sets** (secondary, explicit): a custom set can be created from a
+  game's puzzles (Feature 011's per-game puzzle view) or from a filtered
+  puzzle selection, honoring target size and ordering. Custom sets store a
+  human-readable `source` descriptor plus the resolved membership snapshot;
+  their membership is editable, unlike a block's.
+- Creation resolves membership **once** and stores it: every set (block or
+  custom) is a fixed collection, not a live query. There is no virtual or
+  per-cycle membership.
 
-### 3. Set detail
+### 3. Block and set detail
 
-- Rename, edit configuration, view membership (with per-puzzle origin,
-  objective and difficulty bucket), view cycle history, and start/continue a
-  cycle.
-- Archive/unarchive and delete (destructive confirmation naming the set and
-  its cycle/attempt counts).
+- **Block detail**: shows the recipe (size), the frozen membership (with
+  per-puzzle origin, objective and difficulty bucket), the cycle history and a
+  start/continue action. It explains that the block is **fixed** (new puzzles
+  are not added mid-plan) and that finishing or abandoning it returns its
+  still-unmastered members to the pool. A block has no rename, no membership
+  editing and no per-cycle refresh; it closes via **Finish block** (the plan is
+  complete) or **Abandon block**.
+- **Custom set detail**: rename, edit configuration, view membership, view
+  cycle history, start/continue a cycle, archive/unarchive and delete
+  (destructive confirmation naming the set and its cycle/attempt counts).
 - Starting a cycle shows the effective config snapshot and the puzzle count
   before committing.
-- **Auto sets** show their derived membership and recipe read-only: no rename,
-  no membership editing, no config editing, and (V1 default) no
-  archive/delete — they are system-managed and re-seeded if removed. Their
-  detail explains that mastered puzzles have been retired and that membership
-  refreshes at each cycle start.
 
 ### 4. Cycle session
 
@@ -199,6 +234,9 @@ and behaviors are:
   (resumable) and a **Skip** control when skipping is allowed.
 - Does **not** show puzzle difficulty, cycle ordering rationale or any
   scheduling language (no "due", no "next review"; ADR-031).
+- When a new cycle is started **less than ~1 day** after the previous cycle of
+  the same block ended, shows a non-blocking **spacing nudge** recommending at
+  least a 1-day break; the user may proceed. This is guidance, not a gate.
 - Advancing happens only after the attempt row is durably written (Feature
   012 guarantees this); an unwritten outcome keeps the result visible with an
   inline retry and the session does not advance.
@@ -211,40 +249,66 @@ and behaviors are:
   per-puzzle outcomes (including retries/skips), and the canonical cycle
   aggregates.
 - Completed cycles can be reviewed and compared with previous cycles of the
-  **same set**; a comparison never claims the training method caused the
+  **same set/block**; a comparison never claims the training method caused the
   change (same caveat as `domain/statistics.md`).
+- Shows the cycle's **total solving time** and its **delta vs the previous
+  cycle of the same block**, with a "beat half the previous cycle's time"
+  target once a previous cycle exists (the Woodpecker time-halving ladder).
+- Surfaces the **60–75% first-cycle first-try** band as guidance, not a gate,
+  and suggests an optional **~6-cycle plan**; neither is enforced and neither
+  blocks completion.
 - "Start next cycle" (repeat) is offered from a completed or abandoned cycle.
 - An `inProgress` cycle shows partial aggregates and a resume action; an
   `abandoned` cycle is shown separately and is never resumable.
 
-### 6. Auto-generated sets
+### 6. Woodpecker block + pool + Quick train
 
-Two sets are seeded automatically and exist by default (deterministic ids,
-idempotent ensure on training-home load and before cycle start):
+Three concepts replace the former auto-generated sets; **none is created
+without an explicit user action**.
 
-| Set | Recipe | Selection | Order |
+| Concept | What it is | Stored? | Trainable |
 |---|---|---|---|
-| **All puzzles** | `allPuzzles` | every pool puzzle not yet mastered | difficulty ascending |
-| **Woodpecker random** | `woodpeckerRandom` (size 200) | a deterministic 200-puzzle random subset of the unmastered pool | difficulty ascending |
+| **Pool** | every owned puzzle that is **not mastered** and **not a member of the currently-open block** | no (derived) | via **Quick train** only |
+| **Woodpecker block** | a **fixed snapshot** of up to N pool puzzles, easy→hard, formed by one click | yes (`trainingSets` row, frozen `puzzleIds`) | yes, as repeated cycles |
+| **Quick train** | an ad-hoc, non-stored session over the whole pool, easy→hard | cycle row only; **no set row** | yes, immediately |
 
-Both use goal accuracy **100%** (`targetAccuracy = 1`), hints enabled, retry
-`endOfCycle`, ordering `difficultyAsc`. The recipe is stored in the existing
-`source` field (`source.kind === 'auto'`); no user input is required. A user
-who has generated no puzzles sees both sets as empty with the same
-"generate puzzles first" empty state as a manual set.
+- **Pool.** Derived at read time from `puzzles` minus the derived mastery set
+  minus the open block's members. It grows as games are analyzed and puzzles
+  are generated; it is never stored as a set and there is no "pool set".
+- **Woodpecker block.** Created by the one-click **Create Woodpecker block**
+  action (default size 200; 100/200/400 behind "Advanced"). Membership is
+  frozen at creation; it never refreshes per cycle. Only **one block is open
+  at a time**. When the block is finished or abandoned it closes, and its
+  still-unmastered members return to the pool; the same button then forms the
+  next block from the remaining pool plus any newly generated puzzles.
+- **Quick train.** A one-tap session over the pool for a brand-new user (or
+  any time) who wants to practise before committing a block. It creates no
+  `trainingSets` row; it snapshots the pool into an ad-hoc `trainingCycles`
+  row (see Domain behavior §3c) and writes normal immutable attempts.
 
-Auto sets are **virtual membership** sets: their membership is re-derived from
-the current puzzle pool and mastery at the **start of each cycle**, then
-snapshotted onto that cycle. They are never mutated mid-cycle, and a set edit
-is not offered. This is the one documented exception to "membership is stored
-state" (see Domain behavior §3a).
+**Guidance copy shown to the user** (training home and block detail):
+
+- a block is **fixed** once created — new puzzles are **not** added mid-plan;
+- the recommended size is **200–400** puzzles;
+- below about **100** puzzles, later cycles risk **memorising the diagrams**
+  rather than training pattern recognition;
+- success is **speed and automaticity**, not a perfect score — there is no
+  100% gate.
+
+A user who has generated no puzzles sees the pool empty with the
+"generate puzzles first" empty state; a user with a small pool can still use
+**Quick train**.
 
 ### 7. Mastered puzzles list
 
 A read-only surface under `/puzzles` lists every mastered puzzle (definition
-in "Legitimate in-cycle solves"): puzzle id/provenance, source game, origin
-and objective, difficulty bucket, and the distinct cycles that earned mastery
-(count and dates). It has an explicit empty state and requires no un-master
+in "Legitimate in-cycle solves" and "Mastery"): puzzle id/provenance, source
+game, origin and objective, difficulty bucket, and the distinct cycles that
+earned mastery (count and dates). Mastery is **informational**: it is a
+read-time filter, not an action. A mastered puzzle is outside the pool by
+definition and so is not selected into a future block, but mastery never
+mutates a stored row, never removes a puzzle from an existing block, and never
+archives anything. It has an explicit empty state and requires no un-master
 action in V1 (mastery is monotonic). It is reachable from the training home
 and never starts a solve.
 
@@ -313,124 +377,144 @@ interface CycleConfig {
   retryFailed: RetryFailed;
   hints: HintConfig;
   allowSkip: boolean;
-  targetAccuracy: number | null;       // 0..1, informational
+  targetAccuracy: number | null;       // 0..1, informational only; never a gate
   targetSolvingTimeMs: number | null;  // informational
-  plannedCycles: number | null;        // informational
+  plannedCycles: number | null;        // informational (~6 suggested; not enforced)
   configVersion: number;               // semantics version (ARCHITECTURE §9)
 }
 
-type AutoSetRecipe =
-  | { kind: 'allPuzzles' }                          // every unmastered pool puzzle
-  | { kind: 'woodpeckerRandom'; size: number };     // deterministic unmastered subset
+// One-click Woodpecker block recipe. The app never forms a block on its own;
+// the user commits with the create button. `size` is the requested cap.
+type BlockRecipe = { kind: 'woodpeckerBlock'; size: number }; // 100 | 200 | 400
 
 type SetSource =
   | { kind: 'game'; gameId: string }
   | { kind: 'pool'; filters: PuzzlePoolFilters }
   | { kind: 'manual' }
-  | { kind: 'auto'; recipe: AutoSetRecipe };        // system-seeded, virtual membership
+  | { kind: 'auto'; recipe: BlockRecipe };   // one-click Woodpecker block
 
 interface TacticalTrainingSetRow {
   id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
-  status: TrainingSetStatus;
-  source: SetSource;              // provenance/recipe
-  puzzleIds: readonly string[];   // fixed membership for game/pool/manual; [] for auto
-  targetSize: number;             // creation target/cap (default 10); ignored for auto
+  status: TrainingSetStatus;      // 'active' = open block (at most one); 'archived' = closed
+  source: SetSource;              // provenance, or the block recipe
+  puzzleIds: readonly string[];   // fixed membership for every kind, incl. the block
+  targetSize: number;             // creation cap (default 10); for a block, the recipe size
   config: CycleConfig;            // current config; snapshotted per cycle
 }
 ```
 
-- For game/pool/manual sets, membership is **stored state**, not a live query;
-  editing a set re-resolves membership explicitly.
-- For `auto` sets, `puzzleIds` is **not authoritative** (stored empty): the
-  effective membership is `deriveAutoSetMembership(recipe, pool, mastery, id)`
-  and is snapshotted onto each cycle at start. `targetSize` is ignored (the
-  recipe defines the cap/size). `config` is fixed by the recipe presets and is
-  not user-editable.
+- Every set's membership is **stored state**, not a live query; editing a
+  custom set re-resolves membership explicitly, and a block's membership is
+  frozen at creation and never edited.
+- The former virtual/derived `auto` membership is removed: a block stores its
+  resolved `puzzleIds` snapshot (the easiest-N pool selection at creation).
+  `source.kind === 'auto'` identifies the block and carries its recipe for
+  provenance/versioning; it does **not** mean the app created it — creation is
+  always an explicit one-click user action.
+- The **pool** is not a set and is never stored: it is derived at read time as
+  `pool := [p | p in puzzles, not mastery.isMastered(p.id), p.id not in
+  openBlock.members]`.
 - A puzzle may belong to zero, one or many sets; membership lives on the set,
   never on the `Puzzle` (ADR-031).
-- `source` is provenance for game/pool/manual sets; for auto sets it carries
-  the recipe. The authoritative membership is `puzzleIds` for game/pool/manual
-  sets and the derived membership for auto sets.
+- At most one set with `source.kind === 'auto'` may be `active` (the open
+  block); closing it sets `status: 'archived'`. `source` is provenance for
+  custom sets and the block recipe for a block.
 
 ### 2. Set creation and membership resolution
 
-Resolution is a pure function of the persisted puzzles, the optional source
-game summaries and the config:
+Block creation is a pure function of the persisted puzzles, the derived
+mastery map and the currently-open block:
+
+- **block** source → the pool (unmastered, not in the open block), ordered
+  `difficultyAsc` (see §3), take at most `recipe.size`; the resolved ids are
+  stored as the block's frozen `puzzleIds`. If the pool is smaller than
+  `size`, the block holds all of it. If the pool is empty, creation is blocked
+  with an explanation (no empty block is created). If a block is already open,
+  creation is rejected with a typed result.
+
+Custom set resolution is unchanged and is a pure function of the persisted
+puzzles, the optional source game summaries and the config:
 
 - **game** source → the game's `puzzles` rows, optionally filtered by origin
   and/or difficulty bucket.
-- **pool** source → all puzzles matching the pool filters.
+- **pool** source → all puzzles matching the explicit library filters at
+  creation time (a snapshot, distinct from the derived pool).
 - **manual** → the caller-provided id selection.
-- **auto** source → not resolved at creation; resolved at **cycle start** by
-  §3a (the set is seeded with empty `puzzleIds`).
 
 Then, under the configured `ordering` (see §3), take at most `targetSize`
-puzzles. If fewer exist, the set holds all of them. A set with zero resolved
-puzzles is created empty with an explicit empty state (it is never silently
-deleted). Membership ids are canonical `puzzleIdOf(sourceGameId, sourcePly)`
-values; a missing puzzle row at training time is skipped (Feature 012 error
-case). Auto sets are the documented exception to the create-time snapshot: they
-are seeded, not created from a user selection, and their membership is derived
-per cycle.
+puzzles. If fewer exist, the set holds all of them. A custom set with zero
+resolved puzzles is created empty with an explicit empty state (it is never
+silently deleted). Membership ids are canonical
+`puzzleIdOf(sourceGameId, sourcePly)` values; a missing puzzle row at training
+time is skipped (Feature 012 error case).
 
 ### 3. Ordering and target size
 
 Allowed V1 orderings, all deterministic:
 
-- `difficultyAsc` (default) — puzzle difficulty ascending, ties by puzzle id;
+- `difficultyAsc` (default) — puzzle difficulty ascending, ties by
+  `sourcePly` ascending, then `puzzleId` ascending;
 - `sourcePly` — by `sourceGameId` then `sourcePly` ascending;
 - `manual` — the stored `puzzleIds` base order.
 
-`targetSize` (default 10) is the creation target/cap applied when a source
-resolves more puzzles than the target. It is not a hard runtime limit on an
-existing set; the user may edit membership or raise the target. The exact
-"first N under the ordering" selection rule is deterministic and fixture-
-testable.
+For a **block**, selection is always `difficultyAsc` (fixed; no user choice)
+and `recipe.size` is the cap: the block takes the **easiest N** pool puzzles.
+`targetSize` (default 10) is the creation cap for custom sets; it is not a
+hard runtime limit on an existing set. The exact "first N under the ordering"
+selection rule is deterministic and fixture-testable.
 
-### 3a. Auto-set membership derivation (per cycle)
+### 3a. Block formation (one-click, fixed snapshot)
 
-Auto-set membership is a pure function of the recipe, the current puzzle
-**pool** (every persisted `PuzzleRow`), the derived **mastery** map, and the
-set's deterministic seed (its id):
+A **Woodpecker block** is formed only by the explicit one-click **Create
+Woodpecker block** action; the app never forms one on its own. Formation is a
+pure function of the persisted puzzles, the derived mastery map, the
+currently-open block and the requested size:
 
 ```text
-deriveAutoSetMembership(recipe, pool, mastery, setSeed):
-  eligible := [p | p in pool, not mastery.isMastered(p.id)]
-  allPuzzles        -> eligible
-  woodpeckerRandom  -> takeLowestPriority(eligible, recipe.size, setSeed)
-  then apply the configured ordering (difficultyAsc; ties by puzzle id)
+formWoodpeckerBlock(puzzles, mastery, openBlock, size):
+  pool := [p | p in puzzles, not mastery.isMastered(p.id),
+               p.id not in openBlock.members]
+  ordered := sortAscending(pool, difficulty, then sourcePly, then puzzleId)
+  blockMembers := first(size, ordered)   // all of it when |pool| < size
+  return { members: blockMembers, recipe: { kind: 'woodpeckerBlock', size } }
 ```
 
-- **Determinism.** `woodpeckerRandom` ranks each eligible puzzle by a stable,
-  dependency-free hash of `setSeed + "\u0000" + puzzleId` (e.g. FNV-1a) and
-  takes the lowest `size`; ties break by puzzle id. The same eligible pool and
-  seed therefore yield the same subset every cycle — no `Math.random`, no
-  hidden clock, no new dependency.
-- **Per-cycle refresh.** The host derives membership at **cycle start**, then
-  writes it into `TrainingCycleRow.puzzleIds` (the ordered snapshot). The
-  cycle never mutates its snapshot mid-cycle; the next cycle re-derives from
-  the then-current pool and mastery. Newly generated puzzles are therefore
-  eligible from the next cycle.
-- **Mastery retirement and backfill.** Mastered puzzles are excluded from the
-  eligible pool. "All puzzles" simply omits them; `woodpeckerRandom` backfills
-  to `size` from the next-lowest-priority eligible puzzles when the eligible
-  pool is at least `size`.
-- **Stability.** For a fixed eligible pool the derived subset is identical
-  across cycles (mastery departures are backfilled deterministically). A newly
-  generated puzzle joins the next cycle when the eligible pool is below `size`
-  or its priority ranks within the selected `size`; the owner's "only mastered
-  departures cause replacements" holds for an unchanged pool, and the
-  new-puzzle-displacement edge is called out in "Conflicts surfaced"/Owner
-  decisions 13.
-- **Empty derived membership** (all pool puzzles mastered, or no puzzles) is a
-  real `empty` state: the auto set is shown as "all mastered"/"no puzzles" and
-  cycle start is blocked with an explanation — never a fake count or an empty
-  cycle.
+- **One click, no hand-picking.** The user presses one primary button; the app
+  selects up to `size` puzzles. The only option is size (**100 / 200 / 400**,
+  default **200**) and it lives behind an **"Advanced"** disclosure, never in
+  the main flow.
+- **Easy→hard bias.** Difficulty-ascending order means the block is the
+  easiest N of the pool, which biases selection toward easier puzzles as the
+  Woodpecker method prescribes. The order is **fixed and identical every
+  cycle**; it is never shuffled.
+- **Fixed snapshot.** The selected ids are written to the block's `puzzleIds`
+  and never change. New puzzles are **not** added mid-plan and the membership
+  is **not** re-derived per cycle (this supersedes the former "re-derived at
+  each cycle start" rule).
+- **Mastery handled automatically.** Mastered puzzles are excluded because
+  they are not in the pool; no manual exclusion is needed.
+- **One open block at a time.** While a block is `active`, creating another is
+  rejected. There is no system seeding, no `ensureAutoSets()`, and no
+  system-managed row.
+- **Close / return to pool.** The block's plan ends when the user **finishes**
+  the block (the optional ~6-cycle plan is complete) or **abandons** it. Both
+  close it (`status: 'archived'`) and return its **still-unmastered** members
+  to the pool; mastered members stay outside the pool by definition. The same
+  create button then forms the next block from the remaining pool plus any
+  newly generated puzzles.
+- **Small / empty pool.** If the pool is smaller than `size`, the block takes
+  all of it (never padded or fabricated). If the pool is empty, creation is
+  blocked with an explanation and a link to generate puzzles; the user can
+  still **Quick train** when the pool is non-empty.
+- **Recommended size guidance.** Guidance copy recommends **200–400** puzzles
+  and warns that below about **100** puzzles later cycles risk memorising
+  diagrams rather than training recognition; this is guidance, not a gate, and
+  the user may create a smaller block.
 
-### 3b. Mastery and retirement (canonical derivation)
+### 3b. Mastery (canonical derivation, informational)
 
 Mastery is derived, monotonic and global per puzzle (across all sets/cycles):
 
@@ -462,14 +546,42 @@ masteryOf(puzzleId) :=
   puzzle disappears with it.
 - **Derived at read time.** No mastery flag, counter or scheduler state is
   stored on the puzzle or any row (ADR-031). `masteryOf` is the single
-  canonical pure function, versioned by `MASTERY_VERSION`; Feature 013
-  (auto-set membership) and Feature 014 (mastered counts) both call it and
-  never re-implement it.
-- **Auto-retirement only.** Mastery excludes a puzzle from **auto-set**
-  membership. Manual/game/pool sets are never auto-retired: a mastered puzzle
-  stays in them and remains trainable (so mastery can be earned in any set).
+  canonical pure function, versioned by `MASTERY_VERSION`; Feature 013 (pool
+  membership) and Feature 014 (mastered counts) both call it and never
+  re-implement it.
+- **Informational only — no retirement.** Mastery performs no automatic
+  action: it never archives a set, never removes a puzzle from an existing
+  block, and never mutates a row. Because the pool is defined as the
+  unmastered, not-in-open-block puzzles, a mastered puzzle is simply outside
+  the pool and is not selected into a **future** block; this is a read-time
+  filter, not a retirement. A block that already contains a puzzle keeps it
+  even if it becomes mastered mid-plan, and a custom set is never auto-retired.
 - **Mastered list.** The read-only `/puzzles` mastered list is the surfaced
   view of `masteryOf`; V1 has no un-master action.
+
+### 3c. Quick train (ad-hoc identity)
+
+Quick train is an ad-hoc session over the whole pool; it is **not** a stored
+set.
+
+- It builds the same `difficultyAsc` queue from the pool (unmastered, not in
+  the open block) and drives the Feature-012 solving screen exactly like a
+  block cycle.
+- It creates **no `trainingSets` row**. It creates a real `trainingCycles`
+  row with a reserved ad-hoc `trainingSetId` sentinel (e.g.
+  `QUICK_TRAIN_SET_ID = '__quick_train__'`) and a `puzzleIds` snapshot of the
+  pool, then writes ordinary immutable attempt rows under that real
+  `cycleId`/sentinel `trainingSetId`.
+- The sentinel keeps the attempt model intact (every attempt has a real
+  `cycleId` and a `trainingSetId`) without inventing a second write path.
+  Quick-train attempts are legitimate in-cycle solves and therefore count
+  toward mastery like any other real cycle.
+- **Conflict to flag:** the ownership/cascade model assumes every cycle
+  belongs to a `trainingSets` row. The sentinel has none, so set-deletion
+  cascade does not apply to it; Quick-train cycles/attempts are removed only
+  by the game-deletion/puzzle cascade. Set-scoped reads (`listForSet`,
+  `masteredPuzzleCountForSet`) must exclude the sentinel, and Feature 014 must
+  not present Quick train as a set. See "Conflicts surfaced".
 
 ### 4. Training cycle model
 
@@ -528,8 +640,8 @@ Presentation context supplied to Feature 012:
 - `SolveHintConfig` derived from the cycle's `config.hints`.
 
 Only `presentationIndex === 1` can earn a mastery credit. The host persists the
-presentation's `restartCount` (Feature-012 contract extension) so a solve after
-a restart is `solvedWithHelp`, and it records a presentation abandoned after a
+presentation's `restartCount` (Feature-012 contract) so a solve after a restart
+is `solvedWithHelp`, and it records a presentation abandoned after a
 hint or restart so a later re-entry cannot be a clean first-try (see "8.
 Legitimate in-cycle solves"). A pristine presentation (no move, hint or
 restart) may still be discarded with no row, per Feature 012.
@@ -612,6 +724,15 @@ Rules:
 - Cross-cycle comparison uses the same set and the same metric definition and
   reports measured deltas only — never causation (ADR-031,
   `domain/tactical-training.md`, `domain/statistics.md`).
+- **Time goal.** Cross-cycle comparison additionally exposes the cycle's
+  `solvingTime.totalMs` delta vs the previous cycle of the same block and the
+  derived target "beat half the previous cycle's time"
+  (`previous.totalMs / 2`). This is a displayed target, never a gate and never
+  a stored field.
+- **Success band and plan.** The first cycle's first-try rate is surfaced
+  against the 60–75% guidance band and an optional **~6-cycle plan** may be
+  suggested; neither is a gate and neither blocks completion. `targetAccuracy`
+  is informational only and the app never enforces it.
 - Cycle metrics are never mixed with game-analysis metrics.
 
 ### 9. Wrong-move and hint semantics (adopted from Feature 012)
@@ -624,13 +745,13 @@ not reinterpret them:
 - a later in-presentation correct solve does **not** write a second row and
   the recorded result stays `failed`; `foundAfterFail` is presentation
   feedback only and is never persisted;
-- `solvedWithHelp` is a hint-assisted solve with no wrong move;
+- `solvedWithHelp` is a hint-assisted and/or restart solve with no wrong move;
 - hints never fail a puzzle; the highest hint level reached is recorded on
   the attempt;
 - a **restart** clears the line/hint reveal but keeps the counters and clock;
   the presentation records `restartCount > 0`, and a later clean line in the
   same presentation derives `solvedWithHelp`, not `solvedFirstTry` (Feature-012
-  contract extension; see "8. Legitimate in-cycle solves").
+  contract; see "8. Legitimate in-cycle solves").
 
 Consequently a puzzle's cycle resolution is based on the **stored rows**
 above; the retry pass is driven by a stored `failed` result regardless of a
@@ -652,21 +773,28 @@ new ADR and is not V1 scope.
 
 ### 11. Ownership, archive and deletion
 
-- A set is user data owned by the user. **Archive** sets `status: 'archived'`
-  (hidden from the active list, history retained); unarchive restores it.
-- **Auto sets** are system-managed: they are re-seeded idempotently if absent
-  and are not archivable/deletable in V1 (deleting one would just re-create it).
-  Their membership is derived; their cycles/attempts are ordinary set-owned
-  data and follow the same cascade.
+- A custom set is user data owned by the user. **Archive** sets
+  `status: 'archived'` (hidden from the active list, history retained);
+  unarchive restores it.
+- **Blocks** are user-created sets: `status: 'active'` while open (at most
+  one), `status: 'archived'` once finished or abandoned. Closing a block
+  returns its still-unmastered members to the pool (a read-time consequence,
+  no row mutation of the puzzles). A block is not deleted when closed; it
+  keeps its history.
 - **Delete set** removes the set, its cycles, and their attempt rows
   (via the `trainingSetId`/`cycleId` indexes). The puzzles themselves are
   untouched — they remain owned by their source games. This is the
   set/cycle-owned removal Feature 012 anticipated.
+- **Quick train** has no `trainingSets` row; its sentinel cycle/attempts are
+  not covered by set deletion and are removed only by the game-deletion/puzzle
+  cascade (see §3c and "Conflicts surfaced").
 - **Game deletion cascade** (ARCHITECTURE §7, `domain/game-library.md` §8):
   deleting a game deletes its puzzles and their attempts (Feature 012); this
-  feature additionally removes the deleted puzzle ids from every set's
-  membership. In-progress cycle snapshots are immutable; a snapshot puzzle
-  whose row no longer exists is skipped and treated as terminal.
+  feature additionally removes the deleted puzzle ids from every custom set's
+  membership and from the open block's frozen snapshot (deletion is the one
+  exception to "frozen": the puzzle no longer exists). In-progress cycle
+  snapshots are immutable; a snapshot puzzle whose row no longer exists is
+  skipped and treated as terminal.
 - **Sync:** sets, cycles and attempts are local/derived data and are never
   synced as standalone values by this feature; Feature 016 syncs deletions as
   tombstones consistent with the ownership rule.
@@ -674,7 +802,7 @@ new ADR and is not V1 scope.
 ### 12. Determinism and versioning
 
 - All functions are deterministic for fixed inputs and a caller-supplied
-  `now`; no hidden clock or locale reads. Auto-set derivation and mastery
+  `now`; no hidden clock or locale reads. Block formation and mastery
   derivation are pure and fixture-testable.
 - `CycleConfig.configVersion` and `TrainingCycle.cycleMetricsVersion` follow
   ARCHITECTURE §9. A semantics change (completion rule, retry bound, ordering
@@ -683,9 +811,10 @@ new ADR and is not V1 scope.
 - `MASTERY_VERSION` (domain constant, starting at `1`) versions the mastery
   derivation (threshold, legitimate-solve conditions, distinct-cycle rule) and
   is exposed with mastery reads; Feature 014 surfaces it in its version
-  summary and bumps `STATISTICS_VERSION` when it changes. `AUTO_SET_VERSION`
-  versions the auto-set recipes/selection (size, hash, ordering); a change to a
-  recipe's semantics is a new recipe, not a silent mutation of stored rows.
+  summary and bumps `STATISTICS_VERSION` when it changes.
+  `BLOCK_RECIPE_VERSION` versions the block recipe/selection (size,
+  ordering/tie-break); a change to a recipe's semantics is a new recipe, not a
+  silent mutation of stored rows.
 - Attempt rows are never rewritten to change a result; a contract change is a
   new presentation or a new version, never an in-place edit.
 
@@ -696,23 +825,31 @@ new ADR and is not V1 scope.
 Additive persistence only; the immutable `puzzles` table and the schema-v9
 `puzzleAttempts` table/indexes are unchanged.
 
-**No schema bump for this extension (schema stays v10).** Confirmed by
+**No schema bump for the block model (schema stays v10).** Confirmed by
 inspection of the stored shapes:
 
-- the auto-set recipe lives in the existing `TacticalTrainingSetRow.source`
-  field (a plain JSON object) — the `trainingSets` table stores the row
-  verbatim and needs no new column or index;
-- the Feature-012 contract extension adds `restartCount` to the attempt row's
-  plain object (`PresentationCounters`/`PuzzleAttemptRow`) — like the earlier
-  `origin` addition to `puzzles`, an unindexed field needs no Dexie version
-  bump;
+- the block recipe lives in the existing `TacticalTrainingSetRow.source` field
+  (a plain JSON object) — the `trainingSets` table stores the row verbatim and
+  needs no new column or index;
+- the block's fixed membership uses the existing `puzzleIds` field (a plain
+  JSON array); the pool is **derived**, never stored, so it needs no column;
+- "one open block at a time" and "closed" reuse the existing `status` field
+  (`active`/`archived`); no new flag or index is required;
+- the Feature-012 restart contract adds `restartCount` to the attempt row's
+  plain object (already landed in Feature 012) — like the earlier `origin`
+  addition to `puzzles`, an unindexed field needs no Dexie version bump;
 - mastery is **derived**, never stored: no mastery column, table or index;
-- auto sets are ordinary `trainingSets` rows; no new table.
+- Quick train's ad-hoc cycle uses the existing `trainingCycles` row with a
+  sentinel `trainingSetId`; no new table or column.
 
-If profiling later shows the mastery read needs an index, it is an **additive
-v11** change (e.g. an index on `puzzleAttempts` such as `result` or a compound
-`[puzzleId+result]`), never a rewrite of existing rows. That is not required
-for V1: mastery reads scan the bounded attempts table through the existing
+A schema bump (v11) would be required only if a genuinely new **stored** field
+or index were needed (e.g. a persisted pool, a stored open-block pointer, or a
+mastery index). None is needed: the pool is a derived view, the open block is
+`active` + `source.kind === 'auto'` (at most one), and mastery is derived from
+attempts. If profiling later shows the mastery read needs an index, that is an
+**additive v11** change (e.g. a compound `[puzzleId+result]` index on
+`puzzleAttempts`), never a rewrite of existing rows; it is not required for V1
+because mastery reads scan the bounded attempts table through the existing
 `puzzleId` index or a batched full read.
 
 ### New tables (schema v10, additive)
@@ -736,16 +873,19 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
 - `trainingSetsRepository` — `get`, `list({ status? })`, `create`, `update`
   (name/config/membership/status), `delete` (cascades cycles + attempts),
   `removePuzzleIds` (game-deletion cascade), `listContainingPuzzle(puzzleId)`,
-  and `ensureAutoSets()` (idempotent seed of the two deterministic auto rows
-  with their fixed presets — existing rows are left untouched).
+  `getOpenBlock()` (the single `active` `source.kind === 'auto'` row, if any)
+  and `closeBlock(id, now)` (sets `status: 'archived'`). There is **no**
+  `ensureAutoSets()`; the app never seeds a set.
 - `trainingCyclesRepository` — `get`, `listForSet`, `getByNumber`, `create`,
-  `updateStatus` (`completed`/`abandoned` timestamps), `deleteForSet`.
+  `updateStatus` (`completed`/`abandoned` timestamps), `deleteForSet`,
+  `createQuickTrain` (a cycle under the `QUICK_TRAIN_SET_ID` sentinel). Set
+  listing/aggregation excludes the sentinel.
 - The existing `attemptsRepository` reads (`listForCycle`,
   `listForCycleAndPuzzle`) and the `trainingSetId`/`cycleId` indexes serve
   Feature 013. The mastery read adds one read-only method — a batched
   `listAll()` (or `listForMastery()`) over `puzzleAttempts` grouped by
-  `puzzleId`/`cycleId` — with **no schema change**; the auto-set pool read uses
-  the existing `puzzlesRepository.listAll()`.
+  `puzzleId`/`cycleId` — with **no schema change**; the pool read uses the
+  existing `puzzlesRepository.listAll()`.
 - `restartCount` is persisted through the existing `addAttempt` write path
   (the row is stored verbatim); the repository still exposes no update path.
 
@@ -753,11 +893,14 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
 
 - Set deletion removes its cycles and attempt rows in one transaction.
 - Game deletion (existing `deleteGames` transaction) additionally removes the
-  deleted puzzle ids from all sets' `puzzleIds`; extend the cascade-ready
-  dependent-kind list per the introducing milestone. Auto sets store no
-  membership, so their derived membership simply reflects the smaller pool on
-  the next cycle.
-- No orphaned cycle or attempt may remain.
+  deleted puzzle ids from all sets' `puzzleIds` (custom sets and the open
+  block's frozen snapshot); extend the cascade-ready dependent-kind list per
+  the introducing milestone. A block whose membership shrinks this way simply
+  trains the remaining members; there is no re-derivation.
+- Quick-train sentinel cycles/attempts are not owned by a set row and are
+  removed by the game-deletion/puzzle cascade only.
+- No orphaned cycle or attempt may remain (the sentinel is a documented
+  exception to the "cycle belongs to a set row" rule).
 
 ### Sync
 
@@ -771,11 +914,16 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
 
 - **Set states**: `active`, `archived`, plus transient UI states (loading,
   empty membership, load error).
-- **Auto-set states**: derived membership `ready` (≥1 eligible puzzle),
-  `empty` (no puzzles), `allMastered` (pool non-empty but every puzzle
-  mastered); recipe `allPuzzles`/`woodpeckerRandom`; seeded/absent (re-seeded).
+- **Block states**: `open` (the single `active` `source.kind === 'auto'` row),
+  `closed` (archived after finish/abandon), `none` (no open block yet).
+- **Pool states**: `ready` (≥1 eligible puzzle), `empty` (no puzzles at all),
+  `belowRecommended` (< ~100, guidance only), `small` (< requested size, the
+  block takes all of it).
+- **Quick-train states**: available (pool non-empty), empty pool (disabled
+  with the "generate puzzles first" copy).
 - **Mastery states**: `unmastered` (0–2 distinct-cycle credits), `mastered`
-  (≥3); always derived, never stored. The mastered list is read-only.
+  (≥3); always derived, never stored, informational only (no retirement). The
+  mastered list is read-only.
 - **Cycle states**: `inProgress` (resumable; partial aggregates), `completed`
   (terminal; immutable snapshot), `abandoned` (terminal; reported
   separately).
@@ -794,13 +942,20 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
 
 The feature must never crash a consumer and must never fabricate data:
 
-- **Set creation resolves zero puzzles** — the set is created empty with an
-  explicit empty state; never a fake count.
-- **Auto set with zero eligible puzzles** — derived membership is `empty` (no
-  pool puzzles) or `allMastered` (all mastered); the set shows that state and
-  cycle start is blocked with an explanation; never a fake count and never an
-  empty cycle.
-- **Unknown auto recipe / malformed `source`** (row written by a future
+- **Custom set creation resolves zero puzzles** — the set is created empty
+  with an explicit empty state; never a fake count.
+- **Block creation with an empty pool** — not created; the action is blocked
+  with an explanation and a link to generate puzzles. Never a fake count and
+  never an empty block.
+- **Block creation while a block is already open** — rejected with a typed
+  result; the UI shows the open block instead.
+- **Pool below the recommended size (or below the requested size)** — a
+  non-blocking guidance notice; the block takes all of the pool when it is
+  smaller than `size`.
+- **Attempt to edit a block's membership or refresh it per cycle** — rejected
+  (fixed snapshot); the UI explains the block is fixed and offers close +
+  create-next instead.
+- **Unknown block recipe / malformed `source`** (row written by a future
   build) — rejected on read with a typed error; never silently coerced or
   trained.
 - **Mastery read with an orphaned attempt row** (no matching `trainingCycles`
@@ -809,8 +964,13 @@ The feature must never crash a consumer and must never fabricate data:
 - **Legacy attempt row without `restartCount`** — normalized to `0` on read
   (consistent with the `origin` normalization); never `undefined` in the
   derivation.
-- **Cycle start on an empty/fully-removed set** — blocked with an
-  explanation and a link to edit membership; no empty cycle is created.
+- **Cycle start on an empty/fully-removed set or block** — blocked with an
+  explanation and a link to edit membership (custom) or to create a new block
+  / Quick train (block); no empty cycle is created.
+- **Quick train with an empty pool** — blocked with the "generate puzzles
+  first" copy; no cycle row is created.
+- **Quick-train sentinel appears in a set-scoped read** — excluded, never
+  shown as a set or counted in set aggregates.
 - **Puzzle row missing at presentation** (source game deleted between queue
   construction and presentation) — skipped with a notice, no attempt row, the
   session continues (Feature 012 rule).
@@ -841,17 +1001,25 @@ The feature must never crash a consumer and must never fabricate data:
 - **A puzzle failed across cycles** — remains in the set and is revisited;
   no removal by default.
 - **A puzzle solved first-try in cycle 1 then failed in cycle 2** — remains
-  in the set; mastery is monotonic (the earlier legitimate credit stands). It
-  is retired from **auto sets** once 3 distinct-cycle legitimate credits exist,
-  but stays in any manual/game/pool set.
+  in its block/set; mastery is monotonic (the earlier legitimate credit
+  stands). It is outside the **pool** once mastered (so it is not selected
+  into a future block), but it stays in any existing block and in any custom
+  set.
 - **Mastery earned across different sets** — a puzzle mastered in set A is
-  globally mastered and retired from auto sets; `masteredPuzzleCountForSet(B)`
-  still counts it if it is a member of B.
-- **A new puzzle generated between cycles** — joins "All puzzles" on the next
-  cycle; joins "Woodpecker random" on the next cycle when the eligible pool is
-  below 200 or its deterministic priority ranks within the selected 200.
-- **All pool puzzles mastered** — "All puzzles" is `allMastered`/empty;
-  "Woodpecker random" is empty; both block cycle start with an explanation.
+  globally mastered; `masteredPuzzleCountForSet(B)` still counts it if it is a
+  member of B.
+- **A new puzzle generated between cycles** — does **not** join the open
+  block (membership is frozen); it joins the pool and is eligible for the
+  **next** block formed after the open block closes. It is immediately
+  available to **Quick train**.
+- **Pool empty / all pool puzzles mastered** — block creation is blocked with
+  an explanation; Quick train is disabled; the mastered list still shows the
+  mastered puzzles. No "allMastered" cycle-start error exists.
+- **Quick train after a block opens** — the pool excludes the open block's
+  members, so Quick train trains only the remaining pool.
+- **Closing a block with an `inProgress` cycle** — closing abandons that
+  cycle (it becomes terminal, keeps its attempts) and returns the block's
+  still-unmastered members to the pool.
 - **Restart then clean line** — the presentation derives `solvedWithHelp`
   (`restartCount > 0`); no clean first-try credit.
 - **Hint/restart then leave and re-enter** — the abandoned presentation is
@@ -872,9 +1040,14 @@ The feature must never crash a consumer and must never fabricate data:
   only the first presentation.
 - **`retryFailed: 'none'`** — a failed first presentation is terminal for the
   cycle.
-- **Ordering ties** — resolved deterministically by puzzle id.
+- **Ordering ties** — resolved deterministically by `sourcePly` then
+  `puzzleId`.
 - **`targetSize` smaller/larger than the source** — selection takes the first
-  N under the ordering; fewer sources yield a smaller set.
+  N under the ordering; fewer sources yield a smaller set. For a block, the
+  pool smaller than `recipe.size` yields a block of the whole pool.
+- **Same-day cycle restart** — a cycle started less than ~1 day after the
+  previous cycle of the same block shows the spacing nudge; it is never
+  blocked.
 - **Archived set with an `inProgress` cycle** — archiving does not abandon
   the cycle; the resume banner still surfaces it, and the set can be
   unarchived.
@@ -888,14 +1061,18 @@ The feature must never crash a consumer and must never fabricate data:
 
 ## Accessibility requirements
 
-- Every action (create/edit/archive/delete set, start/resume/abandon/repeat
-  cycle, skip, exit session, start next cycle) is a real labelled control,
-  reachable by keyboard and touch — never hover-only, never shortcut-only.
-- Destructive actions (delete set, abandon cycle) require an explicit
-  confirmation dialog that names the object and its consequences.
-- Status is conveyed textually (active/archived, in progress/completed/
-  abandoned, "Puzzle X of Y"), never by colour alone; cycle results spell out
-  every value and its sample size.
+- Every action (create/finish/abandon block, create/edit/archive/delete custom
+  set, start/resume/abandon/repeat cycle, quick train, skip, exit session,
+  start next cycle) is a real labelled control, reachable by keyboard and
+  touch — never hover-only, never shortcut-only.
+- Destructive actions (delete set, abandon cycle, abandon block) require an
+  explicit confirmation dialog that names the object and its consequences.
+- The one-click **Create Woodpecker block** action is a labelled button whose
+  accessible name states the default size and that the block is fixed; the
+  size selector is behind a labelled "Advanced" disclosure.
+- Status is conveyed textually (active/archived, open/closed block,
+  in progress/completed/abandoned, "Puzzle X of Y"), never by colour alone;
+  cycle results spell out every value and its sample size.
 - Session progress and completion are announced (`aria-live`) only when a
   real state change occurs; focus is managed on session start/exit and on
   landing in cycle results.
@@ -903,9 +1080,12 @@ The feature must never crash a consumer and must never fabricate data:
   keyboard transport); Feature 013 adds no move-entry path.
 - An unwritten attempt keeps the result visible with an accessible inline
   error and retry.
-- Auto-set states ("all mastered", "no puzzles", derived count) and the
-  mastered list (puzzle count, empty state) are exposed as text, never by
-  colour or a bare `0`.
+- Pool/block/Quick-train states (pool count, "no open block", "pool below
+  recommended size", "block fixed") and the mastered list (puzzle count, empty
+  state) are exposed as text, never by colour or a bare `0`.
+- The **spacing nudge** and the **time-halving target** are announced as
+  guidance (`aria-live` polite) and never block the action; the 60–75% band
+  and the ~6-cycle suggestion are text, not colour.
 - A solve after a restart is labelled "Solved with hints" (Feature 012 result
   copy), so the disqualification is understandable, not a hidden rule; the
   mastered list explains the 3-distinct-cycle rule in text.
@@ -914,17 +1094,17 @@ The feature must never crash a consumer and must never fabricate data:
 
 ## Responsive / mobile requirements
 
-- Deliberate mobile layouts: sets render as cards (not a shrunk table); set
-  detail and cycle results stack; the solving screen uses Feature 012's
-  mobile stacking.
+- Deliberate mobile layouts: the open block, custom sets and the pool/Quick
+  train render as cards (not a shrunk table); set detail and cycle results
+  stack; the solving screen uses Feature 012's mobile stacking.
 - The session chrome (progress, exit, skip) stays reachable without scrolling
   past the board on small viewports.
-- Set creation and pool selection support touch multi-select; no interaction
-  requires hover or pointer precision.
-- Large set membership lists paginate or virtualize on mobile rather than
-  rendering thousands of rows; the mastered list does the same.
-- Auto sets are cards like any other set and show their derived count/state
-  without a layout shift when the pool or mastery changes.
+- Block/set creation supports touch; the one-click create and the "Advanced"
+  size selector need no hover or pointer precision.
+- Large block/set membership lists paginate or virtualize on mobile rather
+  than rendering thousands of rows; the mastered list does the same.
+- The block/pool cards show their counts/state without a layout shift when the
+  pool or mastery changes.
 
 ---
 
@@ -942,13 +1122,15 @@ The feature must never crash a consumer and must never fabricate data:
   reads only its cycles and membership; resume reads only the active cycle's
   attempts via `[cycleId+puzzleId]`; results read only that cycle's attempts.
   Per-row views never scan `puzzles`/`puzzleAttempts`.
-- **Mastery/auto-set derivation is bounded and off the critical path.** The
-  pool read uses `puzzlesRepository.listAll()` (one row per puzzle) and the
-  mastery read is one batched pass over `puzzleAttempts` grouped by
-  `puzzleId`/`cycleId`, run once per training-home load and once per cycle
-  start (not per row and not per move). It is memoized by a data-version key
-  and runs in a worker/bounded batches when the attempt table is large; no
+- **Mastery/pool derivation is bounded and off the critical path.** The pool
+  read uses `puzzlesRepository.listAll()` (one row per puzzle) and the mastery
+  read is one batched pass over `puzzleAttempts` grouped by
+  `puzzleId`/`cycleId`, run once per training-home load and once per block
+  creation (not per row and not per move). It is memoized by a data-version
+  key and runs in a worker/bounded batches when the attempt table is large; no
   single synchronous task exceeds the long-task threshold.
+- **Block formation is O(pool log pool)** (a single sort of the pool) and runs
+  once per user click; it is bounded by the puzzle count, not attempts.
 - **Cascade cost.** Game deletion's membership cleanup scans the (small) set
   table; it is bounded by the number of sets, not puzzles.
 - **Scale target.** Practical from a few to hundreds of puzzles per set and
@@ -1007,24 +1189,25 @@ The feature must never crash a consumer and must never fabricate data:
     function is shared with Feature 014 (no duplicate implementation).
 15. All essential set/cycle/session actions are keyboard- and touch-operable,
     status is never colour-only, and destructive actions are confirmed.
-16. The two auto sets ("All puzzles", "Woodpecker random", size 200) exist by
-    default (seeded idempotently with deterministic ids) and use goal accuracy
-    100%, hints enabled, retry `endOfCycle` and `difficultyAsc` ordering; their
-    membership/recipe is not user-editable.
-17. Auto-set membership is virtual: it is re-derived from the current pool
-    minus mastered puzzles at each cycle start and snapshotted onto that cycle
-    (fixed within the cycle, never mutated mid-cycle). Game/pool/manual sets
-    keep stored fixed membership and are unchanged.
-18. `woodpeckerRandom` selection is deterministic from the set id: the same
-    eligible pool yields the same subset across cycles, mastered departures are
-    backfilled to 200, and newly generated puzzles are eligible from the next
-    cycle (entering when the pool is below size or their priority ranks within
-    the selection). `allPuzzles` includes every unmastered pool puzzle.
-19. A puzzle is mastered exactly when it has a legitimate first-try solve in
-    **3 distinct cycles** (global across sets); mastery is monotonic and
-    derived at read time (no stored scheduler/mastery state; ADR-031). Mastered
-    puzzles are excluded from auto-set membership only; manual/game/pool sets
-    are never auto-retired.
+16. The app never creates a set or block on its own: there is no
+    `ensureAutoSets()`, no system seeding and no auto-generated row; the only
+    block creation path is the explicit one-click **Create Woodpecker block**
+    action.
+17. The one-click action auto-selects up to N (default 200) puzzles from the
+    derived pool (unmastered, not in the open block) in `difficultyAsc` order
+    (ties by `sourcePly` then `puzzleId`), stores them as the block's frozen
+    `puzzleIds`, and takes all of the pool when it is smaller than N. Size
+    (100/200/400) is the only option and lives behind "Advanced".
+18. A block's membership is fixed at creation: new puzzles are not added
+    mid-plan and membership is never re-derived per cycle; only **one block**
+    is open at a time. Finishing or abandoning a block closes it and returns
+    its still-unmastered members to the pool; the next block is formed from
+    the remaining pool plus new puzzles.
+19. Mastery is a legitimate first-try solve in **3 distinct cycles** (global
+    across sets); it is monotonic, derived at read time (no stored state;
+    ADR-031) and **informational only** — it retires nothing from a block and
+    mutates no row. A mastered puzzle is outside the pool by definition and so
+    is not selected into a future block; the read-only mastered list remains.
 20. Only legitimate in-cycle solves count: a `solvedFirstTry` requires no hint,
     no wrong move, no restart, the cycle's first presentation, and a real
     cycle id. A restart disqualifies a later clean line (`solvedWithHelp`);
@@ -1033,10 +1216,22 @@ The feature must never crash a consumer and must never fabricate data:
     the interim practice host and its `practice:*` ids are gone.
 21. The mastered-puzzles list under `/puzzles` is read-only and shows mastered
     puzzles with their qualifying cycles; there is no un-master action in V1.
-22. The extension adds no persisted table, index or stored mastery state
-    (schema stays v10); the auto recipe lives in `source` and `restartCount`
-    is a plain attempt-row field. No FSRS or scheduler dependency is
-    introduced.
+22. **Quick train** starts an ad-hoc session over the whole pool, creates no
+    `trainingSets` row, and writes ordinary immutable attempts under a real
+    ad-hoc `trainingCycles` row (sentinel `trainingSetId`); the sentinel is
+    excluded from set-scoped reads and set deletion.
+23. The extension adds no persisted table, column or index and no stored
+    mastery state (schema stays v10); the block recipe lives in `source`, the
+    fixed membership in `puzzleIds`, and the open block is derived from
+    `status` + `source.kind`. No FSRS or scheduler dependency is introduced.
+24. There is no accuracy gate: `targetAccuracy` is optional and informational,
+    the 100% preset is removed, and success is framed as speed and
+    automaticity. Cycle results show the total solving time delta vs the
+    previous cycle and a "beat half the previous cycle's time" target, plus
+    the optional ~6-cycle suggestion and the 60–75% first-cycle band as
+    guidance only.
+25. A same-day cycle restart (less than ~1 day after the previous cycle of the
+    same block) shows a non-blocking spacing nudge; the user may proceed.
 
 ---
 
@@ -1057,57 +1252,68 @@ cover at least:
   puzzle failed across ≥ 2 cycles; hints/retries/skips; varied solve times
   (including median/average cases); both puzzle origins; a restarted
   presentation (`restartCount > 0`) and a legacy row without the field.
-- **Auto sets** — each recipe with pool sizes below/at/above 200; a pool with
-  no puzzles and a fully-mastered pool; mastered departures with backfill to
-  200; a new puzzle generated between cycles; a fixed pool proving the
-  deterministic subset is stable across cycles; the two deterministic set ids.
+- **Blocks** — one-click formation with pool sizes below/at/above 200; the
+  default 200 and the 100/400 Advanced sizes; a pool with no puzzles and a
+  fully-mastered pool; mastery exclusion; the fixed easy→hard order with
+  `sourcePly`/`puzzleId` tie-breaks; the frozen snapshot after a new puzzle is
+  generated; one-open-block enforcement; close/finish/abandon returning
+  unmastered members to the pool.
+- **Pool & Quick train** — the derived pool excludes mastered and open-block
+  members; Quick train over a small pool creates no set row and writes a
+  sentinel cycle + ordinary attempts; the sentinel is excluded from
+  set-scoped reads.
 - **Mastery** — 0/1/2/3 distinct-cycle credits; multiple rows in one cycle
   counting once; a retry-presentation clean row adding no credit; a
   hint/wrong-move/restart row adding no credit; credits earned across
   different sets; monotonic after a later failure; an orphaned attempt row
-  ignored.
+  ignored; mastery performs no retirement/mutation.
 - **Config** — each ordering, each `retryFailed`, skip enabled/disabled,
   hint-level availability/threshold variants, set/unset targets; the fixed
-  auto-set presets.
+  block presets.
 - **Persistence** — schema-v10 migration on an empty and a populated v9 DB;
   the extension adds no v11 migration.
 
 ### Test cases
 
-- **Domain (pure):** membership resolution and target-size/ordering selection;
-  `deriveAutoSetMembership` for each recipe (determinism, mastery exclusion,
-  random backfill, new-puzzle eligibility, empty/all-mastered); `masteryOf`
-  (distinct-cycle counting, legitimate-solve predicate, retry/hint/wrong/
-  restart exclusion, monotonicity, cross-set credits, orphaned rows);
-  cycle snapshot and cycle-number assignment; terminal/completion predicate
-  for every `retryFailed` mode; retry bound (max two presentations); skip
-  handling; resume reconstruction (fresh, mid-first-pass, pending immediate,
-  pending end-of-cycle, complete); per-puzzle cycle resolution; all cycle
-  aggregates and empty states; config/hint mapping to `SolveHintConfig`;
-  `restartCount` outcome derivation; version stamping.
+- **Domain (pure):** block formation (`formWoodpeckerBlock` for each size,
+  determinism, mastery exclusion, open-block exclusion, easy→hard order and
+  tie-breaks, smaller-than-size pool, empty pool); custom membership
+  resolution and target-size/ordering selection; `masteryOf` (distinct-cycle
+  counting, legitimate-solve predicate, retry/hint/wrong/restart exclusion,
+  monotonicity, cross-set credits, orphaned rows); cycle snapshot and
+  cycle-number assignment; terminal/completion predicate for every
+  `retryFailed` mode; retry bound (max two presentations); skip handling;
+  resume reconstruction (fresh, mid-first-pass, pending immediate, pending
+  end-of-cycle, complete); per-puzzle cycle resolution; all cycle aggregates
+  and empty states; the time-delta/`beat half` target; config/hint mapping to
+  `SolveHintConfig`; `restartCount` outcome derivation; version stamping.
 - **Repository (infrastructure):** `trainingSets`/`trainingCycles` create/get/
   list/update/delete; the unique `[trainingSetId+cycleNumber]` key; status
-  filters; `ensureAutoSets()` idempotence (existing rows untouched, missing
-  rows seeded with deterministic ids/presets); the mastery `listAll` read;
-  set-deletion cascade over cycles and attempts; game-deletion membership
-  cleanup; no orphans.
-- **Service/application:** create set from a game and from the pool; seed auto
-  sets; start a cycle (including the auto-set derive-then-snapshot path and the
-  empty/all-mastered block); drive a full session over fixtures through the
-  Feature-012 host contract (order, retries, skips, completion); a restart
-  during a presentation; abandon-after-hint/restart then re-enter; resume after
-  reload; abandon; repeat; results computation; mastery read and mastered-list
-  assembly; write-failure containment (no advance while a row is unwritten).
-- **Component:** training home (sets/empty/resume banner + the two auto sets and
-  their derived counts), set detail (config/membership/history, read-only auto
-  membership), mastered list (populated/empty), cycle session chrome
-  (progress/exit/skip), cycle results (per-puzzle outcomes + aggregates +
-  cross-cycle comparison), archive/delete confirmations, keyboard/AT behavior,
-  mobile layout; the interim practice host is gone.
-- **End-to-end:** auto set → cycle (derive + snapshot) → solve (via Feature
-  012, including a restart-disqualified attempt) → attempt rows → cycle
-  completion → next cycle re-derives membership → results/mastered list, using
-  the real persistence layer and the Feature-012 screen with a stubbed engine.
+  filters; `getOpenBlock`/`closeBlock`; no `ensureAutoSets` exists; the
+  mastery `listAll` read; set-deletion cascade over cycles and attempts;
+  game-deletion membership cleanup (custom sets + open block); Quick-train
+  sentinel cycle creation and exclusion; no orphans.
+- **Service/application:** create a block from the pool (including the
+  one-open-block rejection and empty-pool block); create a custom set from a
+  game and from the pool; start a cycle; drive a full session over fixtures
+  through the Feature-012 host contract (order, retries, skips, completion); a
+  restart during a presentation; abandon-after-hint/restart then re-enter;
+  resume after reload; abandon; repeat; close a block and confirm members
+  return to the pool; Quick train; results computation incl. the time goal;
+  mastery read and mastered-list assembly; write-failure containment (no
+  advance while a row is unwritten).
+- **Component:** training home (open block / no open block, pool count, Quick
+  train, guidance copy, empty/resume banner), block detail (fixed membership,
+  finish/abandon, history), custom set detail, mastered list
+  (populated/empty), cycle session chrome (progress/exit/skip + spacing
+  nudge), cycle results (per-puzzle outcomes + aggregates + cross-cycle time
+  comparison), archive/delete confirmations, keyboard/AT behavior, mobile
+  layout; the interim practice host is gone.
+- **End-to-end:** create block from pool → cycle → solve (via Feature 012,
+  including a restart-disqualified attempt) → attempt rows → cycle completion
+  → close block → next block from the remaining pool; Quick train writes a
+  sentinel cycle; results/mastered list, using the real persistence layer and
+  the Feature-012 screen with a stubbed engine.
 
 ---
 
@@ -1127,8 +1333,9 @@ Feature 013 depends on:
 
 Feature 013 output is consumed by:
 
-- Feature 014 — training sets/cycles and the canonical cycle metric function
-  (reused, never re-derived);
+- Feature 014 — training sets/blocks/cycles, the canonical cycle metric
+  function and the canonical `masteryOf`/pool derivation (reused, never
+  re-derived);
 - Feature 015 — Dashboard, via Feature 014;
 - the Game Library `masteredPuzzleCount` insight (via Feature 014);
 - Feature 016 — deletion tombstones.
@@ -1159,15 +1366,15 @@ localized change:
    and Feature 012's `SolveScreen` exposes the seam (small Feature-012
    contract extension). Alternative: no skip in V1 (removes the `skipped`
    result from the cycle flow).
-5. **Target size** — default 10 applied as a creation cap, overridable to
-   large sets (default). Alternative: a hard cap.
-6. **Set sources** — V1 supports game, filtered pool, manual selection and the
-   system-seeded `auto` sets (default). Alternative: only the per-game
-   hand-off in V1.
+5. **Target size** — default 10 applied as a creation cap for custom sets,
+   overridable to large sets (default). A block's size is the recipe size
+   (default 200; 100/200/400 behind "Advanced").
+6. **Set sources** — V1 supports game, filtered-pool and manual **custom**
+   sets, plus the one-click **Woodpecker block** (default). There is no `auto`
+   seeding. Alternative: block + Quick train only.
 7. **Ordering options** — `difficultyAsc` (default), `sourcePly`, `manual`.
-   A `random` **ordering** remains deferred; deterministic seeded randomness
-   now exists only as the `woodpeckerRandom` auto-set **selection** (§3a), and
-   every auto set still presents in `difficultyAsc` order.
+   Blocks are always `difficultyAsc` with ties by `sourcePly` then `puzzleId`;
+   a `random` ordering/selection is dropped.
 8. **Blunder re-rating** — deferred out of V1 (default; no mutation of
    immutable puzzles; per-puzzle signals stay derived — Feature 013 mastery,
    Feature 014 aggregates). Alternative: a separate derived per-user rating
@@ -1179,69 +1386,68 @@ localized change:
 10. **Cycle deletion** — deleting a set removes its cycles/attempts (default);
     standalone cycle deletion is not offered in V1 (abandon covers the user
     intent).
-11. **Auto-set presets** — goal accuracy 100%, hints enabled, retry
-    `endOfCycle`, ordering `difficultyAsc`; `woodpeckerRandom` size 200
-    (default). These are deliberate product deviations from the Woodpecker
-    method (which has no 100% gate and no retirement), justified in
-    `research/cycle-training.md`.
-12. **Auto sets are system-managed and always present** — idempotent
-    `ensureAutoSets()`; not archivable/deletable/renamable and membership/
-    recipe not editable in V1 (default). Alternative: allow archive/hide.
-13. **Random stability** — deterministic per-puzzle priority hash of
-    `setSeed + puzzleId`, lowest `size` selected (default). This makes the
-    subset stable for a fixed eligible pool and backfills mastered departures;
-    a newly generated puzzle can enter (and displace the lowest-priority
-    member) when its priority ranks within the selection. If the owner wants
-    new puzzles to *never* displace an existing member, the selection must be
-    persisted/sticky — a different rule that conflicts with virtual/derived
-    membership.
-14. **Mastery scope** — global per puzzle across all sets/cycles, threshold 3
-    distinct cycles (default); not per-set. Auto-retirement applies to auto
-    sets only.
-15. **Restart representation** — `restartCount` on `PresentationCounters` and
+11. **Block recipe/presets** — one-click, size default 200 (100/200/400
+    Advanced), always `difficultyAsc`, hints enabled, retry `endOfCycle`; no
+    accuracy gate (default). This removes the former 100% goal and random
+    subset.
+12. **Block lifecycle** — one open block at a time; finish/abandon closes it
+    and returns still-unmastered members to the pool; closed blocks are
+    archived (history retained) (default). Alternative: allow multiple open
+    blocks (rejected; the pool/return rule assumes one).
+13. **Mastery scope** — global per puzzle across all sets/cycles, threshold 3
+    distinct cycles (default); informational only (no retirement). A mastered
+    puzzle is outside the pool but stays in any existing block.
+14. **Restart representation** — `restartCount` on `PresentationCounters` and
     the attempt row; `deriveResult` treats a solve after a restart as
-    `solvedWithHelp` (default; no schema bump). Alternative: a new
-    `restarted` result value (larger Feature-012 change).
-16. **Abandon-after-hint/restart** — the presentation is recorded durably
+    `solvedWithHelp` (landed in Feature 012; no schema bump). Alternative: a
+    new `restarted` result value (larger Feature-012 change).
+15. **Abandon-after-hint/restart** — the presentation is recorded durably
     (not silently discarded) so re-entry cannot launder a clean first-try for
-    the cycle (default; Feature-012 contract extension). A pristine
-    presentation may still be discarded with no row.
-17. **No un-master action** — the mastered list is read-only in V1 (default);
+    the cycle (default; Feature-012 contract). A pristine presentation may
+    still be discarded with no row.
+16. **No un-master action** — the mastered list is read-only in V1 (default);
     mastery is monotonic.
+17. **Time goal & plan** — track each cycle's total solving time, show the
+    delta vs the previous cycle, target "beat half the previous cycle's time",
+    suggest ~6 cycles and the 60–75% first-cycle band (default; guidance only,
+    never enforced).
+18. **Spacing nudge** — warn on a same-day cycle restart (less than ~1 day
+    since the previous cycle of the same block); non-blocking (default).
+19. **Quick-train identity** — a reserved `QUICK_TRAIN_SET_ID` sentinel
+    `trainingCycles` row with no `trainingSets` row; excluded from set-scoped
+    reads/aggregates (default). Alternative: create a hidden ephemeral set row
+    (rejected: violates "no set row" and pollutes set listing).
 
 ### Reconciliations applied
 
 These specification-consistency edits outside this feature spec were required
-before implementation and have now landed; they do not change the model above:
+before implementation; they do not change the model above:
 
 - **`domain/tactical-training.md`** — reconciled the `PuzzleAttempt`/`Retries`
   prose with Feature 012's one-row-per-presentation, fail-once semantics and
   this feature's retry bound (at most one retry presentation per puzzle per
-  cycle); `solvedWithHelp` is hint-only with no wrong move; cycle aggregates are
-  a derived read model, not stored fields; one shared canonical cycle-metric
+  cycle); `solvedWithHelp` is hint/restart only with no wrong move; cycle
+  aggregates are a derived read model; one shared canonical cycle-metric
   function with Feature 014.
+- **`domain/tactical-training.md`** — replaced the two auto-generated sets and
+  their per-cycle virtual membership with the derived **pool**, the one-click
+  fixed **Woodpecker block** and **Quick train**; mastery is now informational
+  (no retirement).
 - **`features/011-puzzle-generation.md`** and **`domain/puzzle-model.md`** —
   reworded the note that "Feature 013 may re-rate blunder puzzles" to defer
-  solver-calibrated re-rating out of V1 (per decision 8), noting that any future
-  rating is a derived, non-authoritative store outside the immutable row.
-- **`domain/tactical-training.md`** — added the auto-set source/recipe and
-  virtual per-cycle membership, the `restartCount` attempt counter and the
-  restart-disqualifying result rule, and the canonical 3-distinct-cycle
-  legitimate-first-try mastery derivation shared with Feature 014.
+  solver-calibrated re-rating out of V1 (per decision 8).
 - **`features/014-game-history-statistics.md` §11** — reconciled the mastered
-  definition from "≥1 `solvedFirstTry`" to the canonical 3-distinct-cycle rule
-  (the statistics read model reuses the Feature-013/domain function and
-  `MASTERY_VERSION`); the version bump and tests were updated to match.
-- **`research/cycle-training.md`** — appended the Woodpecker evidence digest
-  (set sizes, cycle ladder, no 100% gate/no retirement in the method, first
-  cycle 60–75%) and marked the 100% goal + auto-retirement + auto-refresh as
-  deliberate product deviations.
-- **`features/012-puzzle-training.md`** — the restart section, Outcomes table,
-  attempt-row columns and acceptance criteria must gain the `restartCount`
-  field and the "solve after restart is `solvedWithHelp`" rule; until that
-  edit lands the Feature-012 spec's restart/outcome wording conflicts with the
-  canonical rule in `domain/tactical-training.md` (see "Conflicts surfaced").
-  This is a required consistency edit, not a scope change.
+  definition to the canonical 3-distinct-cycle rule and clarified that mastery
+  is informational (the statistics read model reuses the Feature-013/domain
+  function and `MASTERY_VERSION`); the version bump and tests were updated to
+  match.
+- **`research/cycle-training.md`** — reconciled the "what to encode"
+  recommendations with the final block model: no auto-creation, an explicit
+  one-click fixed block, no 100% gate, no retirement, a time-halving goal and
+  a ≥1-day spacing nudge.
+- **`features/012-puzzle-training.md`** — the restart contract
+  (`restartCount`, `solvedWithHelp` after restart) has landed; Feature 013
+  consumes it.
 
 ---
 
@@ -1250,58 +1456,66 @@ before implementation and have now landed; they do not change the model above:
 These are surfaced rather than silently resolved; each needs an explicit owner
 or follow-up spec decision:
 
-1. **Feature 012 restart/outcome conflict (must be reconciled).** The canonical
-   `domain/tactical-training.md` now says a solve after a restart is
-   `solvedWithHelp`, but `features/012-puzzle-training.md` currently states
-   "restart … does not reset the wrong-move count, hint counters or the solving
-   clock" and the Outcomes table gives `solvedFirstTry` for "no hint and no
-   wrong move" (no restart condition). Feature 012's `deriveResult` in code
-   matches the old wording. The restart disqualification requires the
-   Feature-012 spec/code extension described above (`restartCount`,
-   `deriveResult`, attempt-row column, outcomes, acceptance criteria). Until
-   that edit lands, the two specs contradict; this feature spec does not edit
-   Feature 012 (it was outside the requested file set).
-2. **Random stability vs "newly generated puzzles join the next cycle".** The
-   owner wants both virtual per-cycle refresh (new puzzles eligible) and "only
-   mastered departures cause replacements". A deterministic priority sample
-   satisfies the first and, for a fixed pool, the second; a newly generated
-   puzzle with a high priority can displace the current lowest-priority member.
-   Strictly never displacing an existing member would require a persisted/
-   sticky selection, which conflicts with virtual/derived membership (owner
-   decision 13).
-3. **Abandon-after-hint/restart representation.** To stop re-entry laundering a
-   clean credit, the default is to record the abandoned presentation durably
-   (as `failed` with its counters). Feature 012 currently discards a left
-   presentation with no row. A lighter alternative is a dedicated
-   `abandoned`/`discarded` result value excluded from denominators; this is a
-   Feature-012 contract choice (owner decision 16).
-4. **Auto-set lifecycle not specified by the owner.** Archivable/deletable/
-   renamable were not stated; the default is always-present and
-   non-editable (owner decision 12). Confirm or relax.
-5. **Retry credit interpretation.** "a retry presentation … does not add a
-   distinct-cycle mastery credit" is implemented as: only
-   `presentationIndex === 1` can earn a mastery credit, so a clean retry solve
-   never credits a cycle (even when the cycle has no other clean solve). If a
-   clean retry solve should count the cycle, the mastery predicate changes to
-   "the cycle has any legitimate clean solve" (owner decision 14/§3b).
+1. **Block close trigger.** "When the block's plan ends (completed or
+   abandoned)" does not state what ends the plan. The encoded default is an
+   explicit user action — **Finish block** (the optional ~6-cycle plan is
+   complete) or **Abandon block** — because the plan is guidance, not an
+   enforced count and the app must not close a block on its own. Confirm, or
+   define an automatic close rule (e.g. reaching the planned cycle count or all
+   members mastered).
+2. **Completed vs abandoned block not separately stored.** Closing reuses the
+   existing `status: 'archived'` (no new field, schema stays v10). The
+   finish/abandon reason is UI copy and can be inferred from the cycle history;
+   if it must be persisted, an unindexed `closedReason` field can be added
+   without a Dexie version bump (like `restartCount`), but it is not required
+   for V1.
+3. **Quick-train ad-hoc identity.** Quick train must write real attempts but
+   create no set row, so it uses a reserved `QUICK_TRAIN_SET_ID` sentinel
+   `trainingCycles` row. This is a documented exception to "every cycle
+   belongs to a `trainingSets` row": the sentinel is excluded from set-scoped
+   reads/aggregates and from set-deletion cascade, and is removed only by the
+   game-deletion/puzzle cascade. Alternative: a hidden ephemeral set row
+   (rejected) or a separate ad-hoc attempt identity (a larger attempt-model
+   change).
+4. **Quick-train attempts and mastery.** Quick-train attempts are ordinary
+   immutable attempts under a real cycle id, so a legitimate first-try solve
+   in a Quick-train cycle counts toward mastery. This is consistent with the
+   mastery rule but means mastery can be earned outside a block; confirm this
+   is intended (the alternative is to exclude the sentinel from `masteryOf`,
+   which would special-case mastery).
+5. **Custom sets retained.** The agreed model specifies the block + Quick
+   train but does not remove the existing game/pool/manual custom sets; they
+   are kept as explicit secondary set management. If the intent is block +
+   Quick train only, custom set creation should be removed (a larger scope
+   change).
+6. **Pool terminology.** The derived **pool** (unmastered, not in the open
+   block) shares the name with the existing `'pool'` **set source** (a
+   creation-time filter snapshot). They are distinct; if the collision is
+   undesirable, rename one (e.g. the source kind to `'filters'`).
+7. **Spacing-nudge threshold.** The agreed model says "≥1-day spacing nudge"
+   and "warn on a same-day cycle restart"; the encoded threshold is "less than
+   ~1 day since the previous cycle of the same block ended". Confirm the exact
+   boundary (calendar day vs 24 h).
 
 ## ADR assessment
 
-No new ADR is required for the auto-set/mastery extension. It is consistent
+No new ADR is required for the block/pool/mastery model. It is consistent
 with the current decisions:
 
-- **ADR-031** — mastery and auto-retirement are a derived, monotonic read
-  model. There is no due date, interval, stability or per-puzzle stored state,
-  no FSRS/scheduler dependency, and the immutable `Puzzle` is unchanged; the
-  model stays open to a future individual scheduler.
-- **ADR-025** — auto-set ordering reuses the deterministic `difficultyAsc`
-  order over the immutable static difficulty; no puzzle is re-rated.
-- **ADR-001 / ARCHITECTURE §7** — auto sets are ordinary local `trainingSets`
-  rows; no new persistence architecture or table.
-- The auto-set recipes (size 200, 100% goal, hints/retry/ordering presets) and
-  the 3-distinct-cycle mastery threshold are **product parameters** recorded as
+- **ADR-031** — the block is a fixed set of puzzles trained in cycles; the
+  pool and mastery are derived read models. There is no due date, interval,
+  stability or per-puzzle stored state, no FSRS/scheduler dependency, and the
+  immutable `Puzzle` is unchanged; the model stays open to a future individual
+  scheduler.
+- **ADR-025** — block ordering reuses the deterministic `difficultyAsc` order
+  over the immutable static difficulty; no puzzle is re-rated.
+- **ADR-001 / ARCHITECTURE §7** — a block is an ordinary local `trainingSets`
+  row; the pool is derived; Quick train reuses `trainingCycles`. No new
+  persistence architecture or table.
+- The block recipe (one-click, size 200, no accuracy gate) and the
+  3-distinct-cycle mastery threshold are **product parameters** recorded as
   owner decisions, not architectural decisions; changing them is a versioned
-  spec change (`MASTERY_VERSION`/`AUTO_SET_VERSION`), not a new ADR.
+  spec change (`MASTERY_VERSION`/`BLOCK_RECIPE_VERSION`), not a new ADR.
 
 ---
 
@@ -1319,5 +1533,5 @@ Required reading (see `.opencode/CONTEXT-MAP.md`):
 
 Feature dependencies: Feature 011 (puzzle source), Feature 012 (solve
 interaction + attempt rows); consumers Features 014/015 (and Feature 016 for
-deletion tombstones). Feature 013 owns the canonical cycle metric function
-that Feature 014 reuses.
+deletion tombstones). Feature 013 owns the canonical cycle metric function and
+the canonical `masteryOf`/pool derivation reused by Feature 014.
