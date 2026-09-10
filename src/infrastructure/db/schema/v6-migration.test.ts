@@ -50,7 +50,7 @@ describe('v5 → v6 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(9);
+      expect(migrated.verno).toBe(10);
 
       const mateRow = await migrated.games.get('cc:mate');
       expect(mateRow?.termination).toBe('checkmate');

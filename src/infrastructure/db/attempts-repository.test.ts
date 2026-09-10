@@ -144,4 +144,42 @@ describe('puzzle attempts repository', () => {
     await attemptsRepository.deleteForPuzzleIds([]);
     expect(await db.puzzleAttempts.count()).toBe(1);
   });
+
+  it('deleteForTrainingSetIds removes every attempt of the given sets and nothing else', async () => {
+    await attemptsRepository.addAttempt(
+      attemptRow({
+        cycleId: 'cycle:a',
+        puzzleId: 'puzzle:a',
+        presentationIndex: 1,
+        trainingSetId: 'set:a',
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      attemptRow({
+        cycleId: 'cycle:a',
+        puzzleId: 'puzzle:b',
+        presentationIndex: 1,
+        trainingSetId: 'set:a',
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      attemptRow({
+        cycleId: 'cycle:b',
+        puzzleId: 'puzzle:a',
+        presentationIndex: 1,
+        trainingSetId: 'set:b',
+      }),
+    );
+
+    await attemptsRepository.deleteForTrainingSetIds(['set:a']);
+    expect(await db.puzzleAttempts.count()).toBe(1);
+    expect(await attemptsRepository.listForCycle('cycle:a')).toEqual([]);
+    expect((await attemptsRepository.listForCycle('cycle:b')).map((r) => r.puzzleId)).toEqual([
+      'puzzle:a',
+    ]);
+
+    // An empty set-id input is a no-op.
+    await attemptsRepository.deleteForTrainingSetIds([]);
+    expect(await db.puzzleAttempts.count()).toBe(1);
+  });
 });

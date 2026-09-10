@@ -20,6 +20,40 @@ export {
 } from './attempts-service';
 export type { AttemptWriteResult, RecordAttemptInput } from './attempts-service';
 
+// Feature 013 — training-set lifecycle (Stage C): resolve + persist a fixed
+// membership from a game, the pool or a manual selection, then rename/
+// configure/archive/delete it. Typed results; never throws for expected states.
+export { TrainingSetsService } from './training-sets-service';
+export type {
+  CreateSetFromGameInput,
+  CreateSetFromPoolInput,
+  CreateSetManualInput,
+  CreateSetResult,
+  CreateSetSuccess,
+  InvalidSetConfig,
+  SetMutationResult,
+  SetNotFound,
+  TrainingSetsServiceOptions,
+} from './training-sets-service';
+
+// Feature 013 — training-cycle lifecycle (Stage C): start/resume/abandon/repeat
+// and the results read model, all over persisted rows and the Stage-A domain.
+export { CycleService } from './cycle-service';
+export type {
+  CycleAbandonResult,
+  CycleComparisonInput,
+  CycleEmptySet,
+  CycleInvalidConfig,
+  CycleNotAbandonable,
+  CycleNotFound,
+  CycleNotResumable,
+  CycleResults,
+  CycleResultsResult,
+  CycleResumeResult,
+  CycleServiceOptions,
+  CycleStartResult,
+} from './cycle-service';
+
 // The attempt-row domain vocabulary consumers of the recorder need (re-exported
 // from the pure domain barrel so this layer is their single import seam).
 export type {

@@ -23,6 +23,7 @@ import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { Color } from 'chessops/types';
 import { DexiePuzzleAttemptsRepository } from './attempts-repository';
+import { DexieTrainingSetsRepository } from './training-sets-repository';
 import { db, type ChessRemedyDatabase } from './database';
 
 /** Persisted row — scalar Game metadata (authoritative) + verbatim PGN. */
@@ -240,7 +241,10 @@ export class DexieGamesRepository implements GamesRepository {
    * attempts follow their puzzle: the deleted games' puzzle ids are derived
    * from the `puzzles` rows (`puzzleIdOf(sourceGameId, sourcePly)`) and the
    * attempts table is cleared by `puzzleId` (no attempt may outlive its
-   * source game). The independent FEN-keyed engine cache (ADR-018) is
+   * source game). Feature-013 training sets keep their immutable cycle
+   * snapshots, but the deleted puzzle ids are stripped from every set's stored
+   * membership (`removePuzzleIds`; missing snapshot puzzles are terminal at
+   * presentation time). The independent FEN-keyed engine cache (ADR-018) is
    * deliberately NOT touched.
    */
   async deleteGames(ids: readonly GameId[]): Promise<void> {
@@ -258,6 +262,7 @@ export class DexieGamesRepository implements GamesRepository {
         this.database.puzzleCandidates,
         this.database.puzzles,
         this.database.puzzleAttempts,
+        this.database.trainingSets,
       ],
       async () => {
         await this.database.games.bulkDelete(gameIds);
@@ -272,6 +277,7 @@ export class DexieGamesRepository implements GamesRepository {
         await this.database.puzzles.where('sourceGameId').anyOf(gameIds).delete();
         const puzzleIds = puzzleRows.map((row) => puzzleIdOf(row.sourceGameId, row.sourcePly));
         await new DexiePuzzleAttemptsRepository(this.database).deleteForPuzzleIds(puzzleIds);
+        await new DexieTrainingSetsRepository(this.database).removePuzzleIds(puzzleIds);
       },
     );
   }

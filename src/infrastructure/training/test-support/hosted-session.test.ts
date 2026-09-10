@@ -103,6 +103,16 @@ class FakeAttemptsRepository implements PuzzleAttemptsRepository {
     }
     return Promise.resolve();
   }
+
+  deleteForTrainingSetIds(trainingSetIds: readonly string[]): Promise<void> {
+    const set = new Set(trainingSetIds);
+    for (const [key, row] of this.rows) {
+      if (set.has(row.trainingSetId)) {
+        this.rows.delete(key);
+      }
+    }
+    return Promise.resolve();
+  }
 }
 
 function begin(host: HostedSession): HostedPresentation {

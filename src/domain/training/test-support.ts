@@ -16,16 +16,33 @@
  * time — walkability is asserted by the walker in tests.
  */
 
+import type { GameSource } from '@/domain/chess/gameSource';
+import type { TimeControlCategory } from '@/domain/chess/timeControl';
+import { puzzleIdOf } from '@/domain/puzzle/id';
 import { PUZZLE_FIXTURE_NOW, puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { DETECTION_VERSION } from '@/domain/tactics';
-import type { PuzzleRow } from '@/domain/puzzle/types';
+import type { PuzzleOrigin, PuzzleRow } from '@/domain/puzzle/types';
 import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle/types';
 import { buildAttemptRow, type OutcomeTrigger } from './outcome';
+import {
+  CYCLE_METRICS_VERSION,
+  DEFAULT_CYCLE_CONFIG,
+  DEFAULT_TARGET_SIZE,
+  type CycleConfig,
+  type PuzzlePoolEntry,
+  type SetSource,
+  type TacticalTrainingSetRow,
+  type TrainingCycleRow,
+  type TrainingCycleStatus,
+  type TrainingSetStatus,
+} from './cycleTypes';
 import type {
+  HintLevel,
   PresentationCounters,
   PuzzleAttemptRow,
   SessionPuzzleContext,
   SolveHintConfig,
+  TrainingResult,
 } from './types';
 
 export {
@@ -197,4 +214,195 @@ export function attemptRowFixture(overrides: AttemptRowFixtureOverrides = {}): P
     startedAt,
     endedAt: overrides.endedAt ?? startedAt + 5_000,
   });
+}
+
+// --- Feature-013 set/cycle fixtures -----------------------------------------
+
+/** Deep-copy a config so a fixture never aliases the shared default. */
+function cloneConfig(config: CycleConfig): CycleConfig {
+  return {
+    ...config,
+    hints: { ...config.hints, enabledLevels: [...config.hints.enabledLevels] },
+  };
+}
+
+/** Overrides for `setFixture`; every field defaults deterministically. */
+export interface SetFixtureOverrides {
+  readonly id?: string;
+  readonly name?: string;
+  readonly createdAt?: number;
+  readonly updatedAt?: number;
+  readonly status?: TrainingSetStatus;
+  readonly source?: SetSource;
+  readonly puzzleIds?: readonly string[];
+  readonly targetSize?: number;
+  readonly config?: CycleConfig;
+}
+
+/**
+ * A deterministic training-set row (default: the fixture set id, active, manual
+ * source, empty membership, default target size and config).
+ */
+export function setFixture(overrides: SetFixtureOverrides = {}): TacticalTrainingSetRow {
+  return {
+    id: overrides.id ?? DEFAULT_TRAINING_SET_ID,
+    name: overrides.name ?? 'Fixture set',
+    createdAt: overrides.createdAt ?? PUZZLE_FIXTURE_NOW,
+    updatedAt: overrides.updatedAt ?? PUZZLE_FIXTURE_NOW,
+    status: overrides.status ?? 'active',
+    source: overrides.source ?? { kind: 'manual' },
+    puzzleIds: [...(overrides.puzzleIds ?? [])],
+    targetSize: overrides.targetSize ?? DEFAULT_TARGET_SIZE,
+    config: cloneConfig(overrides.config ?? DEFAULT_CYCLE_CONFIG),
+  };
+}
+
+/** Overrides for `cycleFixture`; every field defaults deterministically. */
+export interface CycleFixtureOverrides {
+  readonly id?: string;
+  readonly trainingSetId?: string;
+  readonly cycleNumber?: number;
+  readonly status?: TrainingCycleStatus;
+  readonly startedAt?: number;
+  readonly completedAt?: number | null;
+  readonly abandonedAt?: number | null;
+  readonly puzzleIds?: readonly string[];
+  readonly config?: CycleConfig;
+  readonly cycleMetricsVersion?: number;
+}
+
+/**
+ * A deterministic training-cycle row (default: cycle 1 of the fixture set,
+ * `inProgress`, no attempts implied, default config and metrics version).
+ */
+export function cycleFixture(overrides: CycleFixtureOverrides = {}): TrainingCycleRow {
+  return {
+    id: overrides.id ?? DEFAULT_CYCLE_ID,
+    trainingSetId: overrides.trainingSetId ?? DEFAULT_TRAINING_SET_ID,
+    cycleNumber: overrides.cycleNumber ?? 1,
+    status: overrides.status ?? 'inProgress',
+    startedAt: overrides.startedAt ?? PUZZLE_FIXTURE_NOW,
+    completedAt: overrides.completedAt ?? null,
+    abandonedAt: overrides.abandonedAt ?? null,
+    puzzleIds: [...(overrides.puzzleIds ?? [])],
+    config: cloneConfig(overrides.config ?? DEFAULT_CYCLE_CONFIG),
+    cycleMetricsVersion: overrides.cycleMetricsVersion ?? CYCLE_METRICS_VERSION,
+  };
+}
+
+/** Overrides for `cycleAttemptFixture`; every field defaults deterministically. */
+export interface CycleAttemptFixtureOverrides {
+  readonly puzzleId?: string;
+  readonly trainingSetId?: string;
+  readonly cycleId?: string;
+  readonly presentationIndex?: number;
+  readonly startedAt?: number;
+  readonly endedAt?: number;
+  readonly result?: TrainingResult;
+  readonly solvingTimeMs?: number;
+  readonly wrongMoveCount?: number;
+  readonly hintCount?: number;
+  readonly highestHintLevel?: HintLevel | null;
+  readonly solved?: boolean;
+  readonly puzzleGeneratorVersion?: number;
+  readonly origin?: PuzzleOrigin;
+}
+
+/**
+ * A deterministic immutable attempt row built directly (no `PuzzleRow`
+ * required). Defaults are a first-presentation clean solve; the counters follow
+ * the result unless overridden.
+ */
+export function cycleAttemptFixture(
+  overrides: CycleAttemptFixtureOverrides = {},
+): PuzzleAttemptRow {
+  const result = overrides.result ?? 'solvedFirstTry';
+  const startedAt = overrides.startedAt ?? PUZZLE_FIXTURE_NOW;
+  const solvingTimeMs = overrides.solvingTimeMs ?? 5_000;
+  return {
+    puzzleId: overrides.puzzleId ?? puzzleIdOf('fixture:mate-one', 6),
+    trainingSetId: overrides.trainingSetId ?? DEFAULT_TRAINING_SET_ID,
+    cycleId: overrides.cycleId ?? DEFAULT_CYCLE_ID,
+    presentationIndex: overrides.presentationIndex ?? 1,
+    startedAt,
+    endedAt: overrides.endedAt ?? startedAt + solvingTimeMs,
+    result,
+    solvingTimeMs,
+    wrongMoveCount: overrides.wrongMoveCount ?? (result === 'failed' ? 1 : 0),
+    hintCount: overrides.hintCount ?? (result === 'solvedWithHelp' ? 1 : 0),
+    highestHintLevel: overrides.highestHintLevel ?? (result === 'solvedWithHelp' ? 2 : null),
+    solved: overrides.solved ?? (result === 'solvedFirstTry' || result === 'solvedWithHelp'),
+    puzzleGeneratorVersion: overrides.puzzleGeneratorVersion ?? PUZZLE_GENERATOR_VERSION,
+    origin: overrides.origin ?? 'tactical',
+  };
+}
+
+/** Overrides for `poolEntryFixture`; every field defaults deterministically. */
+export interface PoolEntryFixtureOverrides {
+  readonly puzzle?: PuzzleRow;
+  readonly platform?: GameSource;
+  readonly timeControlCategory?: TimeControlCategory;
+}
+
+/** A deterministic enriched pool entry (default: the `mate-one` fixture row). */
+export function poolEntryFixture(overrides: PoolEntryFixtureOverrides = {}): PuzzlePoolEntry {
+  return {
+    puzzle: overrides.puzzle ?? puzzleRowFixture('mate-one'),
+    platform: overrides.platform ?? 'lichess',
+    timeControlCategory: overrides.timeControlCategory ?? 'blitz',
+  };
+}
+
+/** Inputs to `attemptRowsForCycle`. */
+export interface AttemptRowsForCycleInput {
+  /** The snapshot membership order to build rows for. */
+  readonly puzzleIds: readonly string[];
+  /**
+   * Per puzzle, the results of successive presentations (index 0 is
+   * `presentationIndex` 1). A puzzle absent from the record gets no rows.
+   */
+  readonly results: Readonly<Record<string, readonly TrainingResult[]>>;
+  readonly trainingSetId?: string;
+  readonly cycleId?: string;
+  readonly startedAt?: number;
+  readonly presentationGapMs?: number;
+  readonly solvingTimes?: Readonly<Record<string, readonly number[]>>;
+  readonly wrongMoves?: Readonly<Record<string, readonly number[]>>;
+  readonly hints?: Readonly<Record<string, readonly number[]>>;
+}
+
+/**
+ * Build the attempt rows for a cycle from a per-puzzle result script. Rows are
+ * emitted in snapshot order and presentation order with a fixed start-time gap,
+ * so metrics/resume fixtures are deterministic.
+ */
+export function attemptRowsForCycle(input: AttemptRowsForCycleInput): PuzzleAttemptRow[] {
+  const rows: PuzzleAttemptRow[] = [];
+  const base = input.startedAt ?? PUZZLE_FIXTURE_NOW;
+  const gap = input.presentationGapMs ?? 10_000;
+  let offset = 0;
+  for (const puzzleId of input.puzzleIds) {
+    const results = input.results[puzzleId] ?? [];
+    for (let index = 0; index < results.length; index += 1) {
+      const result = results[index]!;
+      const solvingTimeMs = input.solvingTimes?.[puzzleId]?.[index] ?? 5_000;
+      const wrongMoveCount = input.wrongMoves?.[puzzleId]?.[index];
+      const hintCount = input.hints?.[puzzleId]?.[index];
+      rows.push(
+        cycleAttemptFixture({
+          puzzleId,
+          ...(input.trainingSetId === undefined ? {} : { trainingSetId: input.trainingSetId }),
+          ...(input.cycleId === undefined ? {} : { cycleId: input.cycleId }),
+          presentationIndex: index + 1,
+          startedAt: base + offset,
+          solvingTimeMs,
+          result,
+          ...(wrongMoveCount === undefined ? {} : { wrongMoveCount }),
+          ...(hintCount === undefined ? {} : { hintCount }),
+        }),
+      );
+      offset += gap;
+    }
+  }
+  return rows;
 }

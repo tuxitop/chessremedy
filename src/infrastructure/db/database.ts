@@ -9,6 +9,7 @@ import {
   applyV7Schema,
   applyV8Schema,
   applyV9Schema,
+  applyV10Schema,
 } from './schema';
 import type { GameRow } from './games-repository';
 import type { AnalysisJob } from '@/domain/analysis';
@@ -18,6 +19,8 @@ import type { AnalysisSummaryRow } from './summaries-repository';
 import type { PuzzleCandidateRow } from './candidates-repository';
 import type { PuzzlesRow } from './puzzles-repository';
 import type { PuzzleAttemptsRow } from './attempts-repository';
+import type { TrainingSetsRow } from './training-sets-repository';
+import type { TrainingCyclesRow } from './training-cycles-repository';
 import { PERSISTENCE_SCHEMA_VERSION } from '@/config/app-config';
 import type { ImportJob } from '@/domain/import/job';
 
@@ -45,6 +48,10 @@ export class ChessRemedyDatabase extends Dexie {
   puzzles!: Table<PuzzlesRow, [string, number]>;
   /** Feature-012 puzzle attempts (schema v9), keyed `[cycleId, puzzleId, presentationIndex]`. */
   puzzleAttempts!: Table<PuzzleAttemptsRow, [string, string, number]>;
+  /** Feature-013 training sets (schema v10), keyed by id. */
+  trainingSets!: Table<TrainingSetsRow, string>;
+  /** Feature-013 training cycles (schema v10), keyed by id. */
+  trainingCycles!: Table<TrainingCyclesRow, string>;
 
   constructor(name = 'chessremedy') {
     super(name);
@@ -58,14 +65,15 @@ export class ChessRemedyDatabase extends Dexie {
     applyV7Schema(this);
     applyV8Schema(this);
     applyV9Schema(this);
+    applyV10Schema(this);
   }
 }
 
 export const db = new ChessRemedyDatabase();
 
-if (PERSISTENCE_SCHEMA_VERSION !== 9) {
+if (PERSISTENCE_SCHEMA_VERSION !== 10) {
   throw new Error(
-    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v9. ` +
+    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v10. ` +
       `Bump PERSISTENCE_SCHEMA_VERSION in app-config.ts and add a new schema module ` +
       `when extending the database.`,
   );

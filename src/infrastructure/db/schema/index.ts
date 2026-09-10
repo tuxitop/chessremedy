@@ -7,6 +7,7 @@ export { applyV6Schema } from './v6';
 export { applyV7Schema } from './v7';
 export { applyV8Schema } from './v8';
 export { applyV9Schema } from './v9';
+export { applyV10Schema } from './v10';
 
 import type Dexie from 'dexie';
 

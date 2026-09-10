@@ -7,13 +7,21 @@ import { summariesRepository } from './summaries-repository';
 import { puzzleCandidatesRepository } from './candidates-repository';
 import { puzzlesRepository } from './puzzles-repository';
 import { attemptsRepository } from './attempts-repository';
+import { trainingSetsRepository } from './training-sets-repository';
+import { trainingCyclesRepository } from './training-cycles-repository';
 import { DexieEngineAnalysisCache } from './engine-cache-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { makeRecords, TEST_ENGINE } from '@/domain/analysis/test-support';
 import { createAnalysisJob } from '@/domain/analysis';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
-import { attemptRowFixture, cycleContextFixture } from '@/domain/training/test-support';
+import { puzzleIdOf } from '@/domain/puzzle/id';
+import {
+  attemptRowFixture,
+  cycleContextFixture,
+  cycleFixture,
+  setFixture,
+} from '@/domain/training/test-support';
 import { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from '@/domain/tactics';
 
 function candidateRow(gameId: string, analysisId: string, sourcePly: number) {
@@ -67,6 +75,8 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     await db.puzzleCandidates.clear();
     await db.puzzles.clear();
     await db.puzzleAttempts.clear();
+    await db.trainingSets.clear();
+    await db.trainingCycles.clear();
   });
 
   it('removes game-scoped MoveAnalysis, jobs, summaries, candidates, puzzles and attempts but retains the engine cache', async () => {
@@ -144,6 +154,30 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
       }),
     );
 
+    // Feature-013 sets: one containing the deleted game's puzzle ids (plus a
+    // foreign id that must survive) with an immutable cycle snapshot, and one
+    // containing only the other game's puzzle id.
+    const deletedPuzzleIds = [puzzleIdOf(game.id, 7), puzzleIdOf(game.id, 9)];
+    const foreignPuzzleId = puzzleIdOf(other.id, 1);
+    await trainingSetsRepository.create(
+      setFixture({
+        id: 'set:deleted-game',
+        puzzleIds: [...deletedPuzzleIds, foreignPuzzleId],
+        updatedAt: 1,
+      }),
+    );
+    await trainingSetsRepository.create(
+      setFixture({ id: 'set:other-game', puzzleIds: [foreignPuzzleId], updatedAt: 2 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle:deleted-set',
+        trainingSetId: 'set:deleted-game',
+        cycleNumber: 1,
+        puzzleIds: [...deletedPuzzleIds],
+      }),
+    );
+
     const cache = new DexieEngineAnalysisCache();
     await cache.put('shared-fen-key', {
       jobId: 'j-x',
@@ -179,5 +213,27 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     expect((await attemptsRepository.listForCycle('cycle:other')).map((a) => a.puzzleId)).toEqual([
       `${other.id}:1`,
     ]);
+
+    // Feature-013 membership cleanup: the deleted game's puzzle ids are
+    // stripped from every set, the foreign id survives, and the other set is
+    // untouched.
+    expect((await trainingSetsRepository.get('set:deleted-game'))?.puzzleIds).toEqual([
+      foreignPuzzleId,
+    ]);
+    expect((await trainingSetsRepository.get('set:other-game'))?.puzzleIds).toEqual([
+      foreignPuzzleId,
+    ]);
+    // Cycle snapshots are immutable and survive a game deletion (missing
+    // snapshot puzzles are terminal at presentation time).
+    expect(await trainingCyclesRepository.listForSet('set:deleted-game')).toHaveLength(1);
+    // No attempt orphan remains: every stored attempt still references an
+    // existing puzzle row.
+    const storedPuzzles = new Set(
+      (await db.puzzles.toArray()).map((p) => puzzleIdOf(p.sourceGameId, p.sourcePly)),
+    );
+    for (const attempt of await db.puzzleAttempts.toArray()) {
+      expect(storedPuzzles.has(attempt.puzzleId)).toBe(true);
+    }
+    expect(await attemptsRepository.listForPuzzle(deletedPuzzleIds[0]!)).toEqual([]);
   });
 });

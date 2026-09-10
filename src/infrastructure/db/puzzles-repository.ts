@@ -15,6 +15,7 @@
  */
 
 import type { PuzzleRow } from '@/domain/puzzle';
+import { parsePuzzleId } from '@/domain/puzzle/id';
 import type { GameId } from '@/domain/chess/game';
 import { db, type ChessRemedyDatabase } from './database';
 
@@ -39,6 +40,17 @@ export interface PuzzlesRepository {
   getPuzzle(sourceGameId: GameId, sourcePly: number): Promise<PuzzleRow | undefined>;
   /** Every puzzle of one game, ordered by `sourcePly`. */
   listForGame(sourceGameId: GameId): Promise<PuzzleRow[]>;
+  /**
+   * Every persisted puzzle (the training-home pool view), ordered by
+   * `sourceGameId` then `sourcePly`. One bounded read, never a per-row scan.
+   */
+  listAll(): Promise<PuzzleRow[]>;
+  /**
+   * Bulk hydration of membership ids (`puzzleIdOf` values): one `bulkGet` by
+   * the natural key `[sourceGameId, sourcePly]`. Ids that are malformed or
+   * whose row is absent are omitted; the surviving rows keep the input order.
+   */
+  getPuzzles(ids: readonly string[]): Promise<PuzzleRow[]>;
   /** Number of puzzles of one game (`0` when the game has none). */
   countForGame(sourceGameId: GameId): Promise<number>;
   /**
@@ -79,6 +91,28 @@ export class DexiePuzzlesRepository implements PuzzlesRepository {
   async listForGame(sourceGameId: GameId): Promise<PuzzleRow[]> {
     const rows = await this.database.puzzles.where('sourceGameId').equals(sourceGameId).toArray();
     return [...rows].sort((a, b) => a.sourcePly - b.sourcePly);
+  }
+
+  async listAll(): Promise<PuzzleRow[]> {
+    const rows = await this.database.puzzles.toArray();
+    return rows.sort(
+      (a, b) => a.sourceGameId.localeCompare(b.sourceGameId) || a.sourcePly - b.sourcePly,
+    );
+  }
+
+  async getPuzzles(ids: readonly string[]): Promise<PuzzleRow[]> {
+    const keys: Array<[string, number]> = [];
+    for (const id of ids) {
+      const parsed = parsePuzzleId(id);
+      if (parsed.ok) {
+        keys.push([parsed.sourceGameId, parsed.sourcePly]);
+      }
+    }
+    if (keys.length === 0) {
+      return [];
+    }
+    const rows = await this.database.puzzles.bulkGet(keys);
+    return rows.filter((row): row is PuzzleRow => row !== undefined);
   }
 
   async countForGame(sourceGameId: GameId): Promise<number> {

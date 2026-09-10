@@ -97,7 +97,7 @@ describe('v8 → v9 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(9);
+      expect(migrated.verno).toBe(10);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -109,6 +109,8 @@ describe('v8 → v9 schema migration', () => {
         'puzzleCandidates',
         'puzzles',
         'puzzleAttempts',
+        'trainingSets',
+        'trainingCycles',
       ]);
 
       // Pre-v9 rows (settings, game, analyses, summaries, candidates, puzzle)

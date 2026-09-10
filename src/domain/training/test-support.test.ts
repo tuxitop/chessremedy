@@ -14,12 +14,18 @@ import {
   DEFAULT_TRAINING_SET_ID,
   TRAINING_FIXTURE_KINDS,
   attemptRowFixture,
+  attemptRowsForCycle,
+  cycleAttemptFixture,
   cycleContextFixture,
+  cycleFixture,
+  poolEntryFixture,
+  setFixture,
   solveConfigFixture,
   terminalAlternativeRowFixture,
   trainingRowFixture,
   trainingSupplementaryFixtures,
 } from './test-support';
+import { CYCLE_METRICS_VERSION, DEFAULT_CYCLE_CONFIG, DEFAULT_TARGET_SIZE } from './cycleTypes';
 
 describe('supplementary training fixtures', () => {
   it('covers the presentation cases Feature-011 does not', () => {
@@ -144,5 +150,83 @@ describe('shared session fixtures', () => {
     expect(attempt.startedAt).toBe(PUZZLE_FIXTURE_NOW);
     expect(attempt.solvingTimeMs).toBe(5_000);
     expect(attempt.result).toBe('solvedFirstTry');
+  });
+});
+
+describe('Feature-013 set/cycle fixtures', () => {
+  it('builds a deterministic default set', () => {
+    expect(setFixture()).toEqual({
+      id: DEFAULT_TRAINING_SET_ID,
+      name: 'Fixture set',
+      createdAt: PUZZLE_FIXTURE_NOW,
+      updatedAt: PUZZLE_FIXTURE_NOW,
+      status: 'active',
+      source: { kind: 'manual' },
+      puzzleIds: [],
+      targetSize: DEFAULT_TARGET_SIZE,
+      config: DEFAULT_CYCLE_CONFIG,
+    });
+  });
+
+  it('does not alias the shared default config', () => {
+    const set = setFixture();
+    expect(set.config).not.toBe(DEFAULT_CYCLE_CONFIG);
+    expect(set.config.hints.enabledLevels).not.toBe(DEFAULT_CYCLE_CONFIG.hints.enabledLevels);
+  });
+
+  it('builds a deterministic default cycle', () => {
+    expect(cycleFixture()).toMatchObject({
+      id: DEFAULT_CYCLE_ID,
+      trainingSetId: DEFAULT_TRAINING_SET_ID,
+      cycleNumber: 1,
+      status: 'inProgress',
+      startedAt: PUZZLE_FIXTURE_NOW,
+      completedAt: null,
+      abandonedAt: null,
+      puzzleIds: [],
+      cycleMetricsVersion: CYCLE_METRICS_VERSION,
+    });
+  });
+
+  it('derives attempt counters from the result unless overridden', () => {
+    const failed = cycleAttemptFixture({ puzzleId: 'p1', result: 'failed' });
+    expect(failed).toMatchObject({
+      result: 'failed',
+      wrongMoveCount: 1,
+      hintCount: 0,
+      solved: false,
+      presentationIndex: 1,
+      origin: 'tactical',
+    });
+    const helped = cycleAttemptFixture({ puzzleId: 'p1', result: 'solvedWithHelp' });
+    expect(helped).toMatchObject({
+      result: 'solvedWithHelp',
+      wrongMoveCount: 0,
+      hintCount: 1,
+      highestHintLevel: 2,
+      solved: true,
+    });
+  });
+
+  it('builds a deterministic enriched pool entry', () => {
+    expect(poolEntryFixture()).toMatchObject({
+      puzzle: puzzleRowFixture('mate-one'),
+      platform: 'lichess',
+      timeControlCategory: 'blitz',
+    });
+  });
+
+  it('builds deterministic attempt rows per puzzle and presentation', () => {
+    const input = {
+      puzzleIds: ['p1', 'p2'],
+      results: { p1: ['failed', 'solvedFirstTry'], p2: ['skipped'] },
+    } as const;
+    const built = attemptRowsForCycle(input);
+    expect(built.map((row) => [row.puzzleId, row.presentationIndex])).toEqual([
+      ['p1', 1],
+      ['p1', 2],
+      ['p2', 1],
+    ]);
+    expect(attemptRowsForCycle(input)).toEqual(built);
   });
 });

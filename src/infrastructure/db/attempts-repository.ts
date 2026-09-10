@@ -69,6 +69,13 @@ export interface PuzzleAttemptsRepository {
    * Feature-013 set-owned removals). An empty input is a no-op.
    */
   deleteForPuzzleIds(puzzleIds: readonly string[]): Promise<void>;
+  /**
+   * Remove every attempt whose `trainingSetId` is in the given set
+   * (Feature-013 set-deletion cascade — the set's cycles/attempts go with it,
+   * the puzzles do not). One indexed read over the `trainingSetId` index; an
+   * empty input is a no-op.
+   */
+  deleteForTrainingSetIds(trainingSetIds: readonly string[]): Promise<void>;
 }
 
 export class DexiePuzzleAttemptsRepository implements PuzzleAttemptsRepository {
@@ -121,6 +128,16 @@ export class DexiePuzzleAttemptsRepository implements PuzzleAttemptsRepository {
     await this.database.puzzleAttempts
       .where('puzzleId')
       .anyOf([...puzzleIds])
+      .delete();
+  }
+
+  async deleteForTrainingSetIds(trainingSetIds: readonly string[]): Promise<void> {
+    if (trainingSetIds.length === 0) {
+      return;
+    }
+    await this.database.puzzleAttempts
+      .where('trainingSetId')
+      .anyOf([...trainingSetIds])
       .delete();
   }
 }
