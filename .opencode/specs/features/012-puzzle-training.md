@@ -154,12 +154,16 @@ redesign). Required capabilities on the solving screen:
   `failed` and **plays the stored solution out** on the mainline; the
   engine then analyzes the solution end;
 - **in-list results** — a success shows a green **Success**, a solve after
-  any hint and/or wrong move shows **Solved with hints** (green), and a
-  give-up/view-solution shows **Failed** (red), all inside the move-list
-  container (no page swap, no separate outcome/post-solve panel); neither
+  any hint (with no wrong move) shows **Solved with hints** (green), and a
+  wrong-move fail or give-up/view-solution shows **Failed** (red), all in
+  the puzzle-info card of the same side column (no page swap, no separate
+  outcome/post-solve panel); a correct solve after a wrong-move fail is
+  confirmed in green while the recorded line stays **Failed**; neither
   hint/wrong-move counters nor a timer are shown in the result area;
 - **next puzzle** — after any finish the view stays put and offers a
-  **Next puzzle** control (the host advances the cursor);
+  **Next puzzle** control (the host advances the cursor); a wrong-move
+  fail also offers **Next puzzle** while the user may keep trying (the
+  attempt row is already written, so moving on is always possible);
 - **post-finish engine** — once the puzzle is finished (any finish) an
   engine toggle becomes available (off by default): turning it on analyzes
   the final board position exactly like the analysis page (engine lines +
@@ -168,8 +172,25 @@ redesign). Required capabilities on the solving screen:
 - **solve clock** — a Settings row ("Show puzzle timer", default hidden)
   controls whether the solve clock is rendered; when off it is not rendered
   at all;
-- wrong moves must be identified as incorrect (see Solving rules): a red
-  arrow marker plus a non-visual announcement (never color alone);
+- wrong moves must be identified as incorrect (see Solving rules): the
+  first wrong move fails the puzzle (recorded `failed`) and flashes its
+  from/to squares **red** as a square highlight (a CSS class on the board
+  squares — never a drawn circle), with a variation in the move list plus
+  a non-visual announcement — never color alone;
+- **game-move context** — the puzzle-info card states what was actually
+  played in the game, "{SAN} was played in the game — find a better
+  move.", and that historical move is drawn on the decision board as a red
+  arrow. The arrow is a native user-drawn shape: a plain board click
+  erases it and it stays hidden for the rest of the presentation (it is
+  only re-shown by an explicit restart or a fresh puzzle);
+- **view solution** — in addition to playing the stored solution out on
+  the mainline, prints the full solution SAN line in the puzzle-info card;
+- **puzzle-info card** — the styled, centred card at the **bottom of the
+  move-list container** (the move list sits above it) holding the objective,
+  the "{toMove} to move…" line, the game-move context, hint announcements,
+  the coloured result line and the centred action buttons (hint / view
+  solution / restart / next); the transport row is the identical
+  start/prev/next/end control row used by the analysis and review pages.
 - there is **no keyboard text-move entry** (the KeyboardMoveEntry and its
   controller path were removed); the board (mouse/touch) plus the promotion
   dialog are the only move paths, and every action remains a labelled
@@ -219,21 +240,27 @@ auto-played for display only. A blunder row is solved when its single
 
 **Wrong moves.** A wrong move is played on the board and immediately
 identified as incorrect (visual marker plus non-visual announcement —
-never color alone), the wrong-move count is incremented, and the move
-does **not** advance the exercise: the board returns to the decision
-point and the user may try again (auto-retry, per PRODUCT §10). Wrong
-moves tried are kept in presentation memory and rendered as move-list
-variations under their decision node ("you tried X") but never enter the
-recorded move line. There is no
-fixed wrong-move limit in V1: the user decides between solving,
-requesting hints, viewing the solution and moving on. Illegal moves
-cannot be played via the board (Chessground constrains to legal moves);
-an illegal submission is rejected with feedback and is not counted as a
-wrong move.
+never color alone), and it **fails the presentation**: the first wrong
+move records a `failed` attempt row (trigger `wrongMove`) exactly once,
+while the presentation stays open. The wrong-move count is incremented
+and the move does **not** advance the exercise: the board returns to the
+decision point and the user may keep trying (auto-retry, per PRODUCT
+§10) without changing the recorded result. Wrong moves tried are kept in
+presentation memory and rendered as move-list variations under their
+decision node ("you tried X") but never enter the recorded move line. A
+later correct solve is confirmed in green on the same view ("Correct!")
+while the recorded result stays `failed` (attempt rows are immutable;
+nothing is re-recorded). Hints and **view solution** remain available
+after a fail. There is no fixed wrong-move limit in V1: the user decides
+between solving, requesting hints, viewing the solution and moving on.
+Illegal moves cannot be played via the board (Chessground constrains to
+legal moves); an illegal submission is rejected with feedback and is not
+counted as a wrong move.
 
 Replaying the user's own historical move (`userMovePlayed`) is almost
 always a wrong answer (the puzzle exists because that move was a miss or
-blunder) and is handled like any other wrong move.
+blunder) and is handled like any other wrong move (it fails the puzzle on
+the first replay).
 
 ## Hints
 
@@ -247,11 +274,17 @@ once the first move is solved, further hints are unavailable.
   levels, starting at the set's configured first-hint threshold and
   skipping disabled levels (hint-level availability is set configuration
   from `domain/tactical-training.md`, provided by the host). Presses stay
-  available and **never** fail the puzzle; after any hint (or wrong move)
-  a solve records `solvedWithHelp` (kept as stored — never rewritten).
-- Hint visuals are drawn on the board as yellow square highlights, then a
-  yellow arrow to the destination once the full first move is revealed
-  (level 4); no hint text list is shown in the side panel.
+  available and **never** fail the puzzle; a solve that used any hint
+  (with no wrong move) records `solvedWithHelp` (kept as stored — never
+  rewritten). A wrong move records `failed` (see Outcomes), regardless of
+  hints already used.
+- Hint visuals are drawn on the board in **violet**, and the first press
+  is always visually productive: the enabled level set starts at level 2,
+  so the first press highlights the piece's source square (a violet **square
+  highlight**, not a drawn circle), the next press adds the destination
+  square and the violet from→to arrow of the first solution move, and the
+  final press reveals that move's SAN. Each press announces the revealed
+  level's text; no hint text list is shown in the side panel.
 - Using a hint never marks a puzzle failed and never increments the
   wrong-move count. A solve that used any hint is recorded as
   `solvedWithHelp` with the highest level reached.
@@ -267,9 +300,15 @@ domain result (`domain/tactical-training.md`):
 | Trigger | Result on the attempt row |
 | --- | --- |
 | solved with no hint and no wrong move | `solvedFirstTry` |
-| solved after any hint and/or any wrong move | `solvedWithHelp` |
+| solved after any hint (no wrong move) | `solvedWithHelp` |
+| first wrong move (presentation stays open) | `failed` — recorded at the moment of the wrong move |
 | gave up / revealed the solution | `failed` |
 | explicitly skipped (result shows only on **skip**) | `skipped` |
+
+A first wrong move records its `failed` row immediately (see Wrong
+moves); the later finish of that same presentation (solve-after-fail,
+give-up or skip) is **not** recorded again — attempt rows are immutable
+and the presentation writes exactly one.
 
 A skipped puzzle is not completed, is excluded from all accuracy and
 solving-time aggregates, and remains in the set for future cycles
@@ -279,12 +318,13 @@ cycle or the set by default; retry-failed behavior
 013 decisions over the recorded results.
 
 Every finish stays on the same single view: the recorded result appears
-inside the move-list container (green **Success** for `solvedFirstTry`,
-green **Solved with hints** for `solvedWithHelp`, red **Failed** for
-`failed`, with the skipped label for a skipped presentation), and **Next
-puzzle** returns the outcome to the host (the cycle host then advances:
-next puzzle, configured re-presentation, or cycle results). Counters,
-hints and the timer are **not** shown in the result area.
+in the puzzle-info card of the same side column (green **Success** for
+`solvedFirstTry`, green **Solved with hints** for `solvedWithHelp`, red
+**Failed** for `failed`/wrong-move fail, with the skipped label for a
+skipped presentation), and **Next puzzle** returns the outcome to the
+host (the cycle host then advances: next puzzle, configured
+re-presentation, or cycle results). Counters, hints and the timer are
+**not** shown in the result area.
 
 ## Post-finish engine analysis & single-view results
 
@@ -300,14 +340,23 @@ board:
   transport over the full line; wrong attempts are listed as variations
   ("your move …") under their decision node — no engine ran on novel wrong
   moves, so nothing is fabricated for them.
-- **Post-finish engine:** once the puzzle is finished (any finish) the user
-  may toggle the engine on (off by default). It analyzes the **end position
-  actually on the board** through the shared analysis controller
-  (`useAnalysisController`), rendering engine lines + settings exactly like
-  the analysis page and engine arrows on the board; the evaluation bar
-  appears in a **reserved** bar column that is empty until enabled, so
-  nothing shifts. A stubbed engine service is used in component tests (no
-  real Stockfish).
+- The engine **top panel is always present** on the solving surface, using
+  the same chrome as the analysis/review pages (toggle, evaluation header,
+  depth row and settings gear). Until the puzzle is finished (or failed) its
+  toggle stays disabled and no "toggle the engine on" hint is shown; the
+  evaluation-bar column is reserved but empty.
+- A wrong move flashes its from/to squares **red** as a square highlight (a
+  CSS class on the board squares, never a drawn circle) while the attempt is
+  also recorded as a variation in the move list.
+- **Post-finish engine:** once the puzzle is finished (any finish) — or as
+  soon as a wrong-move fail has been recorded, since the puzzle is already
+  failed and the presentation stays open — the user may toggle the engine on
+  (off by default). It analyzes the **position actually on the board** through
+  the shared analysis controller (`useAnalysisController`), rendering engine
+  lines + settings exactly like the analysis page and engine arrows on the
+  board; the evaluation bar appears in a **reserved** bar column that is empty
+  until enabled, so nothing shifts. A stubbed engine service is used in
+  component tests (no real Stockfish).
 - The write/retry protocol is unchanged: the attempt row must be written
   before **Next puzzle** advances (an unwritten row keeps the result in
   view with an inline error and a retry, exactly like the former outcome
@@ -500,10 +549,11 @@ the outcome unrecorded (never silently dropped).
 9. **View solution** plays the stored solution out on the mainline and
    records `failed`; **hints never fail the puzzle** and a solve after
    any hint/wrong move keeps `solvedWithHelp` exactly as stored.
-10. The engine toggle appears only after the puzzle finishes (any finish),
-    is off by default, and analyzes the final board position with the
-    shared analysis controller (stubbed engine in component tests); the
-    evaluation bar lives in a reserved column that is empty until enabled.
+10. The engine toggle becomes available after the puzzle finishes (any
+    finish) or once a wrong-move fail has been recorded, is off by default,
+    and analyzes the current board position with the shared analysis
+    controller (stubbed engine in component tests); the evaluation bar lives
+    in a reserved column that is empty until enabled.
 11. The game-prefix move list shows the stored prefix + played/solution
     mainline with wrong attempts as variations (no classification glyphs,
     no per-ply evals) and auto-scrolls to the active move; transport and
@@ -539,10 +589,10 @@ the outcome unrecorded (never silently dropped).
   outcome visible.
 - **Component:** the solving screen renders fixture puzzles with no
   engine/network/IndexedDB (presentation, correct/wrong move feedback,
-  hints as yellow square/arrow shapes, hint-then-solve -> `solvedWithHelp`,
-  view-solution -> `failed` at the line end, engine toggle after finish,
-  in-list result copy Success / Solved with hints / Failed, hidden timer
-  default, Next advancing the host, prefix + variation move list and
+  hints as violet square highlights + arrow, hint-then-solve -> `solvedWithHelp`,
+  view-solution -> `failed` at the line end, engine toggle after finish or
+  fail, in-list result copy Success / Solved with hints / Failed, hidden
+  timer default, Next advancing the host, prefix + variation move list and
   MoveList auto-scroll); keyboard/AT behaviour (announcements, focus,
   arrow transport); mobile layout.
 - **End-to-end:** requires the Feature-013 host and lands with that
