@@ -30,8 +30,11 @@ A Puzzle has **two origins**:
    played"), the row has **no** tactical objective, verification metadata,
    candidate-solution length or accepted alternatives, and its difficulty is a
    deterministic, **provisional** estimate derived from the ply's stored eval
-   swing (larger swing → easier puzzle); Feature 013 may re-rate it from solver
-   data. There is no engine work behind a blunder row.
+   swing (larger swing → easier puzzle). V1 does **not** re-rate puzzles from
+   solver data: the row is immutable and carries no per-user difficulty
+   (ADR-031), so solver-calibrated difficulty is out of V1 scope. A future
+   feature could introduce a derived, non-authoritative rating store outside the
+   immutable puzzle row. There is no engine work behind a blunder row.
 
 A solution may contain multiple moves (tactical rows); a blunder row is a
 one-move puzzle by construction.

@@ -273,9 +273,11 @@ handed away, the more obvious the correct move and the **easier** the puzzle
 (larger swing → lower score). The score is deterministic for a fixed record,
 lives in `[0, 100]` and buckets through the standard ADR-025 buckets. It is
 **provisional**: it encodes "how obvious was this correction from the eval
-signal", not a solver-calibrated rating; Feature 013 may re-rate blunder puzzles
-from solver data (re-rating is a Feature-013 generator/formula concern, never a
-retroactive re-map of stored scores).
+signal", not a solver-calibrated rating. V1 does **not** re-rate puzzles from
+solver data: the row is immutable and carries no per-user difficulty (ADR-031),
+so solver-calibrated difficulty is out of V1 scope. Any future solver-calibrated
+rating would be a derived, non-authoritative store outside the immutable puzzle
+row — never a retroactive re-map of stored scores.
 
 Blunder rows are included however lost the position was: there is no
 lost-position or difficulty rejection floor for the correct-move origin (a

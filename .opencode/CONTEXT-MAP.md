@@ -73,9 +73,9 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 006, 008, 011; output (solve interaction + attempt rows) consumed by Feature 013, which hosts the solving screen and is implemented after 012 per the roadmap.
 
 ### Feature 013 — Tactical Training Cycles
-- Required: ADRs `decisions/ADR-031`, `decisions/ADR-025` (difficulty ordering default); domain `domain/tactical-training.md`, `domain/puzzle-model.md`; research `research/cycle-training.md`.
+- Required: `ARCHITECTURE.md` §7/§9/§10; ADRs `decisions/ADR-031`, `decisions/ADR-025` (difficulty ordering default); domain `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/game-library.md`, `domain/statistics.md`; research `research/cycle-training.md`.
 - Optional: `history/ADR-007/011/021/022` (rejected FSRS), research `research/fsrs-implementation.md` (deferred future scheduler).
-- Dependencies: Feature 011 (puzzle source), Feature 012 (solve interaction); consumers Features 014/015.
+- Dependencies: Feature 011 (puzzle source), Feature 012 (solve interaction + attempt rows); consumers Features 014/015 (and Feature 016 for deletion tombstones). Feature 013 owns the canonical cycle metric function reused by Feature 014.
 
 ### Feature 014 — Game Analysis History & Statistics
 - Required: `ARCHITECTURE.md` §6a/§7/§9/§10; ADRs `decisions/ADR-013`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-031`; domain `domain/statistics.md`, `domain/game-model.md`, `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/time-control.md`, `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/tactics.md`, `domain/game-library.md` (row-view insights + per-analysis summaries); research `research/move-accuracy.md`, `research/move-classification.md`.
@@ -112,7 +112,7 @@ features, ADRs, research, or the whole documentation tree.
 ## Lookup: domain specs by feature
 
 - `domain/game-model.md` → Features 002/003/004/007/014/015/016
-- `domain/game-library.md` → Features 007/008/010/011/014/016
+- `domain/game-library.md` → Features 007/008/010/011/013/014/016
 - `domain/analysis-model.md` → Features 005/006/008/009/010/012/014
 - `domain/classification.md` → Features 006/008/009/010/014
 - `domain/time-control.md` → Features 003/007/008/014/015
@@ -121,4 +121,4 @@ features, ADRs, research, or the whole documentation tree.
 - `domain/tactics.md` → Features 010/011/014
 - `domain/puzzle-model.md` → Features 010/011/012/013/014
 - `domain/tactical-training.md` → Features 011/012/013/014/015/016
-- `domain/statistics.md` → Features 014/015
+- `domain/statistics.md` → Features 013/014/015

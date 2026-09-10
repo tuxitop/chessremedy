@@ -2,8 +2,10 @@
 
 This specification defines the V1 training model: puzzles are gathered
 into fixed **Tactical Training Sets** and practised in repeated
-**Training Cycles**. Every puzzle in a cycle produces a **Puzzle
-Attempt**; cycles aggregate attempts into cycle-level metrics. This is
+**Training Cycles**. Every puzzle **presentation** in a cycle produces a
+**Puzzle Attempt** (a puzzle may be presented more than once when retries
+are enabled); cycles aggregate attempts into cycle-level metrics computed
+at read time. This is
 a ChessRemedy adaptation of the Woodpecker method's core idea —
 repeatedly cycling through a fixed set — and does not reproduce any
 particular published protocol. See ADR-031 and
@@ -81,6 +83,13 @@ A `TrainingCycle` is one pass through the puzzles of a set:
 - aggregate solving time
 - completion status
 
+The identity/snapshot fields (`id`, training set id, cycle number,
+start/completion time, number of puzzles, completion status) are stored
+on the cycle; the aggregate fields (puzzles completed/skipped, accuracy,
+total attempts, hints used, retries, aggregate solving time) are a
+**derived read model**, computed from the cycle's attempt rows and the set
+snapshot (see Metrics) — they are never authoritative stored state.
+
 Status values:
 
 - `inProgress` — started, not yet finished (resumable)
@@ -93,7 +102,9 @@ A cycle is **completed** when every non-skipped puzzle in the cycle has
 a definite result (solved or failed) and, when the configured
 retry-failed behavior is `endOfCycle`, the retry pass (if any) has been
 resolved. Skipped puzzles do not block completion, but they are not
-counted as completed puzzles.
+counted as completed puzzles. The retry pass is **bounded**: a puzzle is
+presented at most twice per cycle (its initial presentation plus at most
+one retry presentation), so a cycle always terminates.
 
 ### Lifecycle rules
 
@@ -110,28 +121,39 @@ where noted:
   result `skipped`), excluded from accuracy and solving-time aggregates,
   and is not marked completed. Skipping does not remove the puzzle from
   the set or from future cycles.
-- **Wrong answer**: a wrong move records a failed attempt (or a retry
-  step) and does **not** remove the puzzle from the current cycle by
-  default. The configured retry-failed behavior decides whether the
-  user is offered the puzzle again within the same cycle
+- **Wrong answer**: the **first** wrong move records a `failed` attempt
+  row immediately (one row per presentation) and does **not** remove the
+  puzzle from the current cycle by default. The presentation stays open
+  and the user may keep trying; a later correct move in the same
+  presentation is confirmed in the UI but writes **no** second row (the
+  attempt row is immutable). The configured retry-failed behavior decides
+  whether the puzzle is offered a new presentation within the same cycle
   (`endOfCycle`), never (`none`), or immediately (`immediate`).
-- **Hints**: using a hint never marks a puzzle as failed. A hinted
-  solve is recorded as `solvedWithHelp` and is excluded from
-  first-try-no-hint accuracy. The hint level reached is recorded.
-- **Retries**: a retry is an additional attempt on the same puzzle
-  within the same cycle. Each retry step is recorded so that "number of
-  attempts" and "required retries" are measurable.
+- **Hints**: using a hint never marks a puzzle as failed. A solve with a
+  hint and **no wrong move** is recorded as `solvedWithHelp` and is
+  excluded from first-try-no-hint accuracy. A wrong move always records
+  `failed` regardless of hints used. The hint level reached is recorded.
+- **Retries**: retrying a move within a presentation (after a wrong move)
+  is counted on that presentation's row (`number of attempts` /
+  wrong-move count) and does **not** create an extra row. A *retry
+  presentation* — offering the puzzle again within the same cycle per the
+  retry-failed behavior — is a separate `PuzzleAttempt` row with an
+  incremented presentation index, capped at one per puzzle per cycle so
+  that "required retries" is measurable and the cycle always terminates.
 
 A puzzle that is still failing at the end of a completed cycle remains
 in the set and is revisited in the next cycle.
 
 ## PuzzleAttempt
 
-A `PuzzleAttempt` records one puzzle's outcome within a cycle:
+A `PuzzleAttempt` records one puzzle **presentation**'s outcome within a
+cycle:
 
 - puzzle id
 - training set id
 - cycle id
+- presentation index (0-based per `[cycleId, puzzleId]`; incremented for a
+  retry presentation)
 - timestamp
 - result
 - solving time
@@ -141,14 +163,19 @@ A `PuzzleAttempt` records one puzzle's outcome within a cycle:
 
 Result values:
 
-- `solvedFirstTry` — solved on the first attempt without any hint
-- `solvedWithHelp` — solved using a hint and/or after a retry
-- `failed` — not solved when the attempt ended
+- `solvedFirstTry` — solved on the first attempt without any hint and
+  without a wrong move
+- `solvedWithHelp` — solved using a hint, with no wrong move
+- `failed` — a wrong move was made (recorded immediately), or the
+  presentation ended without solving; a presentation whose first wrong
+  move is later corrected still records `failed`
 - `skipped` — left without solving (no result)
 
 Attempt records are the atomic training data. Every cycle-level metric
-is derived from attempt records; attempts are never aggregated on the
-puzzle.
+is derived from attempt records at read time (never stored as
+authoritative cycle state); attempts are never aggregated on the puzzle.
+Feature 013 and Feature 014 share one canonical cycle-metric function so
+the definitions cannot drift.
 
 ## Cycle configuration
 
