@@ -61,6 +61,18 @@ describe('deriveResult', () => {
     expect(deriveResult('skip', cleanCounters)).toBe('skipped');
   });
 
+  it('disqualifies a solve after a restart: solvedWithHelp, never solvedFirstTry', () => {
+    expect(deriveResult('solved', { ...cleanCounters, restartCount: 0 })).toBe('solvedFirstTry');
+    expect(deriveResult('solved', { ...cleanCounters, restartCount: 1 })).toBe('solvedWithHelp');
+    expect(deriveResult('solved', { ...cleanCounters, restartCount: 3 })).toBe('solvedWithHelp');
+    // A restart never changes a non-solved outcome.
+    expect(deriveResult('wrongMove', { ...cleanCounters, restartCount: 1 })).toBe('failed');
+    expect(deriveResult('gaveUp', { ...cleanCounters, restartCount: 1 })).toBe('failed');
+    expect(deriveResult('skip', { ...cleanCounters, restartCount: 1 })).toBe('skipped');
+    // A pre-restart counter object (field absent) reads as a clean zero.
+    expect(deriveResult('solved', cleanCounters)).toBe('solvedFirstTry');
+  });
+
   it('records a wrong move as failed immediately (owner wrong-move ruling)', () => {
     expect(deriveResult('wrongMove', cleanCounters)).toBe('failed');
     expect(deriveResult('wrongMove', { ...cleanCounters, wrongMoveCount: 1 })).toBe('failed');
@@ -86,10 +98,28 @@ describe('buildAttemptRow', () => {
       wrongMoveCount: 0,
       hintCount: 0,
       highestHintLevel: null,
+      restartCount: 0,
       solved: true,
       puzzleGeneratorVersion: row.puzzleGeneratorVersion,
       origin: 'tactical',
     });
+  });
+
+  it('carries restartCount into the row and derives solvedWithHelp', () => {
+    const attempt = build({
+      counters: { wrongMoveCount: 0, hintCount: 0, highestHintLevel: null, restartCount: 1 },
+    });
+    expect(attempt.restartCount).toBe(1);
+    expect(attempt.result).toBe('solvedWithHelp');
+    expect(attempt.solved).toBe(true);
+  });
+
+  it('normalizes an absent (pre-restart) restartCount to 0 on the row', () => {
+    const attempt = build({
+      counters: { wrongMoveCount: 0, hintCount: 0, highestHintLevel: null },
+    });
+    expect(attempt.restartCount).toBe(0);
+    expect(attempt.result).toBe('solvedFirstTry');
   });
 
   it('records solvedWithHelp with the highest hint level after a hint solve', () => {
@@ -153,6 +183,7 @@ describe('presentationOutcomeOf', () => {
     expect(outcome.wrongMoveCount).toBe(attempt.wrongMoveCount);
     expect(outcome.hintCount).toBe(attempt.hintCount);
     expect(outcome.highestHintLevel).toBe(attempt.highestHintLevel);
+    expect(outcome.restartCount).toBe(attempt.restartCount);
     expect(outcome.solved).toBe(attempt.solved);
   });
 });

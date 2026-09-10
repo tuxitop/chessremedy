@@ -4,13 +4,20 @@ import { Link } from 'react-router-dom';
 import { SetCard } from '@/components/puzzles/cycles';
 import { Button } from '@/components/ui/Button';
 import { ROUTES, puzzlesCyclePath, puzzlesSetPath } from '@/app/routes';
-import type { TacticalTrainingSetRow, TrainingCycleRow } from '@/domain/training';
+import {
+  deriveAutoSetMembership,
+  masteredPuzzleIds,
+  type TacticalTrainingSetRow,
+  type TrainingCycleRow,
+} from '@/domain/training';
 import { CycleService, TrainingSetsService } from '@/infrastructure/training';
 import { trainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
 import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
+import type { PuzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
+import type { PuzzleAttemptsRepository } from '@/infrastructure/db/attempts-repository';
 import styles from './TrainingHomePage.module.css';
 
 /** Per-set summary the home cards render. */
@@ -20,6 +27,10 @@ interface SetSummary {
   /** Latest cycle by number, if the set has any. */
   readonly cycle: TrainingCycleRow | null;
   readonly lastActivityAt: number;
+  /** True for a system-managed `auto` set (badge + refresh note, derived count). */
+  readonly isAuto: boolean;
+  /** Text for a zero derived count (e.g. `All puzzles mastered`), else `null`. */
+  readonly emptyCountLabel: string | null;
 }
 
 /** The in-progress cycle surfaced by the resume banner. */
@@ -32,6 +43,8 @@ interface HomeData {
   readonly active: readonly SetSummary[];
   readonly archived: readonly SetSummary[];
   readonly resume: ResumeTarget | null;
+  /** Total persisted puzzles; `0` means the pool is empty (generate-puzzles state). */
+  readonly poolCount: number;
 }
 
 export interface TrainingHomePageProps {
@@ -39,6 +52,10 @@ export interface TrainingHomePageProps {
   readonly setsService?: TrainingSetsService;
   /** Injectable for tests; defaults to the singleton-backed service. */
   readonly cycleService?: CycleService;
+  /** Injectable for tests; defaults to the singleton repository. */
+  readonly puzzles?: PuzzlesRepository;
+  /** Injectable for tests; defaults to the singleton repository. */
+  readonly attempts?: PuzzleAttemptsRepository;
 }
 
 /**
@@ -50,6 +67,8 @@ export interface TrainingHomePageProps {
 export function TrainingHomePage({
   setsService: providedSets,
   cycleService: providedCycles,
+  puzzles: providedPuzzles,
+  attempts: providedAttempts,
 }: TrainingHomePageProps = {}): React.JSX.Element {
   const setsService = useMemo(
     () =>
@@ -74,9 +93,17 @@ export function TrainingHomePage({
     [providedCycles],
   );
 
+  const puzzlesRepo = providedPuzzles ?? puzzlesRepository;
+  const attemptsRepo = providedAttempts ?? attemptsRepository;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<HomeData>({ active: [], archived: [], resume: null });
+  const [data, setData] = useState<HomeData>({
+    active: [],
+    archived: [],
+    resume: null,
+    poolCount: 0,
+  });
   const [showArchived, setShowArchived] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -86,7 +113,7 @@ export function TrainingHomePage({
     let cancelled = false;
     void (async () => {
       try {
-        const next = await loadHome(setsService, cycleService);
+        const next = await loadHome(setsService, cycleService, puzzlesRepo, attemptsRepo);
         if (!cancelled) {
           setData(next);
           setError(null);
@@ -95,7 +122,7 @@ export function TrainingHomePage({
       } catch {
         if (!cancelled) {
           setError('Could not load your training sets from local storage.');
-          setData({ active: [], archived: [], resume: null });
+          setData({ active: [], archived: [], resume: null, poolCount: 0 });
           setLoading(false);
         }
       }
@@ -103,9 +130,15 @@ export function TrainingHomePage({
     return () => {
       cancelled = true;
     };
-  }, [setsService, cycleService, reloadTick]);
+  }, [setsService, cycleService, puzzlesRepo, attemptsRepo, reloadTick]);
 
-  const hasAnySet = data.active.length > 0 || data.archived.length > 0;
+  // The two system-managed auto sets always exist after `ensureAutoSets`, so
+  // "no sets yet" is really "no user sets and no puzzles to train" — the
+  // explicit generate-puzzles empty state.
+  const hasUserSets =
+    data.active.some((summary) => !summary.isAuto) ||
+    data.archived.some((summary) => !summary.isAuto);
+  const showEmptyState = !hasUserSets && data.poolCount === 0;
 
   return (
     <div className={styles.page} data-testid="training-home">
@@ -116,9 +149,22 @@ export function TrainingHomePage({
             Build fixed sets from your own puzzles and train them in repeated cycles.
           </p>
         </div>
-        <Link className={styles.primaryLink} to={ROUTES.puzzlesNew} data-testid="training-new-set">
-          New set
-        </Link>
+        <div className={styles.headerActions}>
+          <Link
+            className={styles.secondaryLink}
+            to={ROUTES.puzzlesMastered}
+            data-testid="training-mastered-link"
+          >
+            Mastered puzzles
+          </Link>
+          <Link
+            className={styles.primaryLink}
+            to={ROUTES.puzzlesNew}
+            data-testid="training-new-set"
+          >
+            New set
+          </Link>
+        </div>
       </header>
 
       {data.resume !== null ? (
@@ -155,7 +201,7 @@ export function TrainingHomePage({
             Try again
           </Button>
         </section>
-      ) : !hasAnySet ? (
+      ) : showEmptyState ? (
         <section
           className={styles.statePanel}
           data-testid="training-home-empty"
@@ -192,6 +238,15 @@ export function TrainingHomePage({
                     cycle={summary.cycle}
                     lastActivityAt={summary.lastActivityAt}
                     to={puzzlesSetPath(summary.set.id)}
+                    {...(summary.isAuto
+                      ? {
+                          badge: 'Auto',
+                          note: 'Membership refreshes each cycle.',
+                          ...(summary.emptyCountLabel === null
+                            ? {}
+                            : { emptyCountLabel: summary.emptyCountLabel }),
+                        }
+                      : {})}
                   />
                 ))}
               </div>
@@ -243,13 +298,21 @@ export function TrainingHomePage({
 async function loadHome(
   setsService: TrainingSetsService,
   cycleService: CycleService,
+  puzzlesRepo: PuzzlesRepository,
+  attemptsRepo: PuzzleAttemptsRepository,
 ): Promise<HomeData> {
-  const [activeSets, archivedSets] = await Promise.all([
+  // Seed the two system-managed auto sets idempotently so a fresh install with
+  // generated puzzles has something to train without manual set creation.
+  await setsService.ensureAutoSets();
+  const [activeSets, archivedSets, pool, attempts] = await Promise.all([
     setsService.list({ status: 'active' }),
     setsService.list({ status: 'archived' }),
+    puzzlesRepo.listAll(),
+    attemptsRepo.listAll(),
   ]);
   const all = [...activeSets, ...archivedSets];
   const cyclesBySet = await Promise.all(all.map((set) => cycleService.listForSet(set.id)));
+  const masteredIds = masteredPuzzleIds(attempts);
   const summaries = new Map<string, SetSummary>();
   let resume: ResumeTarget | null = null;
   all.forEach((set, index) => {
@@ -263,11 +326,31 @@ async function loadHome(
         }
       }
     }
+    // Auto sets are virtual: show the derived count for the next cycle
+    // (current pool minus mastered), never the last cycle's stored snapshot.
+    let puzzleCount = set.puzzleIds.length;
+    let isAuto = false;
+    let emptyCountLabel: string | null = null;
+    if (set.source.kind === 'auto') {
+      isAuto = true;
+      const derived = deriveAutoSetMembership({
+        recipe: set.source.recipe,
+        pool,
+        masteredIds,
+        setId: set.id,
+      });
+      puzzleCount = derived.length;
+      if (derived.length === 0) {
+        emptyCountLabel = pool.length === 0 ? 'No puzzles yet' : 'All puzzles mastered';
+      }
+    }
     summaries.set(set.id, {
       set,
-      puzzleCount: set.puzzleIds.length,
+      puzzleCount,
       cycle: current,
       lastActivityAt,
+      isAuto,
+      emptyCountLabel,
     });
     for (const cycle of cycles) {
       if (cycle.status === 'inProgress') {
@@ -281,5 +364,6 @@ async function loadHome(
     active: activeSets.map((set) => summaries.get(set.id)!),
     archived: archivedSets.map((set) => summaries.get(set.id)!),
     resume,
+    poolCount: pool.length,
   };
 }

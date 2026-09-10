@@ -82,6 +82,7 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(result.current.wrongMoveCount).toBe(0);
     expect(result.current.hintCount).toBe(0);
     expect(result.current.highestHintLevel).toBeNull();
+    expect(result.current.restartCount).toBe(0);
     expect(result.current.canHint).toBe(true);
     expect(rig.calls).toEqual([]);
   });
@@ -147,6 +148,31 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(result.current.outcome?.result).toBe('solvedWithHelp');
     expect(result.current.outcome?.solved).toBe(true);
     expect(rig.calls).toHaveLength(1);
+  });
+
+  it('records solvedWithHelp (never solvedFirstTry) for a clean solve after a restart, with restartCount recorded', async () => {
+    const rig = createRecorderRig();
+    const { result } = renderSolve(puzzleRowFixture('mate-two'), rig);
+
+    act(() => result.current.restart());
+    expect(result.current.restartCount).toBe(1);
+    expect(result.current.playedLine).toEqual([]);
+    expect(result.current.wrongMoveCount).toBe(0);
+    expect(result.current.hintCount).toBe(0);
+
+    act(() => {
+      expect(result.current.playBoardMove('b8', 'b6')).toEqual({ kind: 'accepted' });
+    });
+    act(() => {
+      expect(result.current.playBoardMove('b6', 'f2')).toEqual({ kind: 'solved' });
+    });
+
+    expect(result.current.outcome?.result).toBe('solvedWithHelp');
+    expect(result.current.outcome?.restartCount).toBe(1);
+    await waitFor(() => expect(result.current.writePhase).toBe('written'));
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.counters.restartCount).toBe(1);
+    expect(result.current.exitOutcome()?.result).toBe('solvedWithHelp');
   });
 
   it('records the FIRST wrong move as an immediate failed attempt while staying in solving (fail-once)', async () => {

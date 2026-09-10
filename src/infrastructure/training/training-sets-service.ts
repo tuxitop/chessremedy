@@ -18,8 +18,13 @@
 
 import {
   DEFAULT_CYCLE_CONFIG,
+  DEFAULT_TARGET_SIZE,
+  autoSetDefinitions,
+  deriveAutoSetMembership,
+  masteredPuzzleIds,
   resolveSetMembership,
   validateCycleConfig,
+  type AutoSetDefinition,
   type CycleConfig,
   type OrderingPolicy,
   type PuzzlePoolEntry,
@@ -101,12 +106,28 @@ export interface SetNotFound {
   readonly reason: 'not-found';
 }
 
+/**
+ * A mutation was refused because the set is a system-managed `auto` set: auto
+ * sets are non-editable, non-archivable and non-deletable in V1 (they are
+ * re-seeded idempotently and their membership is derived at cycle start).
+ */
+export interface AutoSetImmutable {
+  readonly ok: false;
+  readonly reason: 'auto-set-immutable';
+}
+
 /** Result of a create: the empty set is still a success. */
 export type CreateSetResult = CreateSetSuccess | InvalidSetConfig;
 
 /** Result of a set mutation: the stored row or a typed rejection. */
 export type SetMutationResult =
-  { readonly ok: true; readonly set: TacticalTrainingSetRow } | SetNotFound | InvalidSetConfig;
+  | { readonly ok: true; readonly set: TacticalTrainingSetRow }
+  | SetNotFound
+  | InvalidSetConfig
+  | AutoSetImmutable;
+
+/** Result of a set deletion: success or a typed rejection. */
+export type SetDeleteResult = { readonly ok: true } | SetNotFound | AutoSetImmutable;
 
 /** Constructor options for `TrainingSetsService`. */
 export interface TrainingSetsServiceOptions {
@@ -132,6 +153,7 @@ export class TrainingSetsService {
   private readonly sets: TrainingSetsRepository;
   private readonly puzzles: PuzzlesRepository;
   private readonly games: GamesRepository;
+  private readonly attempts: PuzzleAttemptsRepository;
   private readonly now: () => number;
   private readonly newId: () => string;
 
@@ -139,6 +161,7 @@ export class TrainingSetsService {
     this.sets = options.sets;
     this.puzzles = options.puzzles;
     this.games = options.games;
+    this.attempts = options.attempts;
     this.now = options.now ?? (() => Date.now());
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
@@ -232,12 +255,16 @@ export class TrainingSetsService {
   /**
    * Delete a set and everything it owns (its cycles and their attempt rows, in
    * the repository's transaction). Puzzles are untouched. Idempotent result
-   * reporting: an absent id is `not-found`.
+   * reporting: an absent id is `not-found`; a system-managed auto set is
+   * refused (`auto-set-immutable`).
    */
-  async delete(id: string): Promise<{ readonly ok: true } | SetNotFound> {
+  async delete(id: string): Promise<SetDeleteResult> {
     const existing = await this.sets.get(id);
     if (existing === undefined) {
       return { ok: false, reason: 'not-found' };
+    }
+    if (isAutoSet(existing)) {
+      return { ok: false, reason: 'auto-set-immutable' };
     }
     await this.sets.delete(id);
     return { ok: true };
@@ -248,6 +275,59 @@ export class TrainingSetsService {
     options: { readonly status?: TrainingSetStatus } = {},
   ): Promise<TacticalTrainingSetRow[]> {
     return this.sets.list(options);
+  }
+
+  /**
+   * Idempotently seed the two system-managed auto sets ("All puzzles" and
+   * "Woodpecker random") from `autoSetDefinitions()`.
+   *
+   * Each absent definition is created once with its deterministic id, preset
+   * name/config and recipe in `source` (`kind: 'auto'`), active status, and an
+   * initial derived membership from the current pool minus mastery (so the
+   * training home shows a real count before the first cycle). An existing row
+   * — auto or not — is **never** overwritten or duplicated. Re-seeding after a
+   * mastery change is intentionally a no-op: membership is refreshed at each
+   * cycle start, not here.
+   */
+  async ensureAutoSets(): Promise<void> {
+    const definitions = autoSetDefinitions();
+    const missing: AutoSetDefinition[] = [];
+    for (const definition of definitions) {
+      if ((await this.sets.get(definition.id)) === undefined) {
+        missing.push(definition);
+      }
+    }
+    if (missing.length === 0) {
+      return;
+    }
+    const [pool, attempts] = await Promise.all([this.puzzles.listAll(), this.attempts.listAll()]);
+    const masteredIds = masteredPuzzleIds(attempts);
+    const now = this.now();
+    for (const definition of missing) {
+      // Re-check immediately before writing so a concurrent seed can never be
+      // overwritten (the write is a `put`).
+      if ((await this.sets.get(definition.id)) !== undefined) {
+        continue;
+      }
+      const puzzleIds = deriveAutoSetMembership({
+        recipe: definition.recipe,
+        pool,
+        masteredIds,
+        setId: definition.id,
+      });
+      const set: TacticalTrainingSetRow = {
+        id: definition.id,
+        name: definition.name,
+        createdAt: now,
+        updatedAt: now,
+        status: 'active',
+        source: { kind: 'auto', recipe: definition.recipe },
+        puzzleIds,
+        targetSize: DEFAULT_TARGET_SIZE,
+        config: definition.config,
+      };
+      await this.sets.create(set);
+    }
   }
 
   /** Persist a freshly resolved set with the default config for its ordering. */
@@ -279,14 +359,29 @@ export class TrainingSetsService {
     return { ok: true, set, resolvedCount: puzzleIds.length, empty: puzzleIds.length === 0 };
   }
 
-  /** Apply a partial patch, mapping an absent id to the typed `not-found`. */
+  /**
+   * Apply a partial patch, mapping an absent id to the typed `not-found` and a
+   * system-managed auto set to the typed `auto-set-immutable`.
+   */
   private async mutate(id: string, patch: TrainingSetUpdate): Promise<SetMutationResult> {
+    const existing = await this.sets.get(id);
+    if (existing === undefined) {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (isAutoSet(existing)) {
+      return { ok: false, reason: 'auto-set-immutable' };
+    }
     const updated = await this.sets.update(id, patch);
     if (updated === undefined) {
       return { ok: false, reason: 'not-found' };
     }
     return { ok: true, set: updated };
   }
+}
+
+/** Whether a set is system-managed (`source.kind === 'auto'`). */
+function isAutoSet(set: TacticalTrainingSetRow): boolean {
+  return set.source.kind === 'auto';
 }
 
 /** The default cycle config with the requested ordering, deep-cloned. */

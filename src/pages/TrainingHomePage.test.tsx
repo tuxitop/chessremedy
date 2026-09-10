@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { TrainingHomePage } from '@/pages/TrainingHomePage';
 import { trainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
 import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
-import { cycleFixture, setFixture } from '@/domain/training/test-support';
+import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
+import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
+import { puzzleIdOf } from '@/domain/puzzle/id';
+import { puzzleRowFixture } from '@/domain/puzzle/test-support';
+import type { PuzzleRow } from '@/domain/puzzle';
+import { AUTO_SET_ALL_ID, AUTO_SET_RANDOM_ID } from '@/domain/training';
+import { cycleFixture, legitimateFirstTryRows, setFixture } from '@/domain/training/test-support';
 import { renderWithProviders } from '@/test/test-utils';
 
 const NOW = 1_700_000_000_000;
@@ -11,6 +17,18 @@ const NOW = 1_700_000_000_000;
 async function renderHome(): Promise<void> {
   renderWithProviders(<TrainingHomePage />, { initialEntries: ['/puzzles'] });
   await waitFor(() => expect(screen.queryByTestId('training-home-loading')).toBeNull());
+}
+
+/** A deterministic pool puzzle at `ply`. */
+function poolPuzzle(ply: number): PuzzleRow {
+  return { ...puzzleRowFixture('mate-one'), sourceGameId: 'game:home', sourcePly: ply };
+}
+
+/** Write a legitimate first-try solve for `puzzleId` in 3 distinct cycles. */
+async function masterPuzzle(puzzleId: string): Promise<void> {
+  for (const row of legitimateFirstTryRows(puzzleId, ['c1', 'c2', 'c3'])) {
+    await attemptsRepository.addAttempt(row);
+  }
 }
 
 describe('TrainingHomePage', () => {
@@ -136,5 +154,63 @@ describe('TrainingHomePage', () => {
     // Every essential action is a labelled control.
     expect(screen.getByTestId('training-new-set')).toHaveAccessibleName('New set');
     expect(screen.getByTestId('training-resume-link')).toHaveAccessibleName('Resume cycle');
+  });
+
+  it('seeds and shows both auto sets with an Auto badge and a refresh note', async () => {
+    await puzzlesRepository.addIfAbsent([poolPuzzle(6), poolPuzzle(8)]);
+
+    await renderHome();
+
+    const all = screen.getByTestId(`set-card-${AUTO_SET_ALL_ID}`);
+    expect(within(all).getByTestId(`set-card-badge-${AUTO_SET_ALL_ID}`)).toHaveTextContent('Auto');
+    expect(within(all).getByTestId(`set-card-note-${AUTO_SET_ALL_ID}`)).toHaveTextContent(
+      /refreshes each cycle/i,
+    );
+    expect(within(all).getByTestId(`set-card-count-${AUTO_SET_ALL_ID}`)).toHaveTextContent(
+      '2 puzzles',
+    );
+
+    const random = screen.getByTestId(`set-card-${AUTO_SET_RANDOM_ID}`);
+    expect(within(random).getByTestId(`set-card-badge-${AUTO_SET_RANDOM_ID}`)).toHaveTextContent(
+      'Auto',
+    );
+    expect(within(random).getByTestId(`set-card-count-${AUTO_SET_RANDOM_ID}`)).toHaveTextContent(
+      '2 puzzles',
+    );
+  });
+
+  it('shows the derived auto-set count as the pool minus mastered puzzles', async () => {
+    const [first, second] = [poolPuzzle(6), poolPuzzle(8)];
+    await puzzlesRepository.addIfAbsent([first, second]);
+    await masterPuzzle(puzzleIdOf(first.sourceGameId, first.sourcePly));
+
+    await renderHome();
+
+    expect(screen.getByTestId(`set-card-count-${AUTO_SET_ALL_ID}`)).toHaveTextContent('1 puzzle');
+    expect(screen.getByTestId(`set-card-count-${AUTO_SET_RANDOM_ID}`)).toHaveTextContent(
+      '1 puzzle',
+    );
+  });
+
+  it('states a fully-mastered auto set in words, never a bare zero', async () => {
+    const only = poolPuzzle(6);
+    await puzzlesRepository.addIfAbsent([only]);
+    await masterPuzzle(puzzleIdOf(only.sourceGameId, only.sourcePly));
+
+    await renderHome();
+
+    const count = screen.getByTestId(`set-card-count-${AUTO_SET_ALL_ID}`);
+    expect(count).toHaveTextContent('All puzzles mastered');
+    expect(count).not.toHaveTextContent('0');
+  });
+
+  it('links to the read-only mastered puzzles list', async () => {
+    await renderHome();
+
+    expect(screen.getByTestId('training-mastered-link')).toHaveAttribute(
+      'href',
+      '/puzzles/mastered',
+    );
+    expect(screen.getByTestId('training-mastered-link')).toHaveAccessibleName('Mastered puzzles');
   });
 });

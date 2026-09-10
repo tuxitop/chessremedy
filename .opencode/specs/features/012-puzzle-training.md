@@ -147,7 +147,10 @@ redesign). Required capabilities on the solving screen:
   revealed hint content and returns the board to the puzzle start; it does
   not end the presentation, does not reset the wrong-move count, hint
   counters or the solving clock, and does not create a new attempt. It
-  appears once the user has started playing (a move or a hint);
+  **increments the presentation's restart count**, so a later clean solve is
+  recorded `solvedWithHelp`, never `solvedFirstTry` (restart disqualifies a
+  first-try credit). It appears once the user has started playing (a move or
+  a hint);
 - **hint** — requests the next hint level (see Hints). Hints never fail
   the puzzle and a second press does not fail it either;
 - **view solution** (= give up) — ends the presentation with result
@@ -299,11 +302,17 @@ domain result (`domain/tactical-training.md`):
 
 | Trigger | Result on the attempt row |
 | --- | --- |
-| solved with no hint and no wrong move | `solvedFirstTry` |
-| solved after any hint (no wrong move) | `solvedWithHelp` |
+| solved with no hint, no wrong move and no restart | `solvedFirstTry` |
+| solved after any hint and/or a restart (no wrong move) | `solvedWithHelp` |
 | first wrong move (presentation stays open) | `failed` — recorded at the moment of the wrong move |
 | gave up / revealed the solution | `failed` |
 | explicitly skipped (result shows only on **skip**) | `skipped` |
+
+A restart is presentation-scoped and clears the played line (and any revealed
+hint content) but not the counters or the clock; it increments the
+presentation's `restartCount`, which is recorded on the attempt row. A solve
+after a restart therefore records `solvedWithHelp`, never `solvedFirstTry`,
+even with no hint and no wrong move.
 
 A first wrong move records its `failed` row immediately (see Wrong
 moves); the later finish of that same presentation (solve-after-fail,
@@ -388,11 +397,13 @@ Additive persistence only; no change to the immutable `puzzles` table
     `presentationIndex`, `startedAt`, `endedAt`, `result`
     (`solvedFirstTry`/`solvedWithHelp`/`failed`/`skipped`), solving time
     (ms), wrong-move count (the domain's "number of attempts"), hint
-    count, highest hint level reached, `solved` boolean — plus the
+    count, highest hint level reached, restart count (plain, unindexed;
+    absent on legacy rows reads as `0`), `solved` boolean — plus the
     puzzle's `puzzleGeneratorVersion`/`origin` copied at write time so
     rows stay interpretable after generator advances (ARCHITECTURE §9).
-    Exact Dexie schema/index details are an implementation detail of the
-    joint Feature-012/013 schema milestone.
+    The restart count is a plain field with no new index, so the additive
+    schema is unchanged. Exact Dexie schema/index details are an
+    implementation detail of the joint Feature-012/013 schema milestone.
 - **Ownership & deletion cascade** (ARCHITECTURE §7,
   `domain/puzzle-model.md`, `domain/game-library.md` §8): attempts are
   game-owned through their puzzle. Deleting a game deletes its puzzles
@@ -528,10 +539,12 @@ the outcome unrecorded (never silently dropped).
    subsequent user moves in order, and completes when the branch's user
    tokens are exhausted; an accepted alternative without a stored
    continuation completes the puzzle on that first move.
-4. A clean solve records `solvedFirstTry`; a solve after a hint and/or a
-   wrong move records `solvedWithHelp` (with hint count/highest level);
-   give-up records `failed`; skip records `skipped`; leaving the session
-   mid-presentation records nothing and leaves the puzzle unanswered.
+4. A clean solve (no hint, no wrong move, no restart) records
+   `solvedFirstTry`; a solve after a hint and/or a restart records
+   `solvedWithHelp` (with hint count/highest level/restart count); a wrong
+   move records `failed` immediately; give-up records `failed`; skip records
+   `skipped`; leaving the session mid-presentation records nothing and leaves
+   the puzzle unanswered.
 5. Each outcome writes exactly one immutable `puzzleAttempts` row keyed
    `[cycleId, puzzleId, presentationIndex]` with result, solving time,
    wrong-move count, hints and solved flag; a re-presentation of the same
@@ -576,8 +589,8 @@ the outcome unrecorded (never silently dropped).
   matching on multi-move lines; terminal accepted alternatives;
   promotion/castling UCI comparison; wrong-move rejection and counting;
   hint-level gating (availability/threshold, first-move only, stop at
-  level 4); outcome derivation per trigger (clean solve / hint / wrong
-  move / give-up / skip / discard-on-exit).
+  level 4); outcome derivation per trigger (clean solve / hint / restart /
+  wrong move / give-up / skip / discard-on-exit).
 - **Repository (infrastructure):** `puzzleAttempts` natural-key put,
   per-cycle/per-puzzle listing, idempotent presentation-index behavior,
   immutability, and cascade deletion with the game (and with

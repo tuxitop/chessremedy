@@ -21,8 +21,10 @@ export type HintLevel = 1 | 2 | 3 | 4;
  * Result of one puzzle presentation on the attempt row
  * (`domain/tactical-training.md`).
  *
- * - `solvedFirstTry` — solved on the first attempt without any hint;
- * - `solvedWithHelp` — solved using a hint and/or after a wrong move (a retry);
+ * - `solvedFirstTry` — solved on the first attempt without any hint, wrong
+ *   move or restart;
+ * - `solvedWithHelp` — solved using a hint and/or after a restart (with no
+ *   wrong move);
  * - `failed` — gave up / revealed the solution;
  * - `skipped` — left without solving (the result shows only on an explicit
  *   skip; never in any accuracy denominator).
@@ -65,12 +67,16 @@ export interface SessionPuzzleContext {
  * The presentation counters recorded on an attempt row. `wrongMoveCount` is
  * the domain's "number of attempts (wrong moves / retries within this puzzle)"
  * per `domain/tactical-training.md` (plan R-5); `hintCount`/`highestHintLevel`
- * record hint *use* only — hint content is never persisted (spec Hints).
+ * record hint *use* only — hint content is never persisted (spec Hints);
+ * `restartCount` records presentation-scoped restarts and disqualifies a clean
+ * first-try solve (a restart resets the clean line). It is optional so
+ * pre-restart callers/fixtures stay valid; an absent value reads as `0`.
  */
 export interface PresentationCounters {
   readonly wrongMoveCount: number;
   readonly hintCount: number;
   readonly highestHintLevel: HintLevel | null;
+  readonly restartCount?: number;
 }
 
 /**
@@ -105,6 +111,8 @@ export interface PuzzleAttemptRow {
   readonly hintCount: number;
   /** Highest hint level reached this presentation, or `null` when none used. */
   readonly highestHintLevel: HintLevel | null;
+  /** Presentation restarts; `0` on new rows (absent on legacy rows → `0`). */
+  readonly restartCount: number;
   /** True when the presentation ended solved (`solvedFirstTry`/`solvedWithHelp`). */
   readonly solved: boolean;
   /** Copied from the puzzle at write time (ARCHITECTURE §9). */
@@ -125,6 +133,7 @@ export interface PresentationOutcome {
   readonly wrongMoveCount: number;
   readonly hintCount: number;
   readonly highestHintLevel: HintLevel | null;
+  readonly restartCount: number;
   readonly solved: boolean;
   /** The immutable attempt row written for this presentation outcome. */
   readonly attemptRow: PuzzleAttemptRow;

@@ -118,6 +118,9 @@ export function SetEditorPage({
   const [loading, setLoading] = useState(editingSetId !== null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A system-managed auto set must never appear in the editable form, even via
+  // a hand-typed `?setId=`; the service would reject every edit anyway.
+  const [editingAuto, setEditingAuto] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +160,12 @@ export function SetEditorPage({
         }
         if (set === undefined) {
           setError('That set no longer exists.');
+          setLoading(false);
+          return;
+        }
+        if (set.source.kind === 'auto') {
+          setEditingAuto(true);
+          setName(set.name);
           setLoading(false);
           return;
         }
@@ -364,6 +373,35 @@ export function SetEditorPage({
         <p className={styles.state} data-testid="set-editor-loading">
           Loading set…
         </p>
+      </div>
+    );
+  }
+
+  if (editingSetId !== null && editingAuto) {
+    return (
+      <div className={styles.page} data-testid="set-editor">
+        <header className={styles.header}>
+          <div>
+            <Link className={styles.backLink} to={ROUTES.puzzles} data-testid="set-editor-back">
+              ← Training
+            </Link>
+            <h1 className={styles.heading}>Auto set</h1>
+          </div>
+        </header>
+        <section className={styles.statePanel} data-testid="set-editor-auto">
+          <h2 className={styles.sectionTitle}>This set is system-managed</h2>
+          <p className={styles.state}>
+            Auto sets cannot be renamed or reconfigured. Their puzzles are derived from your pool
+            and refresh at each cycle start.
+          </p>
+          <Link
+            className={styles.primaryLink}
+            to={puzzlesSetPath(editingSetId)}
+            data-testid="set-editor-auto-view"
+          >
+            View set
+          </Link>
+        </section>
       </div>
     );
   }

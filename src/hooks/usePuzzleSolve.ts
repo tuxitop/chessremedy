@@ -74,6 +74,7 @@ export interface PuzzleSolveController {
   readonly wrongMoveCount: number;
   readonly hintCount: number;
   readonly highestHintLevel: HintLevel | null;
+  readonly restartCount: number;
   readonly revealedHintLevels: readonly HintLevel[];
   /** Wall-clock solving time since `startedAt` (restart keeps the clock). */
   readonly elapsedMs: number;
@@ -95,7 +96,7 @@ export interface PuzzleSolveController {
   playBoardMove(from: string, to: string, promotion?: 'q' | 'r' | 'b' | 'n'): MoveSubmission;
   /** Advance one hint level per press. */
   revealHint(): void;
-  /** Presentation-scoped restart: clears line + hint content, keeps counters/clock. */
+  /** Presentation-scoped restart: clears line + hint content, keeps counters/clock, increments restartCount. */
   restart(): void;
   /** End the presentation with result `skipped`. */
   skip(): void;
@@ -148,6 +149,7 @@ function countersOf(state: PresentationState): PresentationCounters {
     wrongMoveCount: state.wrongMoveCount,
     hintCount: state.hintCount,
     highestHintLevel: state.highestHintLevel,
+    restartCount: state.restartCount,
   };
 }
 
@@ -483,6 +485,7 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
     wrongMoveCount: presentation?.wrongMoveCount ?? 0,
     hintCount: presentation?.hintCount ?? 0,
     highestHintLevel: presentation?.highestHintLevel ?? null,
+    restartCount: presentation?.restartCount ?? 0,
     revealedHintLevels: presentation?.revealedHintLevels ?? [],
     elapsedMs,
     lastWrongUci,

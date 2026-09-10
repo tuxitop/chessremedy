@@ -6,6 +6,7 @@ import { HomePage } from '@/pages/HomePage';
 import { GamesPage } from '@/pages/GamesPage';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { TrainingHomePage } from '@/pages/TrainingHomePage';
+import { MasteredPuzzlesPage } from '@/pages/MasteredPuzzlesPage';
 import { SetEditorPage } from '@/pages/SetEditorPage';
 import { SetDetailPage } from '@/pages/SetDetailPage';
 import { CycleResultsPage } from '@/pages/CycleResultsPage';
@@ -81,6 +82,7 @@ export const router = createBrowserRouter([
       },
       { path: 'puzzles', element: <TrainingHomePage /> },
       { path: 'puzzles/new', element: <SetEditorPage /> },
+      { path: 'puzzles/mastered', element: <MasteredPuzzlesPage /> },
       { path: 'puzzles/sets/:setId', element: <SetDetailPage /> },
       {
         path: 'puzzles/sets/:setId/cycles/:cycleNumber',

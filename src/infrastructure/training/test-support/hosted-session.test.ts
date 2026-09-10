@@ -88,6 +88,10 @@ class FakeAttemptsRepository implements PuzzleAttemptsRepository {
     return Promise.resolve([...this.rows.values()].filter((row) => row.puzzleId === puzzleId));
   }
 
+  listAll(): Promise<PuzzleAttemptRow[]> {
+    return Promise.resolve([...this.rows.values()]);
+  }
+
   listForCycleAndPuzzle(cycleId: string, puzzleId: string): Promise<PuzzleAttemptRow[]> {
     return Promise.resolve(
       [...this.rows.values()].filter((row) => row.cycleId === cycleId && row.puzzleId === puzzleId),
@@ -162,6 +166,7 @@ describe('hosted-session harness', () => {
       expect(solved.finalization.outcome.solvingTimeMs).toBe(3_000);
       expect(solved.finalization.outcome.wrongMoveCount).toBe(0);
       expect(solved.finalization.outcome.hintCount).toBe(0);
+      expect(solved.finalization.outcome.restartCount).toBe(0);
     }
     expect(presentation.statusView).toBe('ended');
 
@@ -169,9 +174,45 @@ describe('hosted-session harness', () => {
     const stored = await attempts.getAttempt('fixture:cycle', puzzleId(MATE_TWO), 1);
     expect(stored?.result).toBe('solvedFirstTry');
     expect(stored?.solved).toBe(true);
+    expect(stored?.restartCount).toBe(0);
     expect(stored?.startedAt).toBe(PUZZLE_FIXTURE_NOW);
     expect(host.remaining).toBe(0);
     expect(host.activePresentation).toBeNull();
+  });
+
+  it('restart disqualifies a later clean solve: solvedWithHelp and restartCount persisted', async () => {
+    const attempts = new FakeAttemptsRepository();
+    const host = new HostedSession({
+      cycleId: 'fixture:cycle',
+      rows: [MATE_TWO],
+      config: solveConfigFixture(),
+      attempts,
+      retryFailed: 'none',
+    });
+
+    const presentation = begin(host);
+    const first = expectMove(await presentation.play(MATE_TWO_FIRST));
+    expect(first.kind).toBe('accepted');
+
+    const restarted = presentation.restart();
+    expect(restarted.ok).toBe(true);
+    expect(presentation.solveState.restartCount).toBe(1);
+
+    // A clean line after the restart (no hint, no wrong move) still derives
+    // solvedWithHelp — a restart disqualifies a first-try credit.
+    expectMove(await presentation.play(MATE_TWO_FIRST));
+    const solved = await presentation.play(MATE_TWO_LAST);
+    expect(solved.kind).toBe('solved');
+    if (solved.kind === 'solved') {
+      expect(solved.finalization.outcome.result).toBe('solvedWithHelp');
+      expect(solved.finalization.outcome.restartCount).toBe(1);
+      expect(solved.finalization.outcome.hintCount).toBe(0);
+      expect(solved.finalization.outcome.wrongMoveCount).toBe(0);
+    }
+
+    const stored = await attempts.getAttempt('fixture:cycle', puzzleId(MATE_TWO), 1);
+    expect(stored?.result).toBe('solvedWithHelp');
+    expect(stored?.restartCount).toBe(1);
   });
 
   it('records failed on give-up and skipped on skip (single-pass mode)', async () => {

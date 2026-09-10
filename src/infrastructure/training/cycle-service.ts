@@ -25,6 +25,8 @@
 
 import {
   computeCycleMetrics,
+  deriveAutoSetMembership,
+  masteredPuzzleIds,
   nextCycleNumber,
   reconstructResume,
   resolvePuzzleCycle,
@@ -33,6 +35,7 @@ import {
   type CycleMetrics,
   type CycleResolution,
   type ResumeQueue,
+  type TacticalTrainingSetRow,
   type TrainingCycleRow,
   type TrainingCycleStatus,
 } from '@/domain/training';
@@ -61,6 +64,15 @@ export interface CycleEmptySet {
   readonly reason: 'empty-set';
 }
 
+/**
+ * An auto set's derived membership is empty because every pool puzzle is
+ * mastered; cycle start is blocked (never a fake count or an empty cycle).
+ */
+export interface CycleAllMastered {
+  readonly ok: false;
+  readonly reason: 'all-mastered';
+}
+
 /** The cycle is already terminal and cannot be started/resumed/abandoned. */
 export interface CycleNotResumable {
   readonly ok: false;
@@ -85,6 +97,7 @@ export type CycleStartResult =
     }
   | CycleNotFound
   | CycleEmptySet
+  | CycleAllMastered
   | CycleInvalidConfig;
 
 /** Result of `resume`: the reconstructed queue and completion state. */
@@ -165,6 +178,13 @@ export class CycleService {
    * Start a new cycle over a set: snapshot the stored membership and validated
    * config under the next 1-based cycle number. Rejected with `empty-set` when
    * the set has no surviving puzzle row (no empty cycle is created).
+   *
+   * An **auto** set's membership is virtual: it is re-derived here from the
+   * current puzzle pool minus the derived mastery, persisted back onto the set
+   * (so the training home's derived count is fresh) and snapshotted onto the
+   * cycle. A derived-empty auto set is blocked as `empty-set` (no pool) or
+   * `all-mastered` (every pool puzzle mastered); an existing in-progress cycle
+   * is never touched. Game/pool/manual sets keep their stored membership.
    */
   async start(setId: string): Promise<CycleStartResult> {
     const set = await this.sets.get(setId);
@@ -175,8 +195,16 @@ export class CycleService {
     if (!check.ok) {
       return { ok: false, reason: 'invalid-config', message: check.message };
     }
-    const missingPuzzleIds = await this.missingPuzzleIdsFor(set.puzzleIds);
-    if (missingPuzzleIds.length === set.puzzleIds.length) {
+    const membership = await this.resolveStartMembership(set);
+    if (membership.kind === 'empty') {
+      return { ok: false, reason: 'empty-set' };
+    }
+    if (membership.kind === 'all-mastered') {
+      return { ok: false, reason: 'all-mastered' };
+    }
+    const puzzleIds = membership.puzzleIds;
+    const missingPuzzleIds = await this.missingPuzzleIdsFor(puzzleIds);
+    if (missingPuzzleIds.length === puzzleIds.length) {
       return { ok: false, reason: 'empty-set' };
     }
     const existing = await this.cycles.listForSet(setId);
@@ -185,12 +213,44 @@ export class CycleService {
       id: this.newId(),
       set,
       cycleNumber,
-      puzzleIds: set.puzzleIds,
+      puzzleIds,
       config: check.config,
       now: this.now(),
     });
     await this.cycles.create(cycle);
     return { ok: true, cycle, missingPuzzleIds };
+  }
+
+  /**
+   * Resolve the membership to snapshot at cycle start. Game/pool/manual sets
+   * return their stored membership unchanged. An auto set re-derives from the
+   * current pool + mastery, persists the refreshed ids on the set, and reports
+   * a derived-empty pool as `empty` (no puzzles) or `all-mastered` (pool
+   * non-empty but every puzzle mastered).
+   */
+  private async resolveStartMembership(
+    set: TacticalTrainingSetRow,
+  ): Promise<
+    | { readonly kind: 'ready'; readonly puzzleIds: readonly string[] }
+    | { readonly kind: 'empty' }
+    | { readonly kind: 'all-mastered' }
+  > {
+    if (set.source.kind !== 'auto') {
+      return { kind: 'ready', puzzleIds: set.puzzleIds };
+    }
+    const [pool, attempts] = await Promise.all([this.puzzles.listAll(), this.attempts.listAll()]);
+    const masteredIds = masteredPuzzleIds(attempts);
+    const puzzleIds = deriveAutoSetMembership({
+      recipe: set.source.recipe,
+      pool,
+      masteredIds,
+      setId: set.id,
+    });
+    await this.sets.update(set.id, { puzzleIds });
+    if (puzzleIds.length > 0) {
+      return { kind: 'ready', puzzleIds };
+    }
+    return pool.length === 0 ? { kind: 'empty' } : { kind: 'all-mastered' };
   }
 
   /**

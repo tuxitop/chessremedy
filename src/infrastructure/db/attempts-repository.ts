@@ -58,6 +58,13 @@ export interface PuzzleAttemptsRepository {
   /** Every attempt of one puzzle, ordered by `cycleId` then `presentationIndex`. */
   listForPuzzle(puzzleId: string): Promise<PuzzleAttemptRow[]>;
   /**
+   * Every persisted attempt, ordered by `cycleId` then `puzzleId` then
+   * `presentationIndex` (the mastery read — one bounded batched pass over the
+   * table, grouped by the caller; Feature 013 §"Repositories"). No index or
+   * schema change.
+   */
+  listAll(): Promise<PuzzleAttemptRow[]>;
+  /**
    * Every attempt of one puzzle within one cycle, ordered by
    * `presentationIndex` ascending — Feature-013's retry-pass/metrics read (the
    * first presentation is `presentationIndex === 1`).
@@ -110,6 +117,11 @@ export class DexiePuzzleAttemptsRepository implements PuzzleAttemptsRepository {
 
   async listForPuzzle(puzzleId: string): Promise<PuzzleAttemptRow[]> {
     const rows = await this.database.puzzleAttempts.where('puzzleId').equals(puzzleId).toArray();
+    return rows.sort(compareAttemptRows);
+  }
+
+  async listAll(): Promise<PuzzleAttemptRow[]> {
+    const rows = await this.database.puzzleAttempts.toArray();
     return rows.sort(compareAttemptRows);
   }
 

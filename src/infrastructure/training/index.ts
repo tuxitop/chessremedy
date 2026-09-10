@@ -25,12 +25,14 @@ export type { AttemptWriteResult, RecordAttemptInput } from './attempts-service'
 // configure/archive/delete it. Typed results; never throws for expected states.
 export { TrainingSetsService } from './training-sets-service';
 export type {
+  AutoSetImmutable,
   CreateSetFromGameInput,
   CreateSetFromPoolInput,
   CreateSetManualInput,
   CreateSetResult,
   CreateSetSuccess,
   InvalidSetConfig,
+  SetDeleteResult,
   SetMutationResult,
   SetNotFound,
   TrainingSetsServiceOptions,
@@ -41,6 +43,7 @@ export type {
 export { CycleService } from './cycle-service';
 export type {
   CycleAbandonResult,
+  CycleAllMastered,
   CycleComparisonInput,
   CycleEmptySet,
   CycleInvalidConfig,

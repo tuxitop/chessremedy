@@ -16,7 +16,7 @@ import type { PuzzleRow } from '@/domain/puzzle';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { DEFAULT_CYCLE_CONFIG } from '@/domain/training';
-import { setFixture } from '@/domain/training/test-support';
+import { cycleFixture, setFixture } from '@/domain/training/test-support';
 import { db } from '@/infrastructure/db/database';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
@@ -274,5 +274,46 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     } finally {
       window.matchMedia = originalMatchMedia;
     }
+  });
+
+  it('surfaces an all-mastered resume notice without crashing', async () => {
+    await trainingSetsRepository.create(
+      setFixture({
+        id: SET_ID,
+        name: 'Auto set',
+        source: { kind: 'auto', recipe: { kind: 'allPuzzles' } },
+        puzzleIds: [],
+      }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle-empty',
+        trainingSetId: SET_ID,
+        cycleNumber: 1,
+        puzzleIds: [],
+      }),
+    );
+    const fakeService = {
+      resume: async () => ({ ok: false, reason: 'all-mastered' }),
+    } as unknown as CycleService;
+
+    renderWithProviders(
+      <Routes>
+        <Route
+          path="/puzzles/sets/:setId/cycles/:cycleNumber"
+          element={<CycleSessionPage cycleService={fakeService} now={() => NOW} />}
+        />
+        <Route
+          path="/puzzles/sets/:setId/cycles/:cycleNumber/results"
+          element={<div data-testid="cycle-results-stub" />}
+        />
+        <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
+      </Routes>,
+      { initialEntries: [`/puzzles/sets/${SET_ID}/cycles/1`] },
+    );
+
+    await screen.findByTestId('cycle-session-notice');
+    expect(screen.getByTestId('cycle-session-notice')).toHaveTextContent(/mastered/i);
+    expect(screen.getByTestId('cycle-session')).toBeInTheDocument();
   });
 });

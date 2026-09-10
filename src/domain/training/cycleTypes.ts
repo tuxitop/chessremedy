@@ -82,13 +82,32 @@ export interface PuzzlePoolFilters {
 }
 
 /**
+ * The system-seeded auto-set recipe. The recipe defines the deterministic
+ * selection over the unmastered puzzle pool; it is stored in the set's
+ * `source` and is not user-editable in V1.
+ *
+ * - `allPuzzles` — every unmastered pool puzzle;
+ * - `woodpeckerRandom` — a deterministic `size`-puzzle subset of the unmastered
+ *   pool (V1 `size = 200`), ranked by a stable hash of `setId + "\u0000" +
+ *   puzzleId`.
+ */
+export type AutoSetRecipe =
+  { readonly kind: 'allPuzzles' } | { readonly kind: 'woodpeckerRandom'; readonly size: number };
+
+/**
  * Provenance of a set's membership. Display/provenance only — the
- * authoritative membership is the set's stored `puzzleIds`.
+ * authoritative membership is the set's stored `puzzleIds` for game/pool/manual
+ * sets and the per-cycle derived membership for `auto` sets.
+ *
+ * An `auto` source carries the system-seeded recipe; its membership is virtual
+ * (re-derived from the pool and mastery at each cycle start), so its stored
+ * `puzzleIds` is empty and non-authoritative (spec §3a).
  */
 export type SetSource =
   | { readonly kind: 'game'; readonly gameId: string }
   | { readonly kind: 'pool'; readonly filters: PuzzlePoolFilters }
-  | { readonly kind: 'manual' };
+  | { readonly kind: 'manual' }
+  | { readonly kind: 'auto'; readonly recipe: AutoSetRecipe };
 
 /**
  * One puzzle in the pool view: the immutable row plus the source game's
@@ -111,11 +130,19 @@ export interface TacticalTrainingSetRow {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly status: TrainingSetStatus;
-  /** Provenance/display only; `puzzleIds` is authoritative. */
+  /**
+   * Provenance/recipe. For game/pool/manual sets it is display only and
+   * `puzzleIds` is authoritative; for `auto` sets it carries the recipe and the
+   * membership is derived per cycle.
+   */
   readonly source: SetSource;
-  /** Resolved membership, in the set's base order. */
+  /**
+   * Resolved membership, in the set's base order. Authoritative for
+   * game/pool/manual sets; empty and non-authoritative for `auto` sets (whose
+   * membership is derived at each cycle start).
+   */
   readonly puzzleIds: readonly string[];
-  /** Creation target/cap (default 10); not a hard runtime limit. */
+  /** Creation target/cap (default 10); ignored for `auto` sets (the recipe caps). */
   readonly targetSize: number;
   /** Current config; snapshotted onto each cycle at start. */
   readonly config: CycleConfig;

@@ -2,9 +2,9 @@
  * Feature 012 — outcome derivation and attempt-row building (domain, pure).
  *
  * Maps a definite presentation outcome to the spec's Outcomes table: a clean
- * solve records `solvedFirstTry`, a solve after any hint records
- * `solvedWithHelp`, and give-up/show-solution records `failed`. A wrong move
- * is its own outcome (owner UX ruling): one wrong move fails the puzzle
+ * solve records `solvedFirstTry`, a solve after any hint and/or a restart
+ * records `solvedWithHelp`, and give-up/show-solution records `failed`. A wrong
+ * move is its own outcome (owner UX ruling): one wrong move fails the puzzle
  * **immediately** — a `wrongMove` trigger derives `failed` so the host can
  * record the failed attempt the moment it happens while the presentation stays
  * open for the user to keep finding the correct move. An explicit skip records
@@ -44,19 +44,23 @@ export type OutcomeTrigger = 'solved' | 'wrongMove' | 'gaveUp' | 'skip';
  * Result for an outcome trigger given the presentation's counters, per the
  * spec Outcomes table and the owner wrong-move ruling:
  *
- * - `solved` with no hint and no wrong move → `solvedFirstTry`;
- * - `solved` after any hint → `solvedWithHelp` (a clean line, never a wrong
- *   move — one wrong move already failed the presentation);
+ * - `solved` with no hint, no wrong move and no restart → `solvedFirstTry`;
+ * - `solved` after any hint and/or a restart → `solvedWithHelp` (a clean line,
+ *   never a wrong move — one wrong move already failed the presentation);
  * - `wrongMove` → `failed` (recorded immediately, presentation stays open);
  * - `gaveUp` (revealed the solution) → `failed`;
  * - `skip` → `skipped`.
+ *
+ * `restartCount` is read defensively as `?? 0` so pre-restart counters and
+ * legacy rows stay valid.
  */
 export function deriveResult(
   trigger: OutcomeTrigger,
   counters: PresentationCounters,
 ): PuzzleAttemptRow['result'] {
   if (trigger === 'solved') {
-    return counters.hintCount === 0 && counters.wrongMoveCount === 0
+    const restartCount = counters.restartCount ?? 0;
+    return counters.hintCount === 0 && counters.wrongMoveCount === 0 && restartCount === 0
       ? 'solvedFirstTry'
       : 'solvedWithHelp';
   }
@@ -104,6 +108,7 @@ export function buildAttemptRow(input: BuildAttemptRowInput): PuzzleAttemptRow {
     wrongMoveCount: counters.wrongMoveCount,
     hintCount: counters.hintCount,
     highestHintLevel: counters.highestHintLevel,
+    restartCount: counters.restartCount ?? 0,
     solved: trigger === 'solved',
     puzzleGeneratorVersion: row.puzzleGeneratorVersion,
     origin: row.origin ?? 'tactical',
@@ -121,6 +126,7 @@ export function presentationOutcomeOf(attemptRow: PuzzleAttemptRow): Presentatio
     wrongMoveCount: attemptRow.wrongMoveCount,
     hintCount: attemptRow.hintCount,
     highestHintLevel: attemptRow.highestHintLevel,
+    restartCount: attemptRow.restartCount ?? 0,
     solved: attemptRow.solved,
     attemptRow,
   };

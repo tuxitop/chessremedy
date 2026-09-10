@@ -18,6 +18,8 @@ import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import type { PuzzleRow } from '@/domain/puzzle/types';
+import { AUTO_SET_ALL_ID, AUTO_SET_RANDOM_ID, DEFAULT_CYCLE_CONFIG } from '@/domain/training';
+import { legitimateFirstTryRows } from '@/domain/training/test-support';
 import { TrainingSetsService } from './training-sets-service';
 
 const NOW = 1_700_000_000_000;
@@ -38,6 +40,13 @@ function makeService(): TrainingSetsService {
 /** A game-scoped puzzle row (the base fixture with overridden provenance). */
 function gamePuzzle(gameId: string, ply: number, overrides: Partial<PuzzleRow> = {}): PuzzleRow {
   return { ...puzzleRowFixture('mate-one'), sourceGameId: gameId, sourcePly: ply, ...overrides };
+}
+
+/** Persist three clean first-try rows (three distinct cycles) for one puzzle. */
+async function masterPuzzle(puzzleId: string): Promise<void> {
+  for (const row of legitimateFirstTryRows(puzzleId, ['cycle:1', 'cycle:2', 'cycle:3'])) {
+    await attemptsRepository.addAttempt(row);
+  }
 }
 
 describe('TrainingSetsService', () => {
@@ -214,5 +223,95 @@ describe('TrainingSetsService', () => {
 
     const stored = await trainingSetsRepository.get(created.set.id);
     expect(stored?.config).toEqual(created.set.config);
+  });
+
+  it('ensureAutoSets seeds both auto sets idempotently with derived membership', async () => {
+    await puzzlesRepository.addIfAbsent([
+      gamePuzzle('game:auto', 6, { difficulty: 30 }),
+      gamePuzzle('game:auto', 8, { difficulty: 10 }),
+    ]);
+    const service = makeService();
+    await service.ensureAutoSets();
+
+    const all = await trainingSetsRepository.get(AUTO_SET_ALL_ID);
+    expect(all?.name).toBe('All puzzles');
+    expect(all?.status).toBe('active');
+    expect(all?.source).toEqual({ kind: 'auto', recipe: { kind: 'allPuzzles' } });
+    expect(all?.config.targetAccuracy).toBe(1);
+    expect(all?.puzzleIds).toEqual(['game:auto:8', 'game:auto:6']);
+
+    const random = await trainingSetsRepository.get(AUTO_SET_RANDOM_ID);
+    expect(random?.name).toBe('Woodpecker random');
+    expect(random?.source).toEqual({
+      kind: 'auto',
+      recipe: { kind: 'woodpeckerRandom', size: 200 },
+    });
+    expect(random?.puzzleIds).toEqual(['game:auto:8', 'game:auto:6']);
+
+    // Idempotent and never overwriting: a tampered row survives a re-seed and
+    // no duplicate row is created.
+    await db.trainingSets.put({ ...all!, puzzleIds: ['tampered:1'] });
+    await service.ensureAutoSets();
+    expect((await trainingSetsRepository.get(AUTO_SET_ALL_ID))?.puzzleIds).toEqual(['tampered:1']);
+    expect(await db.trainingSets.count()).toBe(2);
+  });
+
+  it('ensureAutoSets excludes mastered puzzles from the initial membership', async () => {
+    await puzzlesRepository.addIfAbsent([
+      gamePuzzle('game:auto', 6, { difficulty: 10 }),
+      gamePuzzle('game:auto', 8, { difficulty: 20 }),
+    ]);
+    await masterPuzzle('game:auto:6');
+
+    await makeService().ensureAutoSets();
+
+    const all = await trainingSetsRepository.get(AUTO_SET_ALL_ID);
+    expect(all?.puzzleIds).toEqual(['game:auto:8']);
+  });
+
+  it('refuses every mutation of a system-managed auto set', async () => {
+    await makeService().ensureAutoSets();
+    const service = makeService();
+
+    expect(await service.rename(AUTO_SET_ALL_ID, 'Nope')).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.updateConfig(AUTO_SET_ALL_ID, DEFAULT_CYCLE_CONFIG)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.archive(AUTO_SET_ALL_ID)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.unarchive(AUTO_SET_RANDOM_ID)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+    expect(await service.delete(AUTO_SET_ALL_ID)).toEqual({
+      ok: false,
+      reason: 'auto-set-immutable',
+    });
+
+    const stored = await trainingSetsRepository.get(AUTO_SET_ALL_ID);
+    expect(stored?.name).toBe('All puzzles');
+    expect(stored?.status).toBe('active');
+  });
+
+  it('list returns the seeded auto sets alongside user sets', async () => {
+    await makeService().ensureAutoSets();
+    const created = await makeService().createFromGame({
+      gameId: 'game:list',
+      name: 'From game',
+      ordering: 'difficultyAsc',
+      targetSize: 10,
+    });
+    if (!created.ok) throw new Error('expected create to succeed');
+
+    const ids = (await makeService().list()).map((set) => set.id);
+    expect(ids).toContain(AUTO_SET_ALL_ID);
+    expect(ids).toContain(AUTO_SET_RANDOM_ID);
+    expect(ids).toContain(created.set.id);
   });
 });

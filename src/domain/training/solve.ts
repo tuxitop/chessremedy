@@ -62,6 +62,11 @@ export interface PresentationState {
   /** Highest hint level reached this presentation (never reset by restart). */
   readonly highestHintLevel: HintLevel | null;
   /**
+   * Presentation-scoped restarts. A restart clears the clean line, so a solve
+   * after one derives `solvedWithHelp`, never `solvedFirstTry`.
+   */
+  readonly restartCount: number;
+  /**
    * Hint levels whose content is currently revealed. Cleared by restart (the
    * reveal sequence then restarts from the configured first level); only the
    * counters above persist across a restart.
@@ -147,6 +152,7 @@ export function beginPresentation(row: PuzzleRow, now: number): PresentationBegi
       wrongMoveCount: 0,
       hintCount: 0,
       highestHintLevel: null,
+      restartCount: 0,
       revealedHintLevels: [],
     },
   };
@@ -273,13 +279,16 @@ export function applyMove(state: PresentationState, uci: string): PresentationMo
  * Restart does **not** end the presentation, does not reset the wrong-move
  * count, the hint counters or the solving clock, and does not create an
  * attempt (spec "restart"); the wrong-moves-tried memory is kept too (the
- * wrong-move counter it backs is not reset).
+ * wrong-move counter it backs is not reset). It **increments** `restartCount`
+ * so a later clean solve derives `solvedWithHelp` (restart disqualifies a
+ * first-try credit).
  */
 export function restartPresentation(state: PresentationState): PresentationState {
   return {
     ...state,
     line: [],
     revealedHintLevels: [],
+    restartCount: state.restartCount + 1,
   };
 }
 

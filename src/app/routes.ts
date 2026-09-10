@@ -7,6 +7,7 @@ export const ROUTES = {
   analysisLive: '/analysis/live',
   puzzles: '/puzzles',
   puzzlesNew: '/puzzles/new',
+  puzzlesMastered: '/puzzles/mastered',
   puzzlesSet: '/puzzles/sets/:setId',
   puzzlesCycle: '/puzzles/sets/:setId/cycles/:cycleNumber',
   puzzlesCycleResults: '/puzzles/sets/:setId/cycles/:cycleNumber/results',

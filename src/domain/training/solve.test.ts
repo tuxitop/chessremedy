@@ -90,6 +90,7 @@ describe('beginPresentation', () => {
     expect(state.wrongMoveCount).toBe(0);
     expect(state.hintCount).toBe(0);
     expect(state.highestHintLevel).toBeNull();
+    expect(state.restartCount).toBe(0);
     expect(state.revealedHintLevels).toEqual([]);
     expect(presentationSolved(state)).toBe(false);
   });
@@ -305,12 +306,25 @@ describe('restartPresentation', () => {
     expect(state.hintCount).toBe(1);
     expect(state.highestHintLevel).toBe(2);
     expect(state.startedAt).toBe(NOW);
+    expect(state.restartCount).toBe(1);
 
     // The board is back at the first decision point and solvable again.
     state = acceptedMove(state, 'b8b6');
     expect(presentationSolved(state)).toBe(false);
     state = acceptedMove(state, 'b6f2');
     expect(presentationSolved(state)).toBe(true);
+  });
+
+  it('increments restartCount on every restart (and never touches the other counters)', () => {
+    let state = beginState(puzzleRowFixture('mate-two'));
+    expect(state.restartCount).toBe(0);
+    state = restartPresentation(state);
+    expect(state.restartCount).toBe(1);
+    state = restartPresentation(state);
+    expect(state.restartCount).toBe(2);
+    expect(state.wrongMoveCount).toBe(0);
+    expect(state.hintCount).toBe(0);
+    expect(state.startedAt).toBe(NOW);
   });
 });
 

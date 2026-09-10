@@ -24,6 +24,7 @@ import { DETECTION_VERSION } from '@/domain/tactics';
 import type { PuzzleOrigin, PuzzleRow } from '@/domain/puzzle/types';
 import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle/types';
 import { buildAttemptRow, type OutcomeTrigger } from './outcome';
+import { AUTO_SET_ALL_ID, autoSetDefinitions } from './autoSet';
 import {
   CYCLE_METRICS_VERSION,
   DEFAULT_CYCLE_CONFIG,
@@ -210,7 +211,12 @@ export function attemptRowFixture(overrides: AttemptRowFixtureOverrides = {}): P
     row,
     context,
     trigger: overrides.trigger ?? 'solved',
-    counters: overrides.counters ?? { wrongMoveCount: 0, hintCount: 0, highestHintLevel: null },
+    counters: overrides.counters ?? {
+      wrongMoveCount: 0,
+      hintCount: 0,
+      highestHintLevel: null,
+      restartCount: 0,
+    },
     startedAt,
     endedAt: overrides.endedAt ?? startedAt + 5_000,
   });
@@ -303,6 +309,7 @@ export interface CycleAttemptFixtureOverrides {
   readonly wrongMoveCount?: number;
   readonly hintCount?: number;
   readonly highestHintLevel?: HintLevel | null;
+  readonly restartCount?: number;
   readonly solved?: boolean;
   readonly puzzleGeneratorVersion?: number;
   readonly origin?: PuzzleOrigin;
@@ -331,6 +338,7 @@ export function cycleAttemptFixture(
     wrongMoveCount: overrides.wrongMoveCount ?? (result === 'failed' ? 1 : 0),
     hintCount: overrides.hintCount ?? (result === 'solvedWithHelp' ? 1 : 0),
     highestHintLevel: overrides.highestHintLevel ?? (result === 'solvedWithHelp' ? 2 : null),
+    restartCount: overrides.restartCount ?? 0,
     solved: overrides.solved ?? (result === 'solvedFirstTry' || result === 'solvedWithHelp'),
     puzzleGeneratorVersion: overrides.puzzleGeneratorVersion ?? PUZZLE_GENERATOR_VERSION,
     origin: overrides.origin ?? 'tactical',
@@ -369,6 +377,7 @@ export interface AttemptRowsForCycleInput {
   readonly solvingTimes?: Readonly<Record<string, readonly number[]>>;
   readonly wrongMoves?: Readonly<Record<string, readonly number[]>>;
   readonly hints?: Readonly<Record<string, readonly number[]>>;
+  readonly restarts?: Readonly<Record<string, readonly number[]>>;
 }
 
 /**
@@ -388,6 +397,7 @@ export function attemptRowsForCycle(input: AttemptRowsForCycleInput): PuzzleAtte
       const solvingTimeMs = input.solvingTimes?.[puzzleId]?.[index] ?? 5_000;
       const wrongMoveCount = input.wrongMoves?.[puzzleId]?.[index];
       const hintCount = input.hints?.[puzzleId]?.[index];
+      const restartCount = input.restarts?.[puzzleId]?.[index];
       rows.push(
         cycleAttemptFixture({
           puzzleId,
@@ -399,10 +409,75 @@ export function attemptRowsForCycle(input: AttemptRowsForCycleInput): PuzzleAtte
           result,
           ...(wrongMoveCount === undefined ? {} : { wrongMoveCount }),
           ...(hintCount === undefined ? {} : { hintCount }),
+          ...(restartCount === undefined ? {} : { restartCount }),
         }),
       );
       offset += gap;
     }
   }
   return rows;
+}
+
+// --- Feature-013 auto-set/mastery fixtures ----------------------------------
+
+/**
+ * A deterministic auto-set row fixture tied to the real preset definitions.
+ * Defaults to the "All puzzles" set; pass `AUTO_SET_RANDOM_ID` for "Woodpecker
+ * random". The membership is empty (virtual), per the auto-set rule.
+ */
+export function autoSetFixture(
+  id: string = AUTO_SET_ALL_ID,
+  overrides: SetFixtureOverrides = {},
+): TacticalTrainingSetRow {
+  const definitions = autoSetDefinitions();
+  const definition = definitions.find((candidate) => candidate.id === id) ?? definitions[0]!;
+  return setFixture({
+    id: definition.id,
+    name: definition.name,
+    source: { kind: 'auto', recipe: definition.recipe },
+    config: definition.config,
+    puzzleIds: [],
+    ...overrides,
+  });
+}
+
+/**
+ * A synthetic pool row for auto-set derivation: provenance/difficulty only, all
+ * other fields copied from the `mate-one` fixture.
+ */
+export function autoPoolRowFixture(index: number, difficulty: number): PuzzleRow {
+  return {
+    ...puzzleRowFixture('mate-one'),
+    sourceGameId: `fixture:auto-${index}`,
+    sourcePly: index,
+    difficulty,
+  };
+}
+
+/**
+ * One clean first-try row for `puzzleId` in each supplied distinct cycle (a
+ * mastery-credit builder).
+ */
+export function legitimateFirstTryRows(
+  puzzleId: string,
+  cycleIds: readonly string[],
+): PuzzleAttemptRow[] {
+  return cycleIds.map((cycleId) =>
+    cycleAttemptFixture({
+      puzzleId,
+      cycleId,
+      presentationIndex: 1,
+      result: 'solvedFirstTry',
+    }),
+  );
+}
+
+/**
+ * A mastery attempt row fixture (defaults to a clean first-try presentation);
+ * override the result/counters to shape a disqualified row.
+ */
+export function masteryAttemptFixture(
+  overrides: CycleAttemptFixtureOverrides = {},
+): PuzzleAttemptRow {
+  return cycleAttemptFixture({ result: 'solvedFirstTry', presentationIndex: 1, ...overrides });
 }

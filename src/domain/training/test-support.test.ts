@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { walkLine } from '@/domain/tactics';
+import { puzzleIdOf } from '@/domain/puzzle/id';
 import {
   PUZZLE_FIXTURE_KINDS,
   PUZZLE_FIXTURE_NOW,
@@ -15,9 +16,13 @@ import {
   TRAINING_FIXTURE_KINDS,
   attemptRowFixture,
   attemptRowsForCycle,
+  autoPoolRowFixture,
+  autoSetFixture,
   cycleAttemptFixture,
   cycleContextFixture,
   cycleFixture,
+  legitimateFirstTryRows,
+  masteryAttemptFixture,
   poolEntryFixture,
   setFixture,
   solveConfigFixture,
@@ -26,6 +31,7 @@ import {
   trainingSupplementaryFixtures,
 } from './test-support';
 import { CYCLE_METRICS_VERSION, DEFAULT_CYCLE_CONFIG, DEFAULT_TARGET_SIZE } from './cycleTypes';
+import { AUTO_SET_ALL_ID, AUTO_SET_RANDOM_ID } from './autoSet';
 
 describe('supplementary training fixtures', () => {
   it('covers the presentation cases Feature-011 does not', () => {
@@ -150,6 +156,7 @@ describe('shared session fixtures', () => {
     expect(attempt.startedAt).toBe(PUZZLE_FIXTURE_NOW);
     expect(attempt.solvingTimeMs).toBe(5_000);
     expect(attempt.result).toBe('solvedFirstTry');
+    expect(attempt.restartCount).toBe(0);
   });
 });
 
@@ -208,7 +215,18 @@ describe('Feature-013 set/cycle fixtures', () => {
     });
   });
 
-  it('builds a deterministic enriched pool entry', () => {
+  it('defaults restartCount to 0 and honors an override', () => {
+    expect(cycleAttemptFixture({ puzzleId: 'p1' }).restartCount).toBe(0);
+    const restarted = cycleAttemptFixture({
+      puzzleId: 'p1',
+      result: 'solvedWithHelp',
+      restartCount: 2,
+    });
+    expect(restarted.restartCount).toBe(2);
+    expect(restarted.result).toBe('solvedWithHelp');
+  });
+
+  it('builds deterministic enriched pool entry', () => {
     expect(poolEntryFixture()).toMatchObject({
       puzzle: puzzleRowFixture('mate-one'),
       platform: 'lichess',
@@ -228,5 +246,58 @@ describe('Feature-013 set/cycle fixtures', () => {
       ['p2', 1],
     ]);
     expect(attemptRowsForCycle(input)).toEqual(built);
+  });
+
+  it('carries per-presentation restart counts into cycle rows', () => {
+    const built = attemptRowsForCycle({
+      puzzleIds: ['p1'],
+      results: { p1: ['solvedWithHelp'] },
+      restarts: { p1: [1] },
+    });
+    expect(built).toHaveLength(1);
+    expect(built[0]?.restartCount).toBe(1);
+    expect(built[0]?.result).toBe('solvedWithHelp');
+  });
+});
+
+describe('Feature-013 auto-set/mastery fixtures', () => {
+  it('builds an auto-set fixture tied to the real presets', () => {
+    const all = autoSetFixture();
+    expect(all.id).toBe(AUTO_SET_ALL_ID);
+    expect(all.name).toBe('All puzzles');
+    expect(all.source).toEqual({ kind: 'auto', recipe: { kind: 'allPuzzles' } });
+    expect(all.puzzleIds).toEqual([]);
+    expect(all.config.targetAccuracy).toBe(1);
+
+    const random = autoSetFixture(AUTO_SET_RANDOM_ID);
+    expect(random.id).toBe(AUTO_SET_RANDOM_ID);
+    expect(random.name).toBe('Woodpecker random');
+    expect(random.source).toEqual({
+      kind: 'auto',
+      recipe: { kind: 'woodpeckerRandom', size: 200 },
+    });
+  });
+
+  it('builds synthetic auto pool rows with derived ids', () => {
+    const row = autoPoolRowFixture(3, 42);
+    expect(puzzleIdOf(row.sourceGameId, row.sourcePly)).toBe('fixture:auto-3:3');
+    expect(row.difficulty).toBe(42);
+  });
+
+  it('builds one clean first-try row per distinct cycle', () => {
+    const rows = legitimateFirstTryRows('p1', ['c1', 'c2', 'c3']);
+    expect(rows.map((row) => row.cycleId)).toEqual(['c1', 'c2', 'c3']);
+    expect(rows.every((row) => row.presentationIndex === 1)).toBe(true);
+    expect(rows.every((row) => row.result === 'solvedFirstTry')).toBe(true);
+    expect(rows.every((row) => row.restartCount === 0)).toBe(true);
+  });
+
+  it('defaults a mastery attempt to a clean first try and honors overrides', () => {
+    const clean = masteryAttemptFixture({ puzzleId: 'p1' });
+    expect(clean.result).toBe('solvedFirstTry');
+    expect(clean.presentationIndex).toBe(1);
+    const failed = masteryAttemptFixture({ puzzleId: 'p1', result: 'failed' });
+    expect(failed.result).toBe('failed');
+    expect(failed.wrongMoveCount).toBe(1);
   });
 });

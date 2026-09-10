@@ -12,6 +12,29 @@
   margin: 0;
   font-size: var(--font-size-lg);
   font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs, var(--font-size-sm));
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.note {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
 }
 
 .link {

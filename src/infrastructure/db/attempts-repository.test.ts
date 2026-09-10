@@ -119,6 +119,36 @@ describe('puzzle attempts repository', () => {
     expect(await attemptsRepository.listForPuzzle('puzzle:none')).toEqual([]);
   });
 
+  it('listAll returns every attempt ordered by cycleId, puzzleId then presentationIndex', async () => {
+    expect(await attemptsRepository.listAll()).toEqual([]);
+
+    await attemptsRepository.addAttempt(
+      attemptRow({ cycleId: 'cycle:b', puzzleId: 'puzzle:a', presentationIndex: 1 }),
+    );
+    await attemptsRepository.addAttempt(
+      attemptRow({ cycleId: 'cycle:a', puzzleId: 'puzzle:z', presentationIndex: 3 }),
+    );
+    await attemptsRepository.addAttempt(
+      attemptRow({ cycleId: 'cycle:a', puzzleId: 'puzzle:z', presentationIndex: 1 }),
+    );
+    await attemptsRepository.addAttempt(
+      attemptRow({ cycleId: 'cycle:a', puzzleId: 'puzzle:m', presentationIndex: 1 }),
+    );
+
+    expect(
+      (await attemptsRepository.listAll()).map((row) => [
+        row.cycleId,
+        row.puzzleId,
+        row.presentationIndex,
+      ]),
+    ).toEqual([
+      ['cycle:a', 'puzzle:m', 1],
+      ['cycle:a', 'puzzle:z', 1],
+      ['cycle:a', 'puzzle:z', 3],
+      ['cycle:b', 'puzzle:a', 1],
+    ]);
+  });
+
   it('deleteForPuzzleIds removes every attempt of the given puzzles and nothing else', async () => {
     await attemptsRepository.addAttempt(
       attemptRow({ cycleId: 'cycle:a', puzzleId: 'puzzle:a', presentationIndex: 1 }),

@@ -89,6 +89,10 @@ export interface ResolveSetMembershipInput {
  * `originFilter`/`difficultyFilter` are applied to that universe, then
  * `orderPuzzles` applies the configured policy and at most `targetSize` ids are
  * returned. A missing manual id is dropped rather than fabricated.
+ *
+ * An `auto` source is never resolved here: auto sets are seeded with empty
+ * `puzzleIds` and their membership is derived at cycle start
+ * (`deriveAutoSetMembership`), so this returns `[]` for an `auto` source.
  */
 export function resolveSetMembership(input: ResolveSetMembershipInput): string[] {
   const { ordering, targetSize } = input;
@@ -102,6 +106,11 @@ export function resolveSetMembership(input: ResolveSetMembershipInput): string[]
 /** Build the source universe in its deterministic base order (R-3). */
 function baseCandidates(input: ResolveSetMembershipInput): PuzzleRow[] {
   const { source, puzzles, poolEntries, manualIds } = input;
+  if (source.kind === 'auto') {
+    // Auto membership is virtual: it is derived from the pool and mastery at
+    // cycle start (`deriveAutoSetMembership`), so creation seeds an empty set.
+    return [];
+  }
   if (source.kind === 'manual') {
     const byId = new Map(
       puzzles.map((puzzle) => [puzzleIdOf(puzzle.sourceGameId, puzzle.sourcePly), puzzle]),
@@ -183,6 +192,11 @@ export function setSourceLabel(source: SetSource): string {
   }
   if (source.kind === 'game') {
     return `Game ${source.gameId}`;
+  }
+  if (source.kind === 'auto') {
+    return source.recipe.kind === 'allPuzzles'
+      ? 'All puzzles'
+      : `Woodpecker random (${source.recipe.size})`;
   }
   const parts = poolFilterLabels(source.filters);
   return parts.length === 0 ? 'Puzzle pool' : `Puzzle pool (${parts.join(', ')})`;

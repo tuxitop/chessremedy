@@ -76,6 +76,10 @@ class FakeAttemptsRepository implements PuzzleAttemptsRepository {
     return Promise.resolve(list);
   }
 
+  listAll(): Promise<PuzzleAttemptRow[]> {
+    return Promise.resolve([...this.rows.values()]);
+  }
+
   listForCycleAndPuzzle(cycleId: string, puzzleId: string): Promise<PuzzleAttemptRow[]> {
     const list = [...this.rows.values()].filter(
       (row) => row.cycleId === cycleId && row.puzzleId === puzzleId,

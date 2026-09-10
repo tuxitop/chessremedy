@@ -7,12 +7,15 @@ import {
   CycleConfigForm,
   CycleHistory,
   MembershipList,
+  cycleConfigSummary,
   type MembershipListItem,
 } from '@/components/puzzles/cycles';
 import { ROUTES, puzzlesCyclePath, puzzlesCycleResultsPath } from '@/app/routes';
 import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
+  deriveAutoSetMembership,
+  masteredPuzzleIds,
   setSourceLabel,
   type CycleConfig,
   type TacticalTrainingSetRow,
@@ -34,6 +37,12 @@ interface DetailData {
   readonly membership: readonly PuzzleRow[];
   readonly cycles: readonly TrainingCycleRow[];
   readonly attemptCount: number;
+  /**
+   * Why an auto set's derived membership is empty: `no-puzzles` (pool empty),
+   * `all-mastered` (every pool puzzle mastered), or `null` when it has puzzles
+   * or is not an auto set.
+   */
+  readonly autoEmptyKind: 'no-puzzles' | 'all-mastered' | null;
 }
 
 export interface SetDetailPageProps {
@@ -92,6 +101,7 @@ export function SetDetailPage({
     membership: [],
     cycles: [],
     attemptCount: 0,
+    autoEmptyKind: null,
   });
   const [name, setName] = useState('');
   const [config, setConfig] = useState<CycleConfig | null>(null);
@@ -115,12 +125,30 @@ export function SetDetailPage({
           return;
         }
         if (set === undefined) {
-          setData({ set: null, membership: [], cycles: [], attemptCount: 0 });
+          setData({ set: null, membership: [], cycles: [], attemptCount: 0, autoEmptyKind: null });
           setLoading(false);
           return;
         }
+        // Auto sets are virtual: hydrate the membership derived for the next
+        // cycle (current pool minus mastered) rather than the last snapshot.
+        let membershipIds: readonly string[] = set.puzzleIds;
+        let autoEmptyKind: DetailData['autoEmptyKind'] = null;
+        if (set.source.kind === 'auto') {
+          const [pool, attempts] = await Promise.all([
+            puzzlesRepo.listAll(),
+            attemptsRepo.listAll(),
+          ]);
+          membershipIds = deriveAutoSetMembership({
+            recipe: set.source.recipe,
+            pool,
+            masteredIds: masteredPuzzleIds(attempts),
+            setId: set.id,
+          });
+          autoEmptyKind =
+            membershipIds.length > 0 ? null : pool.length === 0 ? 'no-puzzles' : 'all-mastered';
+        }
         const [membership, cycles] = await Promise.all([
-          puzzlesRepo.getPuzzles(set.puzzleIds),
+          puzzlesRepo.getPuzzles(membershipIds),
           cycleService.listForSet(setId),
         ]);
         const attemptRows = await Promise.all(
@@ -134,6 +162,7 @@ export function SetDetailPage({
           membership,
           cycles,
           attemptCount: attemptRows.reduce((sum, rows) => sum + rows.length, 0),
+          autoEmptyKind,
         });
         setName(set.name);
         setConfig(set.config);
@@ -259,6 +288,10 @@ export function SetDetailPage({
       }
       const started = await cycleService.start(setId);
       if (!started.ok) {
+        if (started.reason === 'all-mastered') {
+          setNotice('Every puzzle in this set is mastered. There is nothing left to train here.');
+          return;
+        }
         setError(startErrorMessage(started));
         return;
       }
@@ -289,7 +322,11 @@ export function SetDetailPage({
     );
   }
 
-  const empty = set.puzzleIds.length === 0;
+  const isAuto = set.source.kind === 'auto';
+  // For an auto set `data.membership` is the derived next-cycle membership; for
+  // a stored set it is the fixed membership. A start on an auto set is allowed
+  // even when empty so the service's empty/all-mastered explanation surfaces.
+  const empty = data.membership.length === 0;
 
   return (
     <div className={styles.page} data-testid="set-detail">
@@ -300,16 +337,27 @@ export function SetDetailPage({
           </Link>
           <h1 className={styles.heading} data-testid="set-detail-name">
             {set.name}
+            {isAuto ? (
+              <span className={styles.autoBadge} data-testid="set-detail-auto-badge">
+                Auto
+              </span>
+            ) : null}
           </h1>
           <p className={styles.subtitle} data-testid="set-detail-source">
             {setSourceLabel(set.source)} · {set.status === 'active' ? 'Active' : 'Archived'}
           </p>
+          {isAuto ? (
+            <p className={styles.autoNote} data-testid="set-detail-auto-note">
+              This is a system-managed set. Its puzzles are derived from your pool and refresh at
+              each cycle start, so mastered puzzles are retired automatically.
+            </p>
+          ) : null}
         </div>
         <div className={styles.headerActions}>
           {inProgress !== null ? (
             <Button
               data-testid="set-detail-continue-cycle"
-              disabled={busy || empty}
+              disabled={busy || (empty && !isAuto)}
               onClick={startOrContinue}
             >
               Continue cycle {inProgress.cycleNumber}
@@ -317,7 +365,7 @@ export function SetDetailPage({
           ) : (
             <Button
               data-testid="set-detail-start-cycle"
-              disabled={busy || empty}
+              disabled={busy || (empty && !isAuto)}
               onClick={startOrContinue}
             >
               Start cycle
@@ -339,51 +387,93 @@ export function SetDetailPage({
 
       {empty ? (
         <section className={styles.statePanel} data-testid="set-detail-empty">
-          <h2 className={styles.sectionTitle}>This set has no puzzles</h2>
-          <p className={styles.state}>
-            Generate puzzles from a game and create a new set from them.
-          </p>
-          <Link
-            className={styles.primaryLink}
-            to={ROUTES.puzzlesNew}
-            data-testid="set-detail-empty-new"
-          >
-            Create a set
-          </Link>
+          {data.autoEmptyKind === 'all-mastered' ? (
+            <>
+              <h2 className={styles.sectionTitle}>All puzzles mastered</h2>
+              <p className={styles.state}>
+                Every puzzle in this auto set has been mastered, so there is nothing left to train
+                here. New puzzles from your games will join on a future cycle.
+              </p>
+            </>
+          ) : data.autoEmptyKind === 'no-puzzles' ? (
+            <>
+              <h2 className={styles.sectionTitle}>No puzzles yet</h2>
+              <p className={styles.state}>
+                Generate puzzles from a game and they will appear in this auto set automatically.
+              </p>
+              <Link
+                className={styles.primaryLink}
+                to={ROUTES.games}
+                data-testid="set-detail-empty-games"
+              >
+                Go to the Game Library
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2 className={styles.sectionTitle}>This set has no puzzles</h2>
+              <p className={styles.state}>
+                Generate puzzles from a game and create a new set from them.
+              </p>
+              <Link
+                className={styles.primaryLink}
+                to={ROUTES.puzzlesNew}
+                data-testid="set-detail-empty-new"
+              >
+                Create a set
+              </Link>
+            </>
+          )}
         </section>
       ) : null}
 
-      <section aria-labelledby="set-detail-rename-title">
-        <h2 className={styles.sectionTitle} id="set-detail-rename-title">
-          Name
-        </h2>
-        <div className={styles.inlineForm}>
-          <label className={styles.field}>
-            <span className={styles.label}>Set name</span>
-            <input
-              className={styles.textInput}
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              data-testid="set-detail-name-input"
-            />
-          </label>
-          <Button
-            variant="secondary"
-            data-testid="set-detail-save-name"
-            disabled={busy}
-            onClick={saveName}
-          >
-            Save name
-          </Button>
-        </div>
-      </section>
+      {!isAuto ? (
+        <section aria-labelledby="set-detail-rename-title">
+          <h2 className={styles.sectionTitle} id="set-detail-rename-title">
+            Name
+          </h2>
+          <div className={styles.inlineForm}>
+            <label className={styles.field}>
+              <span className={styles.label}>Set name</span>
+              <input
+                className={styles.textInput}
+                type="text"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                data-testid="set-detail-name-input"
+              />
+            </label>
+            <Button
+              variant="secondary"
+              data-testid="set-detail-save-name"
+              disabled={busy}
+              onClick={saveName}
+            >
+              Save name
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       <section aria-labelledby="set-detail-config-title">
         <h2 className={styles.sectionTitle} id="set-detail-config-title">
           Cycle configuration
         </h2>
-        {config !== null ? (
+        {isAuto ? (
+          <>
+            <p className={styles.state} data-testid="set-detail-auto-config-note">
+              The recipe and configuration of an auto set are fixed and not editable.
+            </p>
+            <dl className={styles.snapshotList} data-testid="set-detail-auto-config">
+              {cycleConfigSummary(config ?? set.config).map((entry) => (
+                <div key={entry.label} className={styles.snapshotRow}>
+                  <dt>{entry.label}</dt>
+                  <dd>{entry.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        ) : config !== null ? (
           <>
             <CycleConfigForm config={config} onChange={setConfig} idPrefix="set-detail" />
             <div className={styles.inlineActions}>
@@ -409,7 +499,7 @@ export function SetDetailPage({
             ? 'No puzzles in this set.'
             : `${membershipItems.length} ${
                 membershipItems.length === 1 ? 'puzzle' : 'puzzles'
-              } in this set.`}
+              } ${isAuto ? 'derived for the next cycle' : 'in this set'}.`}
         </p>
         <MembershipList
           items={membershipItems}
@@ -431,28 +521,30 @@ export function SetDetailPage({
         />
       </section>
 
-      <section aria-labelledby="set-detail-manage-title">
-        <h2 className={styles.sectionTitle} id="set-detail-manage-title">
-          Manage
-        </h2>
-        <div className={styles.inlineActions}>
-          <Button
-            variant="secondary"
-            data-testid="set-detail-archive"
-            disabled={busy}
-            onClick={toggleArchive}
-          >
-            {set.status === 'active' ? 'Archive set' : 'Unarchive set'}
-          </Button>
-          <Button
-            data-testid="set-detail-delete"
-            disabled={busy}
-            onClick={() => setConfirmDelete(true)}
-          >
-            Delete set
-          </Button>
-        </div>
-      </section>
+      {!isAuto ? (
+        <section aria-labelledby="set-detail-manage-title">
+          <h2 className={styles.sectionTitle} id="set-detail-manage-title">
+            Manage
+          </h2>
+          <div className={styles.inlineActions}>
+            <Button
+              variant="secondary"
+              data-testid="set-detail-archive"
+              disabled={busy}
+              onClick={toggleArchive}
+            >
+              {set.status === 'active' ? 'Archive set' : 'Unarchive set'}
+            </Button>
+            <Button
+              data-testid="set-detail-delete"
+              disabled={busy}
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete set
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       {confirmDelete ? (
         <ConfirmDialog
@@ -489,6 +581,8 @@ function startErrorMessage(result: { readonly reason: string; readonly message?:
   switch (result.reason) {
     case 'empty-set':
       return 'This set has no puzzles to train.';
+    case 'all-mastered':
+      return 'Every puzzle in this set is mastered. There is nothing left to train here.';
     case 'not-found':
       return 'That set no longer exists.';
     case 'invalid-config':

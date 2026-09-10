@@ -37,4 +37,26 @@ describe('SetCard', () => {
     expect(screen.getByTestId('set-card-cycle-s2')).toHaveTextContent('Cycle 4 · Completed');
     expect(screen.getByTestId('set-card-count-s2')).toHaveTextContent('2 puzzles');
   });
+
+  it('renders an optional badge, note and empty-count label for auto sets', () => {
+    renderWithProviders(
+      <SetCard
+        set={setFixture({ id: 'auto', name: 'All puzzles' })}
+        puzzleCount={0}
+        cycle={null}
+        lastActivityAt={null}
+        to="/puzzles/sets/auto"
+        badge="Auto"
+        note="Membership refreshes each cycle."
+        emptyCountLabel="All puzzles mastered"
+      />,
+    );
+
+    expect(screen.getByTestId('set-card-badge-auto')).toHaveTextContent('Auto');
+    expect(screen.getByTestId('set-card-note-auto')).toHaveTextContent(
+      'Membership refreshes each cycle.',
+    );
+    expect(screen.getByTestId('set-card-count-auto')).toHaveTextContent('All puzzles mastered');
+    expect(screen.getByTestId('set-card-count-auto')).not.toHaveTextContent('0');
+  });
 });

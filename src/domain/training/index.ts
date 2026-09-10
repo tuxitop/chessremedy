@@ -54,6 +54,7 @@ export type {
   PuzzlePoolFilters,
   RetryFailed,
   SetSource,
+  AutoSetRecipe,
   TacticalTrainingSetRow,
   TrainingCycleRow,
   TrainingCycleStatus,
@@ -61,6 +62,22 @@ export type {
 } from './cycleTypes';
 export { orderPuzzles, resolveSetMembership, setSourceLabel } from './set';
 export type { ResolveSetMembershipInput } from './set';
+export {
+  AUTO_SET_ALL_ID,
+  AUTO_SET_RANDOM_ID,
+  AUTO_SET_VERSION,
+  WOODPECKER_RANDOM_SIZE,
+  autoSetDefinitions,
+  deriveAutoSetMembership,
+} from './autoSet';
+export type { AutoSetDefinition, DeriveAutoSetMembershipInput } from './autoSet';
+export {
+  MASTERY_REQUIRED_CYCLES,
+  MASTERY_VERSION,
+  isLegitimateFirstTry,
+  masteredPuzzleIds,
+  masteryOf,
+} from './mastery';
 export {
   isCycleComplete,
   isPuzzleTerminal,

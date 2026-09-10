@@ -393,6 +393,34 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     expect(written?.counters.hintCount).toBeGreaterThan(0);
   });
 
+  it('a clean solve after a restart shows Solved with hints and records restartCount', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-two'), rig, () => undefined);
+
+    await waitForInteractive();
+    // A multi-move puzzle: the first accepted move makes Restart available.
+    boardMove('b8', 'b6');
+    await waitFor(() => expect(screen.getByTestId('solve-ply')).toHaveTextContent('2/2'));
+
+    fireEvent.click(screen.getByTestId('solve-restart'));
+    await waitForInteractive();
+    expect(lastBoard().interactive).toBe(true);
+
+    // Clean line after the restart: no hint, no wrong move.
+    boardMove('b8', 'b6');
+    await waitFor(() => expect(screen.getByTestId('solve-ply')).toHaveTextContent('2/2'));
+    boardMove('b6', 'f2');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('solve-result')).toHaveTextContent('Solved with hints'),
+    );
+    expect(screen.getByTestId('solve-result').className).toContain('resultHelp');
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.counters.restartCount).toBe(1);
+    expect(rig.calls[0]?.counters.hintCount).toBe(0);
+    expect(rig.calls[0]?.counters.wrongMoveCount).toBe(0);
+  });
+
   it('the FIRST hint press highlights the source square violet through the square-class map (no circle)', async () => {
     const rig = createRig();
     renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);

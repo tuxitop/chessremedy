@@ -11,7 +11,14 @@ import { fixtureGame } from '@/domain/chess/fixtures';
 import { puzzleFixtures } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { PuzzleRow } from '@/domain/puzzle';
-import { cycleAttemptFixture, cycleFixture, setFixture } from '@/domain/training/test-support';
+import { AUTO_SET_ALL_ID } from '@/domain/training';
+import {
+  autoSetFixture,
+  cycleAttemptFixture,
+  cycleFixture,
+  legitimateFirstTryRows,
+  setFixture,
+} from '@/domain/training/test-support';
 import { renderWithProviders } from '@/test/test-utils';
 
 const GAME = fixtureGame('cc-bullet-blunder');
@@ -30,7 +37,7 @@ async function seedSet(): Promise<void> {
   );
 }
 
-function renderDetail(): void {
+function renderDetail(setId: string = SET_ID): void {
   renderWithProviders(
     <Routes>
       <Route path="/puzzles/sets/:setId" element={<SetDetailPage />} />
@@ -40,8 +47,15 @@ function renderDetail(): void {
         element={<div data-testid="cycle-session-stub" />}
       />
     </Routes>,
-    { initialEntries: [`/puzzles/sets/${SET_ID}`] },
+    { initialEntries: [`/puzzles/sets/${setId}`] },
   );
+}
+
+/** Write a legitimate first-try solve for `puzzleId` in 3 distinct cycles. */
+async function masterPuzzle(puzzleId: string): Promise<void> {
+  for (const row of legitimateFirstTryRows(puzzleId, ['c1', 'c2', 'c3'])) {
+    await attemptsRepository.addAttempt(row);
+  }
 }
 
 async function waitForDetail(): Promise<void> {
@@ -182,5 +196,61 @@ describe('SetDetailPage', () => {
       expect(screen.queryByTestId('set-detail-delete-dialog')).not.toBeInTheDocument(),
     );
     expect(await trainingSetsRepository.get(SET_ID)).toBeDefined();
+  });
+
+  it('renders an auto set as read-only with a badge, refresh note and start action', async () => {
+    await puzzlesRepository.addIfAbsent([puzzleRow(6, 'mate-one')]);
+    await trainingSetsRepository.create(autoSetFixture(AUTO_SET_ALL_ID, { puzzleIds: [] }));
+
+    renderDetail(AUTO_SET_ALL_ID);
+    await waitForDetail();
+
+    expect(screen.getByTestId('set-detail-auto-badge')).toHaveTextContent('Auto');
+    expect(screen.getByTestId('set-detail-auto-note')).toHaveTextContent(/refresh/i);
+    expect(screen.getByTestId('set-detail-auto-config')).toBeInTheDocument();
+
+    // No rename, config editing, archive or delete for a system-managed set.
+    expect(screen.queryByTestId('set-detail-name-input')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('set-detail-save-name')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('set-detail-save-config')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('set-detail-archive')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('set-detail-delete')).not.toBeInTheDocument();
+
+    // Starting a cycle still works.
+    expect(screen.getByTestId('set-detail-start-cycle')).toBeEnabled();
+  });
+
+  it('starts a cycle for an auto set with eligible puzzles', async () => {
+    await puzzlesRepository.addIfAbsent([puzzleRow(6, 'mate-one')]);
+    await trainingSetsRepository.create(autoSetFixture(AUTO_SET_ALL_ID, { puzzleIds: [] }));
+
+    renderDetail(AUTO_SET_ALL_ID);
+    await waitForDetail();
+
+    fireEvent.click(screen.getByTestId('set-detail-start-cycle'));
+
+    await screen.findByTestId('cycle-session-stub');
+    const cycles = await trainingCyclesRepository.listForSet(AUTO_SET_ALL_ID);
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0]!.status).toBe('inProgress');
+  });
+
+  it('explains the all-mastered start result without starting a cycle', async () => {
+    const puzzle = puzzleRow(6, 'mate-one');
+    await puzzlesRepository.addIfAbsent([puzzle]);
+    await trainingSetsRepository.create(autoSetFixture(AUTO_SET_ALL_ID, { puzzleIds: [] }));
+    await masterPuzzle(puzzleIdOf(puzzle.sourceGameId, puzzle.sourcePly));
+
+    renderDetail(AUTO_SET_ALL_ID);
+    await waitForDetail();
+
+    expect(screen.getByTestId('set-detail-empty')).toHaveTextContent(/mastered/i);
+
+    fireEvent.click(screen.getByTestId('set-detail-start-cycle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('set-detail-notice')).toHaveTextContent(/mastered/i),
+    );
+    expect(await trainingCyclesRepository.listForSet(AUTO_SET_ALL_ID)).toHaveLength(0);
   });
 });

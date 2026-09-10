@@ -354,6 +354,7 @@ export class HostedPresentation {
       wrongMoveCount: this.state.wrongMoveCount,
       hintCount: this.state.hintCount,
       highestHintLevel: this.state.highestHintLevel,
+      restartCount: this.state.restartCount,
     };
     const endedAt = this.services.now();
     this.frozenInput = {
