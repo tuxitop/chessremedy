@@ -78,8 +78,8 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Feature 011 (puzzle source), Feature 012 (solve interaction); consumers Features 014/015.
 
 ### Feature 014 — Game Analysis History & Statistics
-- Required: ADRs `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-019`, `decisions/ADR-020`; domain `domain/statistics.md`, `domain/game-model.md`, `domain/analysis-model.md`, `domain/classification.md`, `domain/tactical-training.md`, `domain/game-library.md` (row-view insights + per-analysis summaries); research `research/move-accuracy.md`, `research/move-classification.md`.
-- Dependencies: Features 008/009/010 (game data), 012/013 (attempts/cycles); output consumed by Feature 015.
+- Required: `ARCHITECTURE.md` §6a/§7/§9/§10; ADRs `decisions/ADR-013`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-031`; domain `domain/statistics.md`, `domain/game-model.md`, `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/time-control.md`, `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/tactics.md`, `domain/game-library.md` (row-view insights + per-analysis summaries); research `research/move-accuracy.md`, `research/move-classification.md`.
+- Dependencies: Features 008/009/010 (game data), 011/012/013 (puzzles/attempts/sets/cycles); output consumed by Feature 015 and the Game Library `masteredPuzzleCount` insight.
 
 ### Feature 015 — Dashboard
 - Required: `ARCHITECTURE.md` §6a; ADRs `decisions/ADR-010`, `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`; domain `domain/statistics.md`, `domain/tactical-training.md`, `domain/game-model.md`; research `research/charting-library.md`.
@@ -118,7 +118,7 @@ features, ADRs, research, or the whole documentation tree.
 - `domain/time-control.md` → Features 003/007/008/014/015
 - `domain/clock.md` → Features 003/008
 - `domain/game-phase.md` → Features 008/014/015
-- `domain/tactics.md` → Features 010/011
-- `domain/puzzle-model.md` → Features 010/011/012/013
+- `domain/tactics.md` → Features 010/011/014
+- `domain/puzzle-model.md` → Features 010/011/012/013/014
 - `domain/tactical-training.md` → Features 011/012/013/014/015/016
 - `domain/statistics.md` → Features 014/015
