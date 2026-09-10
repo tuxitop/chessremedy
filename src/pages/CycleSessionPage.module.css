@@ -1,0 +1,79 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The session chrome sits above the solving screen in source order, so it is
+   reachable without scrolling past the board on small viewports (Feature-012
+   mobile stacking puts the board first only within the solving screen). */
+.chrome {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.chromeText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.setName {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.progress {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.notice {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger, #c4261c);
+  font-size: var(--font-size-sm);
+}
+
+.state {
+  margin: 0;
+  color: var(--color-fg-muted);
+}
+
+.statePanel {
+  max-width: 34rem;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.backLink {
+  color: var(--color-accent);
+  font-weight: 600;
+}

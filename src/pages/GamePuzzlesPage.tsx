@@ -26,6 +26,7 @@ import {
 } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import { DETECTION_VERSION } from '@/domain/tactics';
+import { ROUTES } from '@/app/routes';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
@@ -354,6 +355,13 @@ function GamePuzzlesPage({ analysisService }: GamePuzzlesPageProps): React.JSX.E
             {playerLabel(data.game)}
           </p>
         </div>
+        <Link
+          className={styles.createSetLink}
+          to={`${ROUTES.puzzlesNew}?source=game&gameId=${encodeURIComponent(id)}`}
+          data-testid="puzzles-create-set"
+        >
+          Create training set
+        </Link>
       </header>
 
       <div className={styles.stateBar} data-testid="puzzles-state-bar" role="status">

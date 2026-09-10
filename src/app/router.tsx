@@ -5,7 +5,10 @@ import { AppShell } from '@/components/layout/AppShell';
 import { HomePage } from '@/pages/HomePage';
 import { GamesPage } from '@/pages/GamesPage';
 import { AnalysisPage } from '@/pages/AnalysisPage';
-import { PuzzlesPage } from '@/pages/PuzzlesPage';
+import { TrainingHomePage } from '@/pages/TrainingHomePage';
+import { SetEditorPage } from '@/pages/SetEditorPage';
+import { SetDetailPage } from '@/pages/SetDetailPage';
+import { CycleResultsPage } from '@/pages/CycleResultsPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -33,6 +36,13 @@ const GameReviewPage = lazy(() =>
 // per puzzle; keep it out of the initial bundle like Game Review.
 const GamePuzzlesPage = lazy(() =>
   import('@/pages/GamePuzzlesPage').then((m) => ({ default: m.GamePuzzlesPage })),
+);
+
+// The cycle session (Feature 013) hosts Feature 012's solving screen and its
+// chessboard; keep it out of the initial bundle alongside the other board-heavy
+// pages.
+const CycleSessionPage = lazy(() =>
+  import('@/pages/CycleSessionPage').then((m) => ({ default: m.CycleSessionPage })),
 );
 
 // react-router-dom@7 enables v7 future flags by default; no `future` option
@@ -69,7 +79,18 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
-      { path: 'puzzles', element: <PuzzlesPage /> },
+      { path: 'puzzles', element: <TrainingHomePage /> },
+      { path: 'puzzles/new', element: <SetEditorPage /> },
+      { path: 'puzzles/sets/:setId', element: <SetDetailPage /> },
+      {
+        path: 'puzzles/sets/:setId/cycles/:cycleNumber',
+        element: (
+          <Suspense fallback={null}>
+            <CycleSessionPage />
+          </Suspense>
+        ),
+      },
+      { path: 'puzzles/sets/:setId/cycles/:cycleNumber/results', element: <CycleResultsPage /> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'settings', element: <SettingsPage /> },
       {

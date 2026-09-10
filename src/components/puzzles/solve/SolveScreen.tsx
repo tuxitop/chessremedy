@@ -112,6 +112,14 @@ export interface SolveScreenProps {
    * path from a recorded outcome to `solving`, so the host remounts the row).
    */
   readonly onRestart?: () => void;
+  /**
+   * Show the labelled Skip control (Feature 013 cycle host owns availability).
+   * Hidden by default so Feature-012 behaviour is unchanged. A click records
+   * the single `skipped` row through the controller and then exits the
+   * presentation; after a wrong-move fail it only closes the view (no second
+   * row), and it never advances an unwritten row.
+   */
+  readonly allowSkip?: boolean;
 }
 
 /**
@@ -136,6 +144,7 @@ export function SolveScreen({
   storedAnalysis = analysesRepository,
   showTimer = false,
   onRestart,
+  allowSkip = false,
 }: SolveScreenProps): React.JSX.Element {
   const controller = usePuzzleSolve({ row, context, config, recorder });
   const ownBoardSize = useBoardSize();
@@ -151,6 +160,10 @@ export function SolveScreen({
     readonly from: string;
     readonly to: string;
   } | null>(null);
+  // True once the user asked to skip: the effect below exits only after the
+  // skipped/failed row is durably written (never advances an unwritten row).
+  const skipRequestedRef = useRef(false);
+  const skipHandledRef = useRef(false);
   // Bumped on an explicit Restart so the historical game-move arrow (a native
   // user-drawn shape) is re-established there (owner ruling 2).
   const [arrowTick, setArrowTick] = useState(0);
@@ -505,6 +518,26 @@ export function SolveScreen({
     onExit(controller.exitOutcome());
   }, [controller, onExit]);
 
+  const handleSkip = useCallback((): void => {
+    skipRequestedRef.current = true;
+    controller.skip();
+  }, [controller]);
+
+  // The Feature-013 Skip seam: once a skip was requested and the row is
+  // durably written, exit the presentation with its outcome. A retryable write
+  // leaves the request pending (no advance); a skip after a wrong-move fail
+  // closes the view with the already-written `failed` outcome and no new row.
+  useEffect(() => {
+    if (!skipRequestedRef.current || skipHandledRef.current) {
+      return;
+    }
+    if (controller.writePhase !== 'written') {
+      return;
+    }
+    skipHandledRef.current = true;
+    onExit(controller.exitOutcome());
+  }, [controller, onExit]);
+
   const handleRetryWrite = useCallback((): void => {
     controller.retryWrite();
   }, [controller]);
@@ -841,6 +874,11 @@ export function SolveScreen({
                       >
                         View solution
                       </Button>
+                      {allowSkip ? (
+                        <Button variant="secondary" onClick={handleSkip} data-testid="solve-skip">
+                          Skip
+                        </Button>
+                      ) : null}
                       {canRestart ? (
                         <Button
                           variant="secondary"

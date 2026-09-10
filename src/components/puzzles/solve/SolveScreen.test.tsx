@@ -199,6 +199,7 @@ function renderSolve(
     readonly storedAnalysis?: StoredAnalysisLookup;
     readonly showTimer?: boolean;
     readonly onRestart?: () => void;
+    readonly allowSkip?: boolean;
   } = {},
 ): void {
   render(
@@ -211,6 +212,7 @@ function renderSolve(
       storedAnalysis={options.storedAnalysis ?? NO_RECORDS}
       {...(options.showTimer !== undefined ? { showTimer: options.showTimer } : {})}
       {...(options.onRestart !== undefined ? { onRestart: options.onRestart } : {})}
+      {...(options.allowSkip !== undefined ? { allowSkip: options.allowSkip } : {})}
     />,
   );
 }
@@ -705,6 +707,80 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
     expect(rig.calls).toHaveLength(2);
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it('hides the Skip control by default (Feature-012 behaviour unchanged)', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
+
+    await waitForInteractive();
+    expect(screen.queryByTestId('solve-skip')).not.toBeInTheDocument();
+  });
+
+  it('shows the labelled Skip control when the host allows skipping', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined, { allowSkip: true });
+
+    await waitForInteractive();
+    expect(screen.getByTestId('solve-skip')).toHaveTextContent('Skip');
+  });
+
+  it('Skip writes exactly one skipped row and exits the presentation with the outcome', async () => {
+    const rig = createRig();
+    const onExit = vi.fn();
+    renderSolve(puzzleRowFixture('mate-one'), rig, onExit, { allowSkip: true });
+
+    await waitForInteractive();
+    fireEvent.click(screen.getByTestId('solve-skip'));
+
+    await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
+    const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
+    expect(outcome?.result).toBe('skipped');
+    expect(outcome?.attemptRow).toBeDefined();
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.trigger).toBe('skip');
+  });
+
+  it('Skip after a wrong-move fail writes no second row and exits with the recorded failed outcome', async () => {
+    const rig = createRig();
+    const onExit = vi.fn();
+    const { row, records } = rowWithPrefix();
+    renderSolve(row, rig, onExit, {
+      allowSkip: true,
+      storedAnalysis: { listForGameAndAnalysis: async () => records },
+    });
+
+    await waitForInteractive();
+    boardMove('d2', 'd4');
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.trigger).toBe('wrongMove');
+
+    fireEvent.click(screen.getByTestId('solve-skip'));
+    await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
+    const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
+    expect(outcome?.result).toBe('failed');
+    expect(rig.calls).toHaveLength(1);
+  });
+
+  it('never advances a Skip while the attempt write is retryable', async () => {
+    const rig = createRig();
+    const onExit = vi.fn();
+    renderSolve(puzzleRowFixture('mate-one'), rig, onExit, { allowSkip: true });
+    rig.setFailing(true);
+
+    await waitForInteractive();
+    fireEvent.click(screen.getByTestId('solve-skip'));
+
+    await waitFor(() => expect(screen.getByTestId('solve-write-error')).toBeInTheDocument());
+    expect(onExit).not.toHaveBeenCalled();
+
+    rig.setFailing(false);
+    fireEvent.click(screen.getByTestId('solve-retry-write'));
+    await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
+    const outcome = onExit.mock.calls[0]![0] as PresentationOutcome | null;
+    expect(outcome?.result).toBe('skipped');
+    expect(rig.calls).toHaveLength(2);
   });
 
   it('Restart appears once the user has used a hint (no outcome yet) and resets the line to the decision point', async () => {

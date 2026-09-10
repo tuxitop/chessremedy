@@ -36,6 +36,25 @@
   margin: var(--space-1) 0 0;
 }
 
+/* The Feature-011 → Feature-013 hand-off: a labelled control that seeds a
+   training set from this game's puzzles. The page stays otherwise read-only. */
+.createSetLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.createSetLink:hover,
+.createSetLink:focus-visible {
+  background: var(--color-accent-hover);
+}
+
 /* Feature-011 generation state bar: the per-game truth — the state note plus
    the on-demand Generate/Resume/Retry affordance while the pass is incomplete. */
 .stateBar {

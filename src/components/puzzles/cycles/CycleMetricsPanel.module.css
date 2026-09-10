@@ -1,0 +1,22 @@
+.grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: var(--space-1) var(--space-4);
+}
+
+.row {
+  display: contents;
+}
+
+.label {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.value {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

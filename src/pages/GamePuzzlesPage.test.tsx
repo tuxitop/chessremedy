@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, useLocation } from 'react-router-dom';
 import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
@@ -103,9 +103,16 @@ function renderPuzzles(analysisService: AnalysisServiceLike | null): void {
         path="/games/:id/puzzles"
         element={<GamePuzzlesPage analysisService={analysisService} />}
       />
+      <Route path="/puzzles/new" element={<LocationProbe />} />
     </Routes>,
     { initialEntries: [`/games/${GAME.id}/puzzles`] },
   );
+}
+
+/** Shows the current path + query so a navigation can be asserted. */
+function LocationProbe(): React.JSX.Element {
+  const location = useLocation();
+  return <div data-testid="set-editor-stub">{`${location.pathname}${location.search}`}</div>;
 }
 
 function completedSummary(): SummaryOverrides {
@@ -471,5 +478,19 @@ describe('Game Puzzles page (Feature 011, Stage E)', () => {
     expect(screen.queryByTestId('puzzles-generate')).not.toBeInTheDocument();
     expect(screen.queryByTestId('puzzles-resume')).not.toBeInTheDocument();
     expect(screen.queryByTestId('puzzles-retry')).not.toBeInTheDocument();
+  });
+
+  it('offers a Create training set hand-off that navigates with the game id', async () => {
+    await seedGame(completedSummary());
+    await seedPuzzles([6]);
+    renderPuzzles(null);
+
+    const action = await screen.findByTestId('puzzles-create-set');
+    expect(action).toHaveTextContent('Create training set');
+
+    fireEvent.click(action);
+    const stub = await screen.findByTestId('set-editor-stub');
+    expect(stub).toHaveTextContent('/puzzles/new?source=game');
+    expect(stub).toHaveTextContent(`gameId=${encodeURIComponent(GAME.id)}`);
   });
 });
