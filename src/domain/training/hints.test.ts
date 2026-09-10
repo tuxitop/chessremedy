@@ -10,7 +10,7 @@ import { applyMove, beginPresentation, positionAtPly } from './solve';
 import type { PresentationState } from './solve';
 import { trainingRowFixture } from './test-support';
 import type { HintLevel, SolveHintConfig } from './types';
-import { hintContent, nextHintLevel, revealNextHint } from './hints';
+import { DEFAULT_SOLVE_HINT_CONFIG, hintContent, nextHintLevel, revealNextHint } from './hints';
 
 function startPosition(row: PuzzleRow): Position {
   const parsed = parsePositionFen(row.startingFen);
@@ -31,7 +31,12 @@ function beginState(row: PuzzleRow): PresentationState {
 }
 
 function config(partial: Partial<SolveHintConfig>): SolveHintConfig {
-  return { enabledLevels: [1, 2, 3, 4], firstHintLevel: 1, ...partial };
+  return { enabledLevels: [2, 3, 4], firstHintLevel: 2, ...partial };
+}
+
+/** The full PRODUCT §10 level range (explicit), to exercise level 1 itself. */
+function fullConfig(): SolveHintConfig {
+  return { enabledLevels: [1, 2, 3, 4], firstHintLevel: 1 };
 }
 
 function revealAll(state: PresentationState, cfg: SolveHintConfig): PresentationState {
@@ -47,12 +52,20 @@ function revealAll(state: PresentationState, cfg: SolveHintConfig): Presentation
 
 describe('nextHintLevel', () => {
   it('ascends from the first hint level through level 4', () => {
-    const cfg = config({});
+    const cfg = fullConfig();
     expect(nextHintLevel(null, cfg)).toBe(1);
     expect(nextHintLevel(1, cfg)).toBe(2);
     expect(nextHintLevel(2, cfg)).toBe(3);
     expect(nextHintLevel(3, cfg)).toBe(4);
     expect(nextHintLevel(4, cfg)).toBeNull();
+  });
+
+  it('the product default starts at level 2 so the first press is visible', () => {
+    expect(DEFAULT_SOLVE_HINT_CONFIG).toEqual({ enabledLevels: [2, 3, 4], firstHintLevel: 2 });
+    expect(nextHintLevel(null, DEFAULT_SOLVE_HINT_CONFIG)).toBe(2);
+    expect(nextHintLevel(2, DEFAULT_SOLVE_HINT_CONFIG)).toBe(3);
+    expect(nextHintLevel(3, DEFAULT_SOLVE_HINT_CONFIG)).toBe(4);
+    expect(nextHintLevel(4, DEFAULT_SOLVE_HINT_CONFIG)).toBeNull();
   });
 
   it('starts at the configured first-hint threshold', () => {
@@ -63,9 +76,8 @@ describe('nextHintLevel', () => {
   });
 
   it('skips disabled levels', () => {
-    const cfg = config({ enabledLevels: [1, 3, 4] });
-    expect(nextHintLevel(null, cfg)).toBe(1);
-    expect(nextHintLevel(1, cfg)).toBe(3);
+    const cfg = config({ enabledLevels: [3, 4], firstHintLevel: 2 });
+    expect(nextHintLevel(null, cfg)).toBe(3);
     expect(nextHintLevel(3, cfg)).toBe(4);
     expect(nextHintLevel(4, cfg)).toBeNull();
   });
@@ -170,49 +182,46 @@ describe('hintContent', () => {
 });
 
 describe('revealNextHint', () => {
-  it('advances one level per press, recording counters and content', () => {
-    const cfg = config({});
-    let state = beginState(puzzleRowFixture('mate-one'));
-
-    const first = revealNextHint(state, cfg);
-    expect(first.ok).toBe(true);
-    if (!first.ok) {
+  it('the product default reveals level 2 first — a visible source-square press', () => {
+    const row = puzzleRowFixture('mate-one');
+    const result = revealNextHint(beginState(row), DEFAULT_SOLVE_HINT_CONFIG);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
       throw new Error('unreachable');
     }
-    expect(first.level).toBe(1);
-    state = first.state;
-    expect(state.hintCount).toBe(1);
-    expect(state.highestHintLevel).toBe(1);
-    expect(state.revealedHintLevels).toEqual([1]);
-    expect(state.wrongMoveCount).toBe(0);
-
-    const second = revealNextHint(state, cfg);
-    expect(second.ok).toBe(true);
-    if (!second.ok) {
-      throw new Error('unreachable');
+    expect(result.level).toBe(2);
+    expect(result.state.hintCount).toBe(1);
+    expect(result.state.highestHintLevel).toBe(2);
+    expect(result.state.revealedHintLevels).toEqual([2]);
+    expect(result.state.wrongMoveCount).toBe(0);
+    const content = hintContent(result.level, row, startPosition(row));
+    expect(content.ok).toBe(true);
+    if (content.ok) {
+      // Level 2 carries a visible square, fixing the "first press does nothing" bug.
+      expect(content.content.squares).toEqual(['h5']);
     }
-    expect(second.level).toBe(2);
-    expect(second.state.revealedHintLevels).toEqual([1, 2]);
   });
 
-  it('stops once every enabled level is revealed', () => {
-    const state = revealAll(beginState(puzzleRowFixture('mate-one')), config({}));
-    expect(state.hintCount).toBe(4);
+  it('ascends 2 → 3 → 4 under the product default and then stops', () => {
+    const state = revealAll(beginState(puzzleRowFixture('mate-one')), DEFAULT_SOLVE_HINT_CONFIG);
+    expect(state.revealedHintLevels).toEqual([2, 3, 4]);
+    expect(state.hintCount).toBe(3);
     expect(state.highestHintLevel).toBe(4);
-    expect(state.revealedHintLevels).toEqual([1, 2, 3, 4]);
-    const result = revealNextHint(state, config({}));
-    expect(result).toMatchObject({ ok: false, reason: 'no-further-level' });
+    const exhausted = revealNextHint(state, DEFAULT_SOLVE_HINT_CONFIG);
+    expect(exhausted).toMatchObject({ ok: false, reason: 'no-further-level' });
   });
 
-  it('never reveals beyond level 4', () => {
-    const state = revealAll(beginState(puzzleRowFixture('mate-one')), config({}));
+  it('still reaches level 1 when a set enables the full §10 range, capped at 4', () => {
+    const full = fullConfig();
+    const state = revealAll(beginState(puzzleRowFixture('mate-one')), full);
     expect(state.revealedHintLevels).toEqual([1, 2, 3, 4]);
+    expect(state.hintCount).toBe(4);
   });
 
   it('is gated off once the first solution move has been solved', () => {
     const row = puzzleRowFixture('material-combination');
     let state = beginState(row);
-    const revealed = revealNextHint(state, config({}));
+    const revealed = revealNextHint(state, DEFAULT_SOLVE_HINT_CONFIG);
     expect(revealed.ok).toBe(true);
     state = revealed.ok ? revealed.state : state;
 
@@ -221,7 +230,7 @@ describe('revealNextHint', () => {
     if (moved.kind !== 'accepted') {
       throw new Error('unreachable');
     }
-    const result = revealNextHint(moved.state, config({}));
+    const result = revealNextHint(moved.state, DEFAULT_SOLVE_HINT_CONFIG);
     expect(result).toMatchObject({ ok: false, reason: 'first-move-solved' });
     expect(result.state.hintCount).toBe(1);
   });

@@ -1,0 +1,20 @@
+/*
+ * Puzzle solving — hint and wrong-move square highlights.
+ *
+ * The Chessboard wrapper forwards `customSquareClasses` to Chessground's
+ * `highlight.custom`, which toggles these class names on the affected
+ * `<square>` elements. Hint squares are tinted violet and a wrong move's
+ * from/to squares flash red (owner ruling: square highlights, never drawn
+ * circles). Rules are intentionally plain (not CSS-module) because
+ * Chessground owns the square DOM.
+ */
+
+cg-board square.solve-cls-hint {
+  /* #8b5cf6 (violet) at 50 % */
+  background-color: rgba(139, 92, 246, 0.5);
+}
+
+cg-board square.solve-cls-wrong {
+  /* #c4261c red (matches the blunder highlight). */
+  background-color: rgba(196, 38, 28, 0.5);
+}

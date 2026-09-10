@@ -32,6 +32,14 @@
   background: var(--color-surface-muted, rgba(0, 0, 0, 0.15));
 }
 
+/* Locked (puzzle solving before finish): clearly inert — muted, no pointer.
+   Applied on top of either on/off state; never used once the panel unlocks. */
+.toggleLocked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: saturate(0.35);
+}
+
 .toggleKnob {
   position: absolute;
   top: 2px;

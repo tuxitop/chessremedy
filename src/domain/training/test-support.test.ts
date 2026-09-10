@@ -120,8 +120,8 @@ describe('fixture walkability through the domain solver (Stage F closure)', () =
 });
 
 describe('shared session fixtures', () => {
-  it('builds a default all-levels solve config', () => {
-    expect(solveConfigFixture()).toEqual({ enabledLevels: [1, 2, 3, 4], firstHintLevel: 1 });
+  it('builds a default solve config that starts with a visible level-2 press', () => {
+    expect(solveConfigFixture()).toEqual({ enabledLevels: [2, 3, 4], firstHintLevel: 2 });
   });
 
   it('builds a deterministic cycle context', () => {

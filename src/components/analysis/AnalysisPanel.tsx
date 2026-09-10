@@ -30,6 +30,11 @@ export interface AnalysisPanelProps {
   readonly stored?: StoredPanelData | null;
   /** Override the engine toggle's test id (puzzle solving surfaces). */
   readonly toggleTestId?: string;
+  /** Lock the panel: the engine cannot be turned on yet (puzzle solving keeps
+   * the engine top panel visible while the puzzle is unfinished). When
+   * `disabled`, the toggle is inert and the idle "turn the engine on" hint is
+   * suppressed. */
+  readonly disabled?: boolean;
 }
 
 interface DisplayLine {
@@ -53,6 +58,7 @@ export function AnalysisPanel({
   rightSlot,
   stored = null,
   toggleTestId = 'engine-toggle',
+  disabled = false,
 }: AnalysisPanelProps): React.JSX.Element {
   const { enabled, analyzing, lines, error, reachedDepth, engineLabel } = controller;
   // Stored content counts only while it actually fills the lines area: the
@@ -67,15 +73,15 @@ export function AnalysisPanel({
   const liveEvalText = liveBestEval === null ? null : formatWhiteEvaluation(liveBestEval, fen);
 
   const evalText = enabled ? liveEvalText : storedActive ? stored!.evalText : null;
-  const statusText = !enabled
-    ? storedActive
+  const statusText = disabled
+    ? 'Locked until the puzzle ends'
+    : !enabled
       ? 'Off'
-      : 'Off'
-    : analyzing
-      ? 'Analyzing…'
-      : engineLabel
-        ? 'Ready'
-        : 'Starting…';
+      : analyzing
+        ? 'Analyzing…'
+        : engineLabel
+          ? 'Ready'
+          : 'Starting…';
 
   const displayLines: DisplayLine[] = enabled
     ? lines.map((line) => ({
@@ -97,7 +103,7 @@ export function AnalysisPanel({
   // stored lines actually exist to fill it. It is never an empty placeholder
   // area when the engine is off.
   const showRegion = enabled || storedActive;
-  const showIdle = !enabled && !storedActive;
+  const showIdle = !enabled && !storedActive && !disabled;
   const versionLabel = engineLabel ?? (storedActive ? stored!.engineLabel : null);
 
   return (
@@ -107,9 +113,25 @@ export function AnalysisPanel({
           type="button"
           role="switch"
           aria-checked={enabled}
-          className={enabled ? styles.toggleOn : styles.toggleOff}
+          aria-disabled={disabled}
+          disabled={disabled}
+          className={
+            enabled
+              ? disabled
+                ? `${styles.toggleOn} ${styles.toggleLocked}`
+                : styles.toggleOn
+              : disabled
+                ? `${styles.toggleOff} ${styles.toggleLocked}`
+                : styles.toggleOff
+          }
           onClick={() => controller.setEnabled(!enabled)}
-          aria-label={enabled ? 'Turn engine off' : 'Turn engine on'}
+          aria-label={
+            disabled
+              ? 'Engine available after the puzzle finishes'
+              : enabled
+                ? 'Turn engine off'
+                : 'Turn engine on'
+          }
           data-testid={toggleTestId}
         >
           <span className={styles.toggleKnob} />

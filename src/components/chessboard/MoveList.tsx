@@ -46,6 +46,12 @@ export interface MoveListModel {
   readonly rows: readonly MoveListRow[];
   /** Every ply (mainline + variations) in display order. */
   readonly tokens: readonly MoveToken[];
+  /**
+   * Variation sub-lines rendered under no numbered row (a pinned decision at
+   * mainline depth 0 — e.g. wrong attempts played before any prefix/played
+   * move exists). Present only when `pinnedDepth` clips an empty mainline.
+   */
+  readonly rootVariations?: readonly MovePart[][];
 }
 
 interface MainMove {
@@ -129,11 +135,11 @@ function variationParts(alt: MovePly, altPath: Path): MovePart[] {
   return parts;
 }
 
-function collectMainline(rootChildren: readonly MovePly[]): readonly MainMove[] {
+function collectMainline(rootChildren: readonly MovePly[], cap?: number): readonly MainMove[] {
   const out: MainMove[] = [];
   const prefix: MovePly[] = [];
   let children = rootChildren;
-  while (children.length > 0) {
+  while (children.length > 0 && (cap === undefined || prefix.length < cap)) {
     const main = children[0]!;
     const mainPath = [...prefix, main];
     out.push({ ply: main, path: mainPath, alts: children.slice(1) });
@@ -143,11 +149,23 @@ function collectMainline(rootChildren: readonly MovePly[]): readonly MainMove[] 
   return out;
 }
 
-/** Pure model builder — shared by the component and its tests. */
-export function buildMoveListModel(tree: MoveTree): MoveListModel {
+/**
+ * Pure model builder — shared by the component and its tests.
+ *
+ * `pinnedDepth` (solve-screen opt-in) caps the collected mainline at that many
+ * plies: the node reached after `pinnedDepth` plies is the "decision tail".
+ * While a puzzle decision point is still unsolved, wrong attempts are stored
+ * as its children, and without a pin the first one would read as the active
+ * mainline continuation (`children[0]`). With the pin those children render as
+ * parenthesized variation sub-lines under the row holding the decision move
+ * instead — the wrong move never becomes the mainline. Review/Live Analysis
+ * never pass `pinnedDepth`, so their model is unchanged.
+ */
+export function buildMoveListModel(tree: MoveTree, pinnedDepth?: number): MoveListModel {
   const rows: MoveListRow[] = [];
   const tokens: MoveToken[] = [];
-  const mainline = collectMainline(tree.rootChildren);
+  const mainline = collectMainline(tree.rootChildren, pinnedDepth);
+  const rootVariations: MovePart[][] = [];
   let rowId = 0;
 
   let openRow: {
@@ -170,6 +188,14 @@ export function buildMoveListModel(tree: MoveTree): MoveListModel {
         }
       }
       openRow.variations.push(parts);
+    }
+  };
+
+  const pushTokenParts = (parts: readonly MovePart[]): void => {
+    for (const part of parts) {
+      if (part.t === 'move') {
+        tokens.push({ ply: part.ply, path: part.path });
+      }
     }
   };
 
@@ -213,7 +239,40 @@ export function buildMoveListModel(tree: MoveTree): MoveListModel {
     }
   }
   flushRow();
-  return { rows, tokens };
+
+  // Decision-tail rendering (pinnedDepth set): the children of the decision
+  // node (the node after `pinnedDepth` mainline plies) are wrong attempts with
+  // no correct mainline continuation yet — show each as a variation sub-line
+  // instead of letting them extend the mainline.
+  if (pinnedDepth !== undefined) {
+    if (pinnedDepth === 0) {
+      // The decision node is the tree root: no numbered row exists to hang the
+      // wrong attempts under, so they render as their own indented block.
+      for (const child of tree.rootChildren) {
+        const parts = variationParts(child, [child]);
+        pushTokenParts(parts);
+        rootVariations.push(parts);
+      }
+    } else if (mainline.length >= pinnedDepth) {
+      const decision = mainline[pinnedDepth - 1]!;
+      const lastRow = rows[rows.length - 1];
+      if (lastRow !== undefined && decision.ply.children.length > 0) {
+        const variations = [...lastRow.variations];
+        for (const child of decision.ply.children) {
+          const parts = variationParts(child, [...decision.path, child]);
+          pushTokenParts(parts);
+          variations.push(parts);
+        }
+        rows[rows.length - 1] = { ...lastRow, variations };
+      }
+    }
+  }
+
+  return {
+    rows,
+    tokens,
+    ...(rootVariations.length > 0 ? { rootVariations } : {}),
+  };
 }
 
 export interface MoveListProps {
@@ -238,6 +297,15 @@ export interface MoveListProps {
    * `false` so Live Analysis / Game Review are untouched.
    */
   autoScroll?: boolean;
+  /**
+   * Solve-surface opt-in: pin the collected mainline to end at this many
+   * plies (the unsolved puzzle decision node). The decision node's children
+   * (wrong attempts played before any correct continuation) render as
+   * variation sub-lines under the decision move's row instead of extending
+   * the mainline. Absent (Review / Live Analysis) the tree's full
+   * first-child chain is the mainline, as before.
+   */
+  pinnedDepth?: number;
 }
 
 export function MoveList({
@@ -247,8 +315,9 @@ export function MoveList({
   plyEvals,
   nagOverrides,
   autoScroll = false,
+  pinnedDepth,
 }: MoveListProps): React.JSX.Element {
-  const model = useMemo(() => buildMoveListModel(tree), [tree]);
+  const model = useMemo(() => buildMoveListModel(tree, pinnedDepth), [tree, pinnedDepth]);
   const listRef = useRef<HTMLDivElement | null>(null);
   const activeId = path.length > 0 ? path[path.length - 1]!.id : null;
   const { rows, tokens } = model;
@@ -421,7 +490,8 @@ export function MoveList({
     </>
   );
 
-  const isEmpty = rows.length === 0;
+  const rootVariations = model.rootVariations;
+  const isEmpty = rows.length === 0 && (rootVariations ?? []).length === 0;
   const indexRef = { n: 0 };
 
   return (
@@ -439,6 +509,13 @@ export function MoveList({
           No moves yet — play on the board to build a line.
         </div>
       )}
+      {rows.length === 0 &&
+        (rootVariations ?? []).map((parts, v) => (
+          <div className={styles.variation} role="group" key={`root-variation-${v}`}>
+            <span className={styles.variationMarker} aria-hidden="true" />
+            {renderParts(`root-v${v}`, parts, indexRef)}
+          </div>
+        ))}
       {rows.map((row) => (
         <Fragment key={row.key}>
           <div className={styles.row} role="group">

@@ -280,7 +280,7 @@ export function PuzzlesPage(): React.JSX.Element {
     }
     const total = session.rows.length;
     return (
-      <div className={styles.page} data-testid="puzzles-page">
+      <div className={`${styles.page} ${styles.solveSession}`} data-testid="puzzles-page">
         <SessionHeader label={session.label} onExit={endSession} />
         <div className={styles.sessionBar}>
           <p className={styles.progress} role="status" data-testid="puzzles-practice-progress">

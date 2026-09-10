@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { puzzleRowFixture, blunderRowFixture } from '@/domain/puzzle/test-support';
 import { buildAttemptRow } from '@/domain/training';
 import { makeMove } from '@/domain/analysis/test-support';
@@ -269,6 +269,23 @@ function rowWithPrefix(): { row: PuzzleRow; records: readonly MoveAnalysis[] } {
   return { row, records };
 }
 
+/** The deterministic missed-mate (mate-one) prefix through sourcePly 6. */
+const MATE_ONE_PREFIX = ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6'];
+
+/** True prefix records ending exactly at `puzzleRowFixture('mate-one')`. */
+function matePrefixRecordsFor(row: PuzzleRow): readonly MoveAnalysis[] {
+  const STANDARD = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  const built = buildSolveLine({ startFen: STANDARD, mainline: MATE_ONE_PREFIX });
+  return MATE_ONE_PREFIX.map((uci, ply) =>
+    makeMove(ply, {
+      gameId: row.sourceGameId,
+      analysisId: row.analysisId,
+      playedMove: { san: '', uci },
+      positionFen: fenOf(positionAtPath(built.tree, mainlinePathOf(built.tree, ply))),
+    }),
+  );
+}
+
 /** Fabricated prefix chain ending at the given row's startingFen (scholar). */
 function scholarRecordsFor(gameId: string, analysisId: string): readonly MoveAnalysis[] {
   const STANDARD = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -290,15 +307,25 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     engine.jobs.splice(0);
   });
 
-  it('presents a fresh puzzle: drawable interactive board, objective, "{color} to move…", no clock, no result, no engine toggle, no counters or text entry', async () => {
+  it('presents a fresh puzzle: drawable interactive board, objective, game context text, "{color} to move…", no clock, no result, locked engine, no counters or text entry', async () => {
     const rig = createRig();
     renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
     expect(screen.getByTestId('solve-objective')).toHaveTextContent('Forced mate');
-    expect(await screen.findByTestId('solve-movelist-status')).toHaveTextContent('White to move…');
+    await waitFor(() =>
+      expect(screen.getByTestId('solve-movelist-status')).toHaveTextContent('White to move…'),
+    );
+    // The historical game move is written out as SAN in the info area.
+    expect(screen.getByTestId('solve-game-move-note')).toHaveTextContent(
+      'd3 was played in the game — find a better move.',
+    );
     expect(screen.queryByTestId('solve-result')).not.toBeInTheDocument();
     expect(screen.queryByTestId('solve-clock')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('solve-engine-toggle')).not.toBeInTheDocument();
+    // The engine top panel is always present; only its toggle is locked until
+    // the puzzle finishes (owner UX ruling) — with a clear locked state.
+    expect(screen.getByTestId('solve-engine-toggle')).toBeDisabled();
+    expect(screen.getByTestId('engine-status')).toHaveTextContent('Locked until the puzzle ends');
+    expect(screen.queryByTestId('engine-idle')).not.toBeInTheDocument();
     expect(screen.queryByTestId('solve-wrong-count')).not.toBeInTheDocument();
     expect(screen.queryByTestId('solve-hint-count')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Enter a move')).not.toBeInTheDocument();
@@ -315,7 +342,9 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     const rig = createRig();
     renderSolve(blunderRowFixture(), rig, () => undefined, { showTimer: true });
     expect(await screen.findByTestId('solve-clock')).toHaveTextContent('0:00');
-    expect(screen.getByTestId('solve-movelist-status')).toHaveTextContent('White to move…');
+    await waitFor(() =>
+      expect(screen.getByTestId('solve-movelist-status')).toHaveTextContent('White to move…'),
+    );
   });
 
   it('solves via the board, writes one row, shows Success inside the move list, then Next advances the host', async () => {
@@ -327,6 +356,7 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     boardMove('h5', 'f7');
 
     await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Success'));
+    expect(screen.getByTestId('solve-result').className).toContain('resultSuccess');
     expect(rig.calls).toHaveLength(1);
     await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
 
@@ -337,46 +367,64 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     expect(outcome?.attemptRow).toBeDefined();
   });
 
-  it('a second hint press does not fail the puzzle; a hint-then-solve stays solvedWithHelp', async () => {
+  it('hint presses never fail the puzzle; a hint-then-solve stays solvedWithHelp', async () => {
     const rig = createRig();
     renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
     await waitForInteractive();
     fireEvent.click(screen.getByTestId('solve-hint'));
-    expect(screen.getByTestId('solve-announcement')).toHaveTextContent('Relevant piece: queen');
+    expect(screen.getByTestId('solve-announcement')).toHaveTextContent('The piece is on h5');
     // Still solving at the decision point after a hint.
     expect(lastBoard().interactive).toBe(true);
     expect(screen.queryByTestId('solve-result')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('solve-hint'));
-    expect(screen.getByTestId('solve-announcement')).toHaveTextContent('The piece is on h5');
+    expect(screen.getByTestId('solve-announcement')).toHaveTextContent('Move it to f7');
 
     boardMove('h5', 'f7');
     await waitFor(() =>
       expect(screen.getByTestId('solve-result')).toHaveTextContent('Solved with hints'),
     );
+    expect(screen.getByTestId('solve-result').className).toContain('resultHelp');
     expect(rig.calls).toHaveLength(1);
     const written = rig.calls[0];
     expect(written?.counters.hintCount).toBeGreaterThan(0);
   });
 
-  it('hint presses reveal a yellow source-square highlight and a yellow destination arrow', async () => {
+  it('the FIRST hint press highlights the source square violet through the square-class map (no circle)', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
+
+    await waitForInteractive();
+    // One single press now highlights a square (level 2 = the source square).
+    fireEvent.click(screen.getByTestId('solve-hint'));
+    const classes = lastBoard().customSquareClasses as ReadonlyMap<string, string> | undefined;
+    expect(classes?.get('h5')).toBe('solve-cls-hint');
+    // Hint squares are CSS highlights, never Chessground circles.
+    const shapes = lastBoard().autoShapes as Array<{ orig: string; dest?: string }>;
+    expect(shapes.some((s) => s.dest === undefined)).toBe(false);
+  });
+
+  it('hint presses highlight the hint squares violet and draw only the violet best-move arrow', async () => {
     const rig = createRig();
     renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
     await waitForInteractive();
     fireEvent.click(screen.getByTestId('solve-hint'));
     fireEvent.click(screen.getByTestId('solve-hint'));
-    let shapes = lastBoard().autoShapes as Array<{ orig: string; brush: string; dest?: string }>;
-    expect(shapes.some((s) => s.brush === 'yellow' && s.orig === 'h5')).toBe(true);
-
-    fireEvent.click(screen.getByTestId('solve-hint'));
-    fireEvent.click(screen.getByTestId('solve-hint'));
-    shapes = lastBoard().autoShapes as Array<{ orig: string; dest: string; brush: string }>;
-    expect(shapes.some((s) => s.brush === 'yellow' && s.dest === 'f7')).toBe(true);
+    // Level 2 highlights h5; level 3 adds f7 and the violet arrow h5→f7.
+    const classes = lastBoard().customSquareClasses as ReadonlyMap<string, string> | undefined;
+    expect(classes?.get('h5')).toBe('solve-cls-hint');
+    expect(classes?.get('f7')).toBe('solve-cls-hint');
+    const shapes = lastBoard().autoShapes as Array<{ orig: string; dest: string; brush: string }>;
+    expect(shapes.some((s) => s.brush === 'violet' && s.orig === 'h5' && s.dest === 'f7')).toBe(
+      true,
+    );
+    // No hint square is drawn as a circle (every auto shape is an arrow).
+    expect(shapes.every((s) => s.dest !== undefined)).toBe(true);
   });
 
-  it('a wrong move is marked red and appended as a variation; a retry solve records solvedWithHelp', async () => {
+  it('one wrong move fails the puzzle immediately, but the board returns to the decision point and a later correct solve keeps the recorded Failed outcome', async () => {
     const rig = createRig();
     const { row, records } = rowWithPrefix();
     renderSolve(row, rig, () => undefined, {
@@ -388,8 +436,20 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     expect(screen.getByTestId('solve-announcement')).toHaveTextContent(
       'not the move that achieves',
     );
-    const shapes = lastBoard().autoShapes as Array<{ brush: string }>;
-    expect(shapes.some((s) => s.brush === 'red')).toBe(true);
+    // The attempt is recorded failed immediately (fail-once) while the user
+    // keeps solving.
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+    expect(screen.getByTestId('solve-result').className).toContain('resultFailed');
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.trigger).toBe('wrongMove');
+
+    // DEFECT 1: the wrong move never hijacks the mainline. The board stays at
+    // the decision node (the solver's side to move), the ply counter does not
+    // advance past the decision, and the wrong SAN shows as a parenthesized
+    // variation — never as the active mainline ply.
+    expect((lastBoard().position as { turn: 'white' | 'black' }).turn).toBe('white');
+    expect(lastBoard().interactive).toBe(true);
+    expect(screen.getByTestId('solve-ply')).toHaveTextContent('4/4');
 
     const list = screen.getByTestId('solve-movelist');
     await waitFor(() => {
@@ -397,19 +457,175 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
       expect(list).toHaveTextContent('e5');
       expect(list).toHaveTextContent('Nf3');
       expect(list).toHaveTextContent('Nc6');
+      expect(list.textContent).toContain('(3. d4)');
     });
-    // The wrong attempt is appended as a variation under the decision move
-    // once that move's continuation exists (after the correct move).
+    const d4 = screen
+      .getAllByTestId('move-list-move')
+      .find((m) => m.getAttribute('data-san') === 'd4');
+    expect(d4).toBeTruthy();
+    expect(d4?.getAttribute('aria-current')).toBeNull();
+
+    // The correct move is still playable from the decision node.
     boardMove('f1', 'c4');
     await waitFor(() => {
-      expect(list.textContent).toContain('(');
       expect(list).toHaveTextContent('Bc4');
     });
+    // A later correct solve is confirmed green, but the outcome stays Failed
+    // and only the one wrong-move row was ever written.
     await waitFor(() =>
-      expect(screen.getByTestId('solve-result')).toHaveTextContent('Solved with hints'),
+      expect(screen.getByTestId('solve-confirm')).toHaveTextContent(
+        'Correct! This was recorded as a failed attempt.',
+      ),
     );
+    expect(screen.getByTestId('solve-confirm').className).toContain('confirm');
+    expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed');
     expect(rig.calls).toHaveLength(1);
     expect(rig.calls[0]?.counters.wrongMoveCount).toBe(1);
+    await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
+  });
+
+  it('flashes the wrong move’s from/to squares red via square classes, then clears the flash after ~900ms', async () => {
+    const rig = createRig();
+    const { row, records } = rowWithPrefix();
+    renderSolve(row, rig, () => undefined, {
+      storedAnalysis: { listForGameAndAnalysis: async () => records },
+    });
+
+    await waitForInteractive();
+    boardMove('d2', 'd4');
+
+    await waitFor(() => {
+      const classes = lastBoard().customSquareClasses as ReadonlyMap<string, string> | undefined;
+      expect(classes?.get('d2')).toBe('solve-cls-wrong');
+      expect(classes?.get('d4')).toBe('solve-cls-wrong');
+    });
+    // Wrong squares are CSS highlights, never red Chessground circles.
+    const shapes = lastBoard().autoShapes as Array<{ brush: string }>;
+    expect(shapes.some((s) => s.brush === 'red')).toBe(false);
+
+    await waitFor(
+      () => {
+        const classes = lastBoard().customSquareClasses as ReadonlyMap<string, string> | undefined;
+        expect(classes?.get('d2')).toBeUndefined();
+        expect(classes?.get('d4')).toBeUndefined();
+      },
+      { timeout: 2500 },
+    );
+  });
+
+  it('nests the puzzle-info card inside the move-list pane', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
+
+    await waitForInteractive();
+    expect(
+      within(screen.getByTestId('solve-movelist')).getByTestId('solve-puzzle-info'),
+    ).toBeInTheDocument();
+  });
+
+  it('unlocks the engine toggle as soon as a wrong move records a fail, while the presentation stays open', async () => {
+    const rig = createRig();
+    const { row, records } = rowWithPrefix();
+    renderSolve(row, rig, () => undefined, {
+      storedAnalysis: { listForGameAndAnalysis: async () => records },
+    });
+
+    await waitForInteractive();
+    expect(screen.getByTestId('solve-engine-toggle')).toBeDisabled();
+
+    boardMove('d2', 'd4');
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+    // The presentation is still open (the user may keep trying)…
+    expect(lastBoard().interactive).toBe(true);
+    // …but the recorded fail already makes the engine available.
+    await waitFor(() => expect(screen.getByTestId('solve-engine-toggle')).toBeEnabled());
+    expect(screen.getByTestId('engine-status')).toHaveTextContent('Off');
+  });
+
+  it('keeps the board playable after the puzzle finishes and analyses the position moved to, without writing another attempt', async () => {
+    const rig = createRig();
+    renderSolve(puzzleRowFixture('exchange-win'), rig, () => undefined);
+
+    await waitForInteractive();
+    boardMove('a3', 'd3');
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Success'));
+    expect(rig.calls).toHaveLength(1);
+
+    // The finished board is interactive like the analysis page (Black to move).
+    await waitFor(() => expect(lastBoard().interactive).toBe(true));
+    expect((lastBoard().position as { turn: 'white' | 'black' }).turn).toBe('black');
+
+    // Turn the engine on: it analyses the finished position.
+    fireEvent.click(screen.getByTestId('solve-engine-toggle'));
+    await act(async () => {});
+    const jobsAfterToggle = engine.jobs.length;
+    expect(jobsAfterToggle).toBeGreaterThan(0);
+
+    // A free exploration move updates the displayed position, the move list and
+    // the analysed FEN — and never writes a second attempt row.
+    boardMove('e8', 'f8');
+    await waitFor(() =>
+      expect((lastBoard().position as { turn: 'white' | 'black' }).turn).toBe('white'),
+    );
+    await waitFor(() => expect(engine.jobs.length).toBeGreaterThan(jobsAfterToggle));
+    expect(engine.jobs[engine.jobs.length - 1]!.fen).toContain(' w ');
+    expect(screen.getByTestId('solve-movelist')).toHaveTextContent('Kf8');
+    expect(rig.calls).toHaveLength(1);
+  });
+
+  it('a wrong move on the deterministic missed-mate never advances past the decision node, shows as a variation, and a later Qxf7# confirms the failed result', async () => {
+    const rig = createRig();
+    const row = puzzleRowFixture('mate-one');
+    renderSolve(row, rig, () => undefined, {
+      storedAnalysis: {
+        listForGameAndAnalysis: async () => matePrefixRecordsFor(row),
+      },
+    });
+
+    await waitForInteractive();
+    // The game prefix (… Nf6) renders before any puzzle move.
+    const list = screen.getByTestId('solve-movelist');
+    await waitFor(() => expect(list).toHaveTextContent('Qh5'));
+
+    // Wrong 4.d4 at the sourcePly-6 decision (White to move).
+    boardMove('d2', 'd4');
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+
+    // The board is still at the decision node: White to move, interactive, and
+    // the ply counter stays 6/6 (it never jumps to 7/7 as the wrong mainline).
+    expect((lastBoard().position as { turn: 'white' | 'black' }).turn).toBe('white');
+    expect(lastBoard().interactive).toBe(true);
+    expect(screen.getByTestId('solve-ply')).toHaveTextContent('6/6');
+
+    // The wrong attempt renders parenthesized under the decision move's row,
+    // not as the active mainline ply.
+    await waitFor(() => expect(list.textContent).toContain('(4. d4)'));
+    const d4 = screen
+      .getAllByTestId('move-list-move')
+      .find((m) => m.getAttribute('data-san') === 'd4');
+    expect(d4).toBeTruthy();
+    expect(d4?.getAttribute('aria-current')).toBeNull();
+    const active = screen
+      .getAllByTestId('move-list-move')
+      .find((m) => m.getAttribute('aria-current') === 'step');
+    expect(active?.getAttribute('data-san')).toBe('Nf6');
+
+    // The solution is not spoiled: its SAN appears nowhere in the move list
+    // before it is played.
+    expect(list.textContent).not.toContain('Qxf7');
+
+    // The correct Qxf7# is still playable from the decision node and the
+    // recorded Failed outcome stays with a green confirmation.
+    boardMove('h5', 'f7');
+    await waitFor(() =>
+      expect(screen.getByTestId('solve-confirm')).toHaveTextContent(
+        'Correct! This was recorded as a failed attempt.',
+      ),
+    );
+    expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed');
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.trigger).toBe('wrongMove');
+    await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
   });
 
   it('renders the game prefix as a mainline when prefix records are supplied', async () => {
@@ -430,20 +646,24 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     });
   });
 
-  it('View solution gives up: the stored solution plays out on the mainline with Failed, engine toggle appears only after finish', async () => {
+  it('View solution gives up: the stored solution plays out on the mainline with Failed, engine toggle unlocks only after finish', async () => {
     const rig = createRig();
     renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
     await waitForInteractive();
-    expect(screen.queryByTestId('solve-engine-toggle')).not.toBeInTheDocument();
+    expect(screen.getByTestId('solve-engine-toggle')).toBeDisabled();
 
     fireEvent.click(screen.getByTestId('solve-solution'));
     await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+    expect(screen.getByTestId('solve-result').className).toContain('resultFailed');
     expect(rig.calls).toHaveLength(1);
     expect(rig.calls[0]?.trigger).toBe('gaveUp');
     expect(screen.getByTestId('solve-movelist')).toHaveTextContent('Qxf7');
-
-    await waitFor(() => expect(screen.getByTestId('solve-engine-toggle')).toBeInTheDocument());
+    // View solution writes the whole solution out as SAN in the info area.
+    expect(screen.getByTestId('solve-solution-line')).toHaveTextContent('Solution: Qxf7#');
+    // The engine toggle unlocks (with normal styling) only after the finish.
+    await waitFor(() => expect(screen.getByTestId('solve-engine-toggle')).toBeEnabled());
+    expect(screen.getByTestId('engine-status')).toHaveTextContent('Off');
     await waitFor(() => expect(screen.getByTestId('solve-next')).toBeEnabled());
   });
 
@@ -487,15 +707,15 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     expect(onExit).not.toHaveBeenCalled();
   });
 
-  it('Restart appears once the user has started playing and resets the line to the decision point', async () => {
+  it('Restart appears once the user has used a hint (no outcome yet) and resets the line to the decision point', async () => {
     const rig = createRig();
-    const { row } = rowWithPrefix();
-    renderSolve(row, rig, () => undefined);
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
 
     await waitForInteractive();
     expect(screen.queryByTestId('solve-restart')).not.toBeInTheDocument();
 
-    boardMove('d2', 'd4');
+    // A hint counts as "started" but never records an outcome.
+    fireEvent.click(screen.getByTestId('solve-hint'));
     const restart = await screen.findByTestId('solve-restart');
     fireEvent.click(restart);
 
@@ -530,17 +750,20 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     expect(screen.queryByTestId('solve-restart')).not.toBeInTheDocument();
   });
 
-  it('transport moves across the line and the board is not interactive away from the decision point', async () => {
+  it('transport moves across the line and, while still solving, the board is not interactive away from the decision point', async () => {
     const rig = createRig();
-    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined);
+    renderSolve(puzzleRowFixture('material-combination'), rig, () => undefined);
 
     await waitForInteractive();
-    boardMove('h5', 'f7');
-    await waitFor(() => expect(screen.getByTestId('solve-result')).toBeInTheDocument());
+    // First accepted move (Nxf7) auto-plays the opponent reply (…Qe7), leaving
+    // the puzzle still solving at the next decision point.
+    boardMove('g5', 'f7');
+    await waitFor(() => expect(screen.getByTestId('solve-ply')).toHaveTextContent('2/2'));
+    expect(lastBoard().interactive).toBe(true);
 
     fireEvent.click(screen.getByTestId('nav-first'));
     expect(lastBoard().interactive).toBe(false);
     fireEvent.click(screen.getByTestId('nav-last'));
-    expect(screen.getByTestId('solve-ply')).toHaveTextContent('1/1');
+    expect(screen.getByTestId('solve-ply')).toHaveTextContent('2/2');
   });
 });

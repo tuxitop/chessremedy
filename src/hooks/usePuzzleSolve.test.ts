@@ -102,25 +102,111 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(result.current.wrongMovesTried).toEqual([]);
   });
 
-  it('keeps a wrong move out of the line, counts it, and records a help solve', async () => {
+  it('records solvedWithHelp for a hint-then-clean-solve (no wrong move) with one write', async () => {
+    const rig = createRecorderRig();
+    const { result } = renderSolve(puzzleRowFixture('mate-one'), rig);
+
+    act(() => result.current.revealHint());
+    expect(result.current.hintCount).toBe(1);
+    expect(result.current.outcome).toBeNull();
+    expect(result.current.stage).toBe('solving');
+
+    act(() => {
+      const verdict = result.current.playBoardMove('h5', 'f7');
+      expect(verdict).toEqual({ kind: 'solved' });
+    });
+    await waitFor(() => expect(result.current.writePhase).toBe('written'));
+    expect(result.current.outcome?.result).toBe('solvedWithHelp');
+    expect(result.current.outcome?.solved).toBe(true);
+    expect(rig.calls).toHaveLength(1);
+  });
+
+  it('records the FIRST wrong move as an immediate failed attempt while staying in solving (fail-once)', async () => {
     const rig = createRecorderRig();
     const { result } = renderSolve(blunderRowFixture(), rig);
 
     act(() => {
       expect(result.current.playBoardMove('d2', 'd3')).toEqual({ kind: 'wrong' });
     });
+    // The board stays at the decision point and the presentation is NOT ended.
     expect(result.current.wrongMoveCount).toBe(1);
     expect(result.current.wrongMovesTried).toEqual(['d2d3']);
     expect(result.current.playedLine).toEqual([]);
     expect(result.current.viewPly).toBe(0);
     expect(result.current.atDecisionPoint).toBe(true);
+    expect(result.current.stage).toBe('solving');
+    expect(result.current.outcome?.result).toBe('failed');
+    expect(result.current.outcome?.solved).toBe(false);
+    expect(result.current.foundAfterFail).toBe(false);
+
+    await waitFor(() => expect(result.current.writePhase).toBe('written'));
+    expect(rig.calls).toHaveLength(1);
+    expect(rig.calls[0]?.trigger).toBe('wrongMove');
+    expect(rig.calls[0]?.counters.wrongMoveCount).toBe(1);
+    // Hints stay usable after the fail (the line is empty again).
+    expect(result.current.canHint).toBe(true);
+
+    // A second wrong move never writes a second row.
+    act(() => {
+      expect(result.current.playBoardMove('a2', 'a3')).toEqual({ kind: 'wrong' });
+    });
+    expect(result.current.wrongMoveCount).toBe(2);
+    expect(rig.calls).toHaveLength(1);
+    expect(result.current.stage).toBe('solving');
+  });
+
+  it('a correct solve AFTER a wrong-fail writes nothing more, marks foundAfterFail and keeps the failed outcome', async () => {
+    const rig = createRecorderRig();
+    const { result } = renderSolve(puzzleRowFixture('mate-one'), rig);
 
     act(() => {
-      result.current.playBoardMove('h5', 'f7');
+      expect(result.current.playBoardMove('d2', 'd3')).toEqual({ kind: 'wrong' });
     });
     await waitFor(() => expect(result.current.writePhase).toBe('written'));
-    expect(result.current.outcome?.result).toBe('solvedWithHelp');
-    expect(result.current.outcome?.wrongMoveCount).toBe(1);
+    expect(rig.calls).toHaveLength(1);
+
+    act(() => {
+      const verdict = result.current.playBoardMove('h5', 'f7');
+      expect(verdict).toEqual({ kind: 'solved' });
+    });
+    expect(result.current.foundAfterFail).toBe(true);
+    expect(result.current.outcome?.result).toBe('failed');
+    expect(result.current.stage).toBe('outcome');
+    await waitFor(() => expect(result.current.writePhase).toBe('written'));
+    // Exactly one attempt row was written — the recorded outcome stays failed.
+    expect(rig.calls).toHaveLength(1);
+    expect(result.current.exitOutcome()?.result).toBe('failed');
+    expect(result.current.playedLine).toEqual(['h5f7']);
+  });
+
+  it('give-up after a wrong-fail ends the presentation without a second write', async () => {
+    const rig = createRecorderRig();
+    const { result } = renderSolve(puzzleRowFixture('mate-one'), rig);
+
+    act(() => {
+      expect(result.current.playBoardMove('d2', 'd3')).toEqual({ kind: 'wrong' });
+    });
+    await waitFor(() => expect(result.current.writePhase).toBe('written'));
+
+    act(() => result.current.giveUp());
+    expect(result.current.stage).toBe('postSolve');
+    expect(result.current.outcome?.result).toBe('failed');
+    expect(rig.calls).toHaveLength(1);
+    expect(result.current.exitOutcome()?.result).toBe('failed');
+  });
+
+  it('skip after a wrong-fail closes the view without a second write', async () => {
+    const rig = createRecorderRig();
+    const { result } = renderSolve(puzzleRowFixture('mate-one'), rig);
+
+    act(() => {
+      expect(result.current.playBoardMove('d2', 'd3')).toEqual({ kind: 'wrong' });
+    });
+    await waitFor(() => expect(result.current.writePhase).toBe('written'));
+
+    act(() => result.current.skip());
+    expect(result.current.stage).toBe('outcome');
+    expect(result.current.outcome?.result).toBe('failed');
     expect(rig.calls).toHaveLength(1);
   });
 
@@ -136,29 +222,28 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(rig.calls).toEqual([]);
   });
 
-  it('reveals hints one level per press, gates off after level 4, and restart clears reveal content but keeps counters', async () => {
+  it('reveals hints one level per press from the visible level 2, gates off after level 4, and restart clears reveal content but keeps counters', async () => {
     const rig = createRecorderRig();
     const row = puzzleRowFixture('mate-two');
     const { result } = renderSolve(row, rig);
 
     act(() => result.current.revealHint());
     expect(result.current.hintCount).toBe(1);
-    expect(result.current.highestHintLevel).toBe(1);
-    expect(result.current.revealedHintLevels).toEqual([1]);
+    expect(result.current.highestHintLevel).toBe(2);
+    expect(result.current.revealedHintLevels).toEqual([2]);
     expect(result.current.canHint).toBe(true);
 
     act(() => result.current.revealHint());
     act(() => result.current.revealHint());
-    act(() => result.current.revealHint());
-    expect(result.current.revealedHintLevels).toEqual([1, 2, 3, 4]);
+    expect(result.current.revealedHintLevels).toEqual([2, 3, 4]);
     expect(result.current.canHint).toBe(false);
     act(() => result.current.revealHint());
-    expect(result.current.hintCount).toBe(4);
+    expect(result.current.hintCount).toBe(3);
 
     act(() => result.current.restart());
     expect(result.current.revealedHintLevels).toEqual([]);
     expect(result.current.playedLine).toEqual([]);
-    expect(result.current.hintCount).toBe(4);
+    expect(result.current.hintCount).toBe(3);
     expect(result.current.wrongMoveCount).toBe(0);
     expect(rig.calls).toEqual([]);
   });

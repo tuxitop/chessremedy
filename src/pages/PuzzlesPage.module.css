@@ -4,6 +4,18 @@
   gap: var(--space-4);
 }
 
+/* The in-solve practice session is a full-viewport solving surface: the board
+   and its side column are tuned to end exactly at the bottom of the shell
+   content. The app-shell <main> reserves bottom padding (--space-8) for
+   ordinary scrolling pages, so a board-height column would push /puzzles into
+   a ~48px vertical page scroll on common 1280×720 viewports. Cancel that
+   padding for the solve session and tighten its row gaps so the page fits
+   without a page scrollbar on desktop. */
+.solveSession {
+  gap: var(--space-2);
+  margin-bottom: calc(-1 * var(--space-8));
+}
+
 .header,
 .sessionHeader {
   display: flex;

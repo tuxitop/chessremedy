@@ -28,11 +28,13 @@ function Harness({
   autoStart,
   fen = START_FEN,
   stored = null,
+  disabled = false,
 }: {
   rig: ReturnType<typeof createFakeAnalysisService>;
   autoStart: boolean;
   fen?: string;
   stored?: StoredPanelData | null;
+  disabled?: boolean;
 }): React.JSX.Element {
   const controller = useAnalysisController({
     service: rig.service,
@@ -40,7 +42,15 @@ function Harness({
     capabilities: CAPS,
     autoStart,
   });
-  return <AnalysisPanel controller={controller} capabilities={CAPS} fen={fen} stored={stored} />;
+  return (
+    <AnalysisPanel
+      controller={controller}
+      capabilities={CAPS}
+      fen={fen}
+      stored={stored}
+      disabled={disabled}
+    />
+  );
 }
 
 describe('AnalysisPanel', () => {
@@ -173,5 +183,33 @@ describe('AnalysisPanel', () => {
     expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByTestId('engine-result')).toBeInTheDocument();
     expect(screen.getAllByTestId('engine-line-placeholder').length).toBeGreaterThan(0);
+  });
+
+  it('renders a distinctly-locked toggle and locked state text while disabled, with no idle hint', () => {
+    const rig = createFakeAnalysisService();
+    render(<Harness rig={rig} autoStart={false} disabled={true} />);
+    const toggle = screen.getByTestId('engine-toggle');
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-disabled', 'true');
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    // The toggle carries the locked (muted/not-allowed) style class.
+    expect(toggle.className).toContain('toggleLocked');
+    expect(screen.getByTestId('engine-status')).toHaveTextContent('Locked until the puzzle ends');
+    // No "toggle the engine on to analyse this position" idle hint pre-finish.
+    expect(screen.queryByTestId('engine-idle')).not.toBeInTheDocument();
+    expect(rig.jobs).toHaveLength(0);
+  });
+
+  it('shows the normal Off state + idle hint once unlocked (disabled false)', () => {
+    const rig = createFakeAnalysisService();
+    const { rerender } = render(<Harness rig={rig} autoStart={false} disabled={true} />);
+    rerender(<Harness rig={rig} autoStart={false} disabled={false} />);
+    const toggle = screen.getByTestId('engine-toggle');
+    expect(toggle).not.toBeDisabled();
+    expect(toggle.className).not.toContain('toggleLocked');
+    expect(screen.getByTestId('engine-status')).toHaveTextContent('Off');
+    expect(screen.getByTestId('engine-idle')).toHaveTextContent(
+      'Toggle the engine on to analyse this position.',
+    );
   });
 });

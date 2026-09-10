@@ -20,6 +20,10 @@
  * press from the configured first level, skipping disabled levels, capped at
  * level 4. Hint content is never persisted on a puzzle or attempt (only the
  * hint count and highest level reached are recorded).
+ *
+ * Product default (owner UX ruling): the reveal sequence starts at level 2 so
+ * the very first Hint press produces a visible square highlight — level 1
+ * (piece type, text only) is enabled for no set in V1.
  */
 
 import { makeSan } from 'chessops/san';
@@ -30,10 +34,15 @@ import type { PuzzleRow } from '@/domain/puzzle/types';
 import type { PresentationState } from './solve';
 import type { HintLevel, SolveHintConfig } from './types';
 
-/** Default per-set hint configuration: all four levels enabled, first at 1. */
+/**
+ * Default per-set hint configuration (owner UX ruling): level 1 is text-only
+ * with no board visual, so the first press starts at level 2 — the piece's
+ * starting-square highlight — and ascends through 3 (destination) to 4 (the
+ * full SAN move).
+ */
 export const DEFAULT_SOLVE_HINT_CONFIG: SolveHintConfig = {
-  enabledLevels: [1, 2, 3, 4],
-  firstHintLevel: 1,
+  enabledLevels: [2, 3, 4],
+  firstHintLevel: 2,
 };
 
 const ROLE_WORD: Readonly<Record<Role, string>> = {

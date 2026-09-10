@@ -51,12 +51,22 @@ describe('deriveResult', () => {
   it('maps the Outcomes table exactly', () => {
     expect(deriveResult('solved', cleanCounters)).toBe('solvedFirstTry');
     expect(deriveResult('solved', { ...cleanCounters, hintCount: 1 })).toBe('solvedWithHelp');
+    // A solve never carries a wrong move under fail-once semantics: one wrong
+    // move has already failed the presentation by then.
     expect(deriveResult('solved', { ...cleanCounters, wrongMoveCount: 2 })).toBe('solvedWithHelp');
     expect(deriveResult('solved', { ...cleanCounters, hintCount: 1, wrongMoveCount: 2 })).toBe(
       'solvedWithHelp',
     );
     expect(deriveResult('gaveUp', cleanCounters)).toBe('failed');
     expect(deriveResult('skip', cleanCounters)).toBe('skipped');
+  });
+
+  it('records a wrong move as failed immediately (owner wrong-move ruling)', () => {
+    expect(deriveResult('wrongMove', cleanCounters)).toBe('failed');
+    expect(deriveResult('wrongMove', { ...cleanCounters, wrongMoveCount: 1 })).toBe('failed');
+    expect(deriveResult('wrongMove', { ...cleanCounters, hintCount: 2, wrongMoveCount: 1 })).toBe(
+      'failed',
+    );
   });
 });
 
@@ -99,6 +109,17 @@ describe('buildAttemptRow', () => {
     const skipped = build({ trigger: 'skip' });
     expect(skipped.result).toBe('skipped');
     expect(skipped.solved).toBe(false);
+  });
+
+  it('records a wrong-move trigger as failed and never solved', () => {
+    const attempt = build({
+      trigger: 'wrongMove',
+      counters: { wrongMoveCount: 1, hintCount: 0, highestHintLevel: null },
+    });
+    expect(attempt.result).toBe('failed');
+    expect(attempt.solved).toBe(false);
+    expect(attempt.wrongMoveCount).toBe(1);
+    expect(attempt.hintCount).toBe(0);
   });
 
   it('copies the blunder origin onto the attempt row', () => {

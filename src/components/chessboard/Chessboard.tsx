@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 import type * as React from 'react';
 import { Chessground } from '@lichess-org/chessground';
 import type { Api } from '@lichess-org/chessground/api';
@@ -56,11 +56,26 @@ const ENGINE_ARROW_BRUSHES = {
   gray5: { key: 'gray5', color: '#9aa0a6', opacity: 0.2, lineWidth: 8 },
 } as const;
 
-const DRAW_BRUSHES: DrawBrushes = { ...ANNOTATION_BRUSHES, ...ENGINE_ARROW_BRUSHES };
+const DRAW_BRUSHES: DrawBrushes = {
+  ...ANNOTATION_BRUSHES,
+  ...ENGINE_ARROW_BRUSHES,
+  // Puzzle-hint brushes (Feature 012): the hint colour is the owner-specified
+  // violet (~#8b5cf6), drawn as square highlights and the best-move arrow.
+  violet: { key: 'violet', color: '#8b5cf6', opacity: 1, lineWidth: 10 },
+};
 
 export interface ChessboardHandle {
   /** Clear all arrows drawn on the board (manual + automatic). */
   clearArrows(): void;
+  /**
+   * Replace the board's user-drawn shapes (Chessground `drawable.shapes`) —
+   * the arrows the user draws by hand and any the caller injects through this
+   * handle. Injected shapes behave exactly like user-drawn ones: Chessground
+   * keeps them across position/FEN re-renders and a board click erases them
+   * (`eraseOnClick`), so callers must re-inject deliberately (e.g. on a fresh
+   * puzzle or an explicit restart), never on every render.
+   */
+  setShapes(shapes: readonly DrawShape[]): void;
   /** Clear a pending promotion and restore the controlled position. */
   clearPendingPromotion(): void;
   /** (Re-)select a square on the board (used when promotion is cancelled). */
@@ -80,6 +95,21 @@ export interface ChessboardProps {
   animation?: boolean;
   /** Whether arrow drawing is enabled. Defaults to `false`. */
   drawable?: boolean;
+  /**
+   * Whether a plain board click erases the user-drawn shapes (Chessground's
+   * `drawable.eraseOnMovablePieceClick`). Omitted (default) leaves Chessground
+   * to its own default so existing surfaces are untouched; `false` keeps
+   * caller-injected shapes until the user really starts a piece move.
+   */
+  eraseOnClick?: boolean;
+  /**
+   * Fired whenever the USER draws or erases arrows on the board
+   * (Chessground `drawable.onChange`): `shapes` is the board's current
+   * user-drawn shape list (empty once they cleared everything). This is
+   * NOT fired for programmatic `setShapes` calls nor for `api.set` wipes,
+   * so callers can distinguish a deliberate erase from an automatic one.
+   */
+  onShapesChange?: (shapes: readonly DrawShape[]) => void;
   /**
    * When `false` piece input is frozen (no legal destinations). Used
    * while the promotion dialog is open so the board cannot change
@@ -124,6 +154,10 @@ interface LiveProps {
   showLegalMoves: boolean;
   animation: boolean;
   drawable: boolean;
+  /** `undefined` (omitted) leaves Chessground's default erase behaviour. */
+  eraseOnClick: boolean | undefined;
+  /** User erase/draw listener (see `onShapesChange`), or `undefined`. */
+  onShapesChange: ((shapes: readonly DrawShape[]) => void) | undefined;
   dests: Dests;
   lastMove: readonly [Key, Key] | null;
   customSquareClasses: ReadonlyMap<Key, string> | undefined;
@@ -148,6 +182,27 @@ export function isPromotionDestination(position: ChessOpsPosition, from: Key, de
 /** Whether Chessground should bind board events at all (move + draw input). */
 function eventsBound(p: Pick<LiveProps, 'interactive' | 'drawable'>): boolean {
   return p.interactive || p.drawable;
+}
+
+/**
+ * The drawable sub-config Chessboard pushes: enable drawing with the app's
+ * brushes and, when the caller supplied `eraseOnClick`, forward it to
+ * Chessground's `drawable.eraseOnMovablePieceClick` (a plain board click then
+ * clears the user-drawn shapes). Absent `eraseOnClick` the key is omitted so
+ * Chessground's own default governs — existing surfaces are untouched. A
+ * caller-supplied `onShapesChange` is forwarded to `drawable.onChange` so the
+ * owner learns when the user draws/erases (programmatic `setShapes` and
+ * `api.set` wipes never fire it).
+ */
+function drawableConfig(
+  p: Pick<LiveProps, 'drawable' | 'eraseOnClick' | 'onShapesChange'>,
+): NonNullable<Config['drawable']> {
+  return {
+    enabled: p.drawable,
+    brushes: DRAW_BRUSHES,
+    ...(p.eraseOnClick !== undefined ? { eraseOnMovablePieceClick: p.eraseOnClick } : {}),
+    ...(p.onShapesChange !== undefined ? { onChange: p.onShapesChange } : {}),
+  };
 }
 
 /**
@@ -240,6 +295,8 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
     showLegalMoves = true,
     animation = true,
     drawable = false,
+    eraseOnClick,
+    onShapesChange,
     moving = true,
     orientation = 'white',
     boardTheme = DEFAULT_BOARD_THEME,
@@ -257,6 +314,11 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
   const hostRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<Api | null>(null);
   const pendingPromotionRef = useRef<{ from: Key; to: Key } | null>(null);
+  const onShapesChangeRef = useRef(onShapesChange);
+  onShapesChangeRef.current = onShapesChange;
+  const notifyShapesChange = useCallback((shapes: readonly DrawShape[]): void => {
+    onShapesChangeRef.current?.(shapes);
+  }, []);
   const livePropsRef = useRef<LiveProps>({
     fen: '',
     turnColor: 'white',
@@ -268,6 +330,8 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
     showLegalMoves,
     animation,
     drawable,
+    eraseOnClick,
+    onShapesChange: onShapesChange ? notifyShapesChange : undefined,
     dests: new Map(),
     lastMove: lastMove ?? null,
     customSquareClasses,
@@ -292,6 +356,8 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
     showLegalMoves,
     animation,
     drawable,
+    eraseOnClick,
+    onShapesChange: onShapesChange ? notifyShapesChange : undefined,
     dests: chessgroundDestsFromPosition(position),
     lastMove: lastMove ?? null,
     customSquareClasses,
@@ -321,12 +387,15 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
       viewOnly: interaction.viewOnly,
       movable: interaction.movable,
       ...(interaction.viewOnly ? {} : pieceInputControls(p)),
-      drawable: { enabled: p.drawable, brushes: DRAW_BRUSHES },
+      drawable: drawableConfig(p),
       animation: { enabled: p.animation },
       highlight: {
         lastMove: Boolean(p.lastMove),
         check: true,
-        ...(p.customSquareClasses ? { custom: new Map(p.customSquareClasses.entries()) } : {}),
+        // Always send the custom map (empty when absent) so Chessground's
+        // deep merge clears previously highlighted squares instead of
+        // leaving stale classes on the board.
+        custom: new Map(p.customSquareClasses?.entries() ?? []),
       },
       ...(p.lastMove ? { lastMove: [...p.lastMove] as Key[] } : {}),
     });
@@ -368,7 +437,15 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
       viewOnly: interaction.viewOnly,
       movable: {
         ...interaction.movable,
-        ...(p.interactive
+        // Bind the move handler whenever the board is event-bound at mount
+        // (interactive OR drawable). Chessground reads `state.movable.events`
+        // live on every move but only installs it from the mount config and
+        // preserves it across later `api.set` merges — so a board that mounts
+        // non-interactive but drawable (e.g. a solve board still loading its
+        // async game prefix) must still receive the handler here or moves
+        // later become legal yet never reach `onMove`. Warm/static boards can
+        // never fire it: pieces are frozen (`dests` empty, input disabled).
+        ...(eventsBound(p)
           ? {
               events: {
                 after: (orig: Key, dest: Key) => {
@@ -389,7 +466,7 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
           : {}),
       },
       ...(interaction.viewOnly ? {} : pieceInputControls(p)),
-      drawable: { enabled: p.drawable, brushes: DRAW_BRUSHES },
+      drawable: drawableConfig(p),
       animation: { enabled: p.animation },
       highlight: { lastMove: Boolean(p.lastMove), check: true },
     };
@@ -412,6 +489,7 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
     showLegalMoves,
     animation,
     drawable,
+    eraseOnClick,
     moving,
     orientation,
     lastMove,
@@ -429,6 +507,13 @@ export const Chessboard = forwardRef<ChessboardHandle, ChessboardProps>(function
         }
         api.setShapes([]);
         api.setAutoShapes([]);
+      },
+      setShapes: (shapes) => {
+        const api = apiRef.current;
+        if (!api) {
+          return;
+        }
+        api.setShapes(shapes ? [...shapes] : []);
       },
       clearPendingPromotion: () => {
         pendingPromotionRef.current = null;

@@ -50,6 +50,25 @@ describe('puzzleMoveLine (plan 012b stage A)', () => {
     expect(children.some((s) => s.san === 'd4')).toBe(true);
   });
 
+  it('a wrong attempt at an unsolved leaf never extends the mainline path the solve board follows', () => {
+    const mainline = ['e2e4', 'e7e5', 'g1f3', 'b8c6'];
+    const line = buildSolveLine({
+      startFen: STANDARD,
+      mainline,
+      variations: [{ depth: 4, uci: 'd2d4' }],
+    });
+    expect(line.error).toBeUndefined();
+    // The decision node is a leaf, so the first wrong attempt physically lands
+    // as its `children[0]`…
+    const decisionPath = mainlinePathOf(line.tree, 4);
+    const decisionNode = decisionPath[decisionPath.length - 1];
+    expect(decisionNode?.children[0]?.san).toBe('d4');
+    // …but the solve mainline (board / ply counter / move list) is pinned to
+    // the decision depth and never follows it, while an unpinned walk would.
+    expect(mainlinePathOf(line.tree, 4)).toHaveLength(4);
+    expect(pathToEnd(line.tree, [])).toHaveLength(5);
+  });
+
   it('playUci replays a single UCI token onto the mainline end', () => {
     const built = buildSolveLine({ startFen: STANDARD, mainline: [] });
     const result = playUci(built.tree, [], 'e2e4');

@@ -249,7 +249,7 @@ describe('hosted-session harness', () => {
       expect(solved.finalization.outcome.result).toBe('solvedWithHelp');
       expect(solved.finalization.outcome.wrongMoveCount).toBe(1);
       expect(solved.finalization.outcome.hintCount).toBe(1);
-      expect(solved.finalization.outcome.highestHintLevel).toBe(1);
+      expect(solved.finalization.outcome.highestHintLevel).toBe(2);
     }
   });
 

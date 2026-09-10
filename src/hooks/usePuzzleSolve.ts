@@ -82,6 +82,13 @@ export interface PuzzleSolveController {
   /** True when the next hint press would reveal content. */
   readonly canHint: boolean;
   /**
+   * True when the presentation ended because the correct final move was played
+   * **after** a wrong-move fail had already been recorded. The recorded
+   * outcome stays `failed` (one wrong move = fail), but the UI confirms the
+   * solve was correct with a green note.
+   */
+  readonly foundAfterFail: boolean;
+  /**
    * Board-path move entry. `from`/`to` are board squares; `promotion` is the
    * canonical promotion role letter when the move promotes.
    */
@@ -159,6 +166,14 @@ function positionAt(state: PresentationState, ply: number): Position | null {
  * functions. A row that fails to load surfaces as a typed load error (the
  * session never crashes); a failed write keeps the outcome screen visible with
  * an inline error + retry, and `exitOutcome()` never reports an unwritten row.
+ *
+ * Wrong-move ruling (fail-once): the first wrong move records a `failed`
+ * attempt immediately (`wrongMove` trigger) while the presentation stays open
+ * in `solving` — the board returns to the decision point and the user keeps
+ * trying (hints / View solution stay available). A later correct solve closes
+ * the presentation with `foundAfterFail` set and never writes a second row; a
+ * give-up/skip after the fail closes it too. Clean solves (no wrong move)
+ * record exactly one `solvedFirstTry` / `solvedWithHelp` row as before.
  */
 export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveController {
   const { row, context, config, recorder, now = () => Date.now() } = options;
@@ -179,6 +194,9 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
   const cancelledRef = useRef(false);
   const endedAtRef = useRef<number | null>(null);
   const recordInputRef = useRef<BuildAttemptRowInput | null>(null);
+  /** True once the presentation is terminal (no more moves/hints/writes). */
+  const endedRef = useRef(false);
+  const [foundAfterFail, setFoundAfterFail] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -213,9 +231,10 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
   }
 
   function finalize(trigger: 'solved' | 'gaveUp' | 'skip'): void {
-    if (presentation === null || writePhase !== null || endedAtRef.current !== null) {
+    if (presentation === null || endedRef.current || outcome !== null) {
       return;
     }
+    endedRef.current = true;
     const endedAt = now();
     endedAtRef.current = endedAt;
     const input: BuildAttemptRowInput = {
@@ -236,8 +255,58 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
     void doRecord(input);
   }
 
+  /**
+   * Record the wrong-move fail (owner ruling): one wrong move fails the puzzle
+   * immediately. The attempt row (trigger `wrongMove`, result `failed`) is
+   * written now, but the presentation **stays open** in `solving` at the
+   * decision point so the user can keep looking for the correct move. Only
+   * ever runs once per presentation (the first wrong move).
+   */
+  function recordWrongMoveFail(state: PresentationState): void {
+    // `endedAtRef` doubles as the "a row was recorded" marker so two wrong
+    // moves delivered in the same render never double-write.
+    if (endedRef.current || outcome !== null || endedAtRef.current !== null) {
+      return;
+    }
+    const endedAt = now();
+    endedAtRef.current = endedAt;
+    const input: BuildAttemptRowInput = {
+      row,
+      context,
+      trigger: 'wrongMove',
+      counters: countersOf(state),
+      startedAt: state.startedAt,
+      endedAt,
+    };
+    recordInputRef.current = input;
+    setOutcome(presentationOutcomeOf(buildAttemptRow(input)));
+    setElapsedMs(Math.max(0, endedAt - state.startedAt));
+    setWritePhase('pending');
+    setWriteError(null);
+    void doRecord(input);
+  }
+
+  /**
+   * Close a presentation that already recorded a wrong-move fail: no second
+   * row is written — the recorded `failed` outcome stands. `mode` picks the
+   * terminal stage (`postSolve` mirrors a reveal/give-up, `outcome` is a plain
+   * skip/solve end).
+   */
+  function closeAfterFail(mode: 'postSolve' | 'outcome'): void {
+    if (endedRef.current) {
+      return;
+    }
+    endedRef.current = true;
+    setStage(mode);
+  }
+
   function submitMove(uci: string): MoveSubmission {
-    if (presentation === null || stage !== 'solving' || viewPly !== presentation.line.length) {
+    if (
+      presentation === null ||
+      endedRef.current ||
+      stage !== 'solving' ||
+      viewPly !== presentation.line.length
+    ) {
       return { kind: 'ignored' };
     }
     const result = applyMove(presentation, uci);
@@ -248,12 +317,24 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
     }
     if (result.kind === 'wrong') {
       setLastWrongUci(uci);
+      // First wrong move of the presentation fails it (recorded once); later
+      // wrong moves after a fail keep the outcome as-is.
+      recordWrongMoveFail(result.state);
       return { kind: 'wrong' };
     }
     setLastWrongUci(null);
     setViewPly(result.state.line.length);
     if (result.solved) {
-      finalize('solved');
+      if (outcome !== null) {
+        // A correct solve after the wrong-move fail: never write a second row;
+        // the recorded outcome stays failed and the presentation closes with a
+        // green "confirmed after fail" flag.
+        endedRef.current = true;
+        setFoundAfterFail(true);
+        setStage('outcome');
+      } else {
+        finalize('solved');
+      }
       return { kind: 'solved' };
     }
     return { kind: 'accepted' };
@@ -266,7 +347,7 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
   ): MoveSubmission => submitMove(`${from}${to}${promotion ?? ''}`);
 
   function revealHint(): void {
-    if (presentation === null) {
+    if (presentation === null || endedRef.current || stage !== 'solving') {
       return;
     }
     const result = revealNextHint(presentation, config);
@@ -278,6 +359,9 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
   }
 
   function restart(): void {
+    if (endedRef.current || stage !== 'solving') {
+      return;
+    }
     dispatch({ type: 'restart' });
     setViewPly(0);
     setLastWrongUci(null);
@@ -300,10 +384,28 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
   }
 
   function skip(): void {
+    if (endedRef.current) {
+      return;
+    }
+    if (outcome !== null) {
+      // A wrong-move fail already recorded: skip just closes the view — the
+      // recorded outcome stays failed and no second row is written.
+      closeAfterFail('outcome');
+      return;
+    }
     finalize('skip');
   }
 
   function giveUp(): void {
+    if (endedRef.current) {
+      return;
+    }
+    if (outcome !== null) {
+      // A wrong-move fail already recorded: reveal the solution and end the
+      // view without writing a second row (the result is already failed).
+      closeAfterFail(writePhase === 'written' ? 'postSolve' : 'outcome');
+      return;
+    }
     finalize('gaveUp');
   }
 
@@ -380,6 +482,7 @@ export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveContr
     elapsedMs,
     lastWrongUci,
     canHint,
+    foundAfterFail,
     playBoardMove,
     revealHint,
     restart,

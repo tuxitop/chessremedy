@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MoveList } from './MoveList';
 import { buildTreeFromPgn, pathToLanding } from './positionTree';
+import { buildSolveLine, mainlinePathOf } from './puzzleMoveLine';
 import { nagMeta } from './pgnAnnotations';
 import type { MoveTree, Path } from './positionTree';
 
@@ -191,5 +192,77 @@ describe('MoveList', () => {
     } finally {
       Element.prototype.scrollIntoView = original;
     }
+  });
+
+  // --- Pinned solve decision tail (wrong moves at an unsolved decision) -----
+
+  const STANDARD = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+  it('renders a wrong attempt at an unsolved decision node as a parenthesized variation, not as the active mainline', () => {
+    const built = buildSolveLine({
+      startFen: STANDARD,
+      mainline: ['e2e4', 'e7e5', 'g1f3', 'b8c6'],
+      variations: [{ depth: 4, uci: 'd2d4' }],
+    });
+    expect(built.error).toBeUndefined();
+    const onSeek = vi.fn();
+    const decisionPath = mainlinePathOf(built.tree, 4);
+    render(<MoveList tree={built.tree} path={decisionPath} onSeek={onSeek} pinnedDepth={4} />);
+
+    // The mainline ends at the decision move (Nc6); the wrong d4 is a
+    // variation token rendered as `(3. d4)` — never a mainline row.
+    const list = screen.getByTestId('move-list');
+    expect(list.textContent).toContain('(3. d4)');
+    const active = screen
+      .getAllByTestId('move-list-move')
+      .filter((m) => m.getAttribute('aria-current') === 'step');
+    expect(active).toHaveLength(1);
+    expect(active[0]).toHaveAttribute('data-san', 'Nc6');
+    const d4 = screen
+      .getAllByTestId('move-list-move')
+      .find((m) => m.getAttribute('data-san') === 'd4');
+    expect(d4).toBeTruthy();
+    expect(d4?.getAttribute('aria-current')).toBeNull();
+
+    // Clicking the wrong variation seeks into it (the user may inspect and
+    // navigate back).
+    if (d4) {
+      fireEvent.click(d4);
+      expect(onSeek).toHaveBeenCalledTimes(1);
+      const path = onSeek.mock.calls[0]![0] as Path;
+      expect(path).toHaveLength(5);
+      expect(path[path.length - 1]?.san).toBe('d4');
+    }
+  });
+
+  it('without a pin the same leaf wrong attempt is the (old) mainline continuation', () => {
+    const built = buildSolveLine({
+      startFen: STANDARD,
+      mainline: ['e2e4', 'e7e5', 'g1f3', 'b8c6'],
+      variations: [{ depth: 4, uci: 'd2d4' }],
+    });
+    expect(built.error).toBeUndefined();
+    render(<MoveList tree={built.tree} path={[]} />);
+    // d4 becomes a numbered mainline row (3. d4), not a parenthesized variant.
+    const sans = screen.getAllByTestId('move-list-move').map((m) => m.getAttribute('data-san'));
+    expect(sans).toEqual(['e4', 'e5', 'Nf3', 'Nc6', 'd4']);
+    expect(screen.getByTestId('move-list').textContent).not.toContain('(');
+  });
+
+  it('renders root-level wrong attempts as variations when the pinned mainline is empty (no prefix)', () => {
+    const built = buildSolveLine({
+      startFen: STANDARD,
+      mainline: [],
+      variations: [{ depth: 0, uci: 'e2e4' }],
+    });
+    expect(built.error).toBeUndefined();
+    render(<MoveList tree={built.tree} path={[]} pinnedDepth={0} />);
+    const list = screen.getByTestId('move-list');
+    expect(screen.queryByTestId('move-list-empty')).not.toBeInTheDocument();
+    expect(list.textContent).toContain('(1. e4)');
+    const active = screen
+      .getAllByTestId('move-list-move')
+      .filter((m) => m.getAttribute('aria-current') === 'step');
+    expect(active).toHaveLength(0);
   });
 });

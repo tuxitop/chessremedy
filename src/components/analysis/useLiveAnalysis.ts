@@ -192,6 +192,26 @@ export function useLiveAnalysis({
       }
     });
     unsubscribeRef.current = unsubscribe;
+
+    // `analyze()` can settle synchronously — e.g. a terminal position with no
+    // legal moves fails before `subscribe` runs — and those events are lost.
+    // Reconcile from the outcome so the panel never hangs on "Thinking…".
+    if (job.status === 'failed') {
+      void job.outcome.then((outcome) => {
+        if (jobRef.current !== job || outcome.kind !== 'failed') return;
+        setError(outcome.error);
+        setAnalyzing(false);
+        setLiveLines([]);
+      });
+    } else if (job.status === 'completed') {
+      void job.outcome.then((outcome) => {
+        if (jobRef.current !== job || outcome.kind !== 'completed') return;
+        setResult(outcome.result);
+        setAnalyzing(false);
+        setLiveLines([]);
+      });
+    }
+
     return () => {
       unsubscribe();
       teardown();

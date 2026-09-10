@@ -11,27 +11,6 @@
   outline: none;
 }
 
-.subtitle {
-  color: var(--color-fg-muted);
-  font-size: var(--font-size-sm);
-  margin: var(--space-1) 0 0;
-}
-
-.clock {
-  color: var(--color-fg-muted);
-  font-size: var(--font-size-md);
-  font-variant-numeric: tabular-nums;
-  margin: 0;
-}
-
-.header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
 .boardColumn {
   display: flex;
   flex-direction: column;
@@ -46,6 +25,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
@@ -63,41 +43,94 @@
   border-radius: 2px;
 }
 
-.paneBody {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.paneList {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.paneFooter {
+/* The puzzle information area: the side-column block holding the objective,
+   solving status / game context, the one-line result and the controls. It is
+   given more vertical room than the old footer and its content is centred. */
+.puzzleInfo {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
-  background: var(--color-bg-sunken, rgba(0, 0, 0, 0.03));
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  text-align: center;
 }
 
-.status {
+/* Inside the move-list pane the info area is a fixed footer: it must not grow
+   with the pane's `.pane > * { flex: 1 1 auto }` rule. */
+.sidePanel .puzzleInfo {
+  flex: 0 0 auto;
+}
+
+.infoHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.infoTitle {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  margin: 0;
+  outline: none;
+}
+
+.infoClock {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.infoBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.statusLine {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.historical {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  font-style: italic;
+  margin: 0;
+}
+
+.confirm {
+  color: var(--color-success, #15781b);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  margin: 0;
+}
+
+.solutionLine {
   color: var(--color-fg-muted);
   font-size: var(--font-size-sm);
   margin: 0;
 }
 
 .result {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-lg);
   font-weight: 700;
   margin: 0;
 }
 
 .resultSuccess {
   color: var(--color-success, #15781b);
+}
+
+/* Solved-with-help tone: amber (between the green success and red failed). */
+.resultHelp {
+  color: var(--color-warning, #9a6700);
 }
 
 .resultFailed {
@@ -117,14 +150,18 @@
 .controls {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
 }
 
+/* Transport row — visually identical to Game Review / Live Analysis: the
+   shared Navigation bar with the ply counter on the far right (the GameReview
+   `.navRow` shape). */
 .navRow {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
+  justify-content: space-between;
+  gap: var(--space-2);
   flex: 0 0 auto;
 }
 

@@ -142,9 +142,13 @@ export function terminalAlternativeRowFixture(): PuzzleRow {
 
 // --- shared session fixtures -------------------------------------------------
 
-/** Default per-set solve hint config: all four levels enabled, first at 1. */
+/**
+ * Default per-set solve hint config (mirrors the product default in
+ * `hints.ts`): level 1 (text-only) is skipped so the first press visibly
+ * reveals the source square; presses ascend 2 → 3 → 4.
+ */
 export function solveConfigFixture(): SolveHintConfig {
-  return { enabledLevels: [1, 2, 3, 4], firstHintLevel: 1 };
+  return { enabledLevels: [2, 3, 4], firstHintLevel: 2 };
 }
 
 export const DEFAULT_CYCLE_ID = 'fixture:cycle';

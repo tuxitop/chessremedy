@@ -303,7 +303,7 @@ describe('restartPresentation', () => {
     expect(state.wrongMoveCount).toBe(1);
     expect(state.wrongMovesTried).toEqual(['b8e8']);
     expect(state.hintCount).toBe(1);
-    expect(state.highestHintLevel).toBe(1);
+    expect(state.highestHintLevel).toBe(2);
     expect(state.startedAt).toBe(NOW);
 
     // The board is back at the first decision point and solvable again.

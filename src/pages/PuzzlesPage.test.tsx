@@ -178,7 +178,7 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
     expect(await db.puzzleAttempts.count()).toBe(0);
   });
 
-  it('a wrong-then-correct solve is accepted and hints never fail the puzzle through the hosted SolveScreen', async () => {
+  it('one wrong move fails the puzzle through the hosted SolveScreen while hints never fail it, and the recorded outcome stays Failed', async () => {
     await seedGames(GAME_WITH_MANY);
     await seedPuzzles([{ gameId: GAME_WITH_MANY.id, ply: 6 }]);
     renderPuzzles();
@@ -188,17 +188,24 @@ describe('Puzzles page — interim practice host (Feature 012)', () => {
     await waitForInteractive();
 
     fireEvent.click(screen.getByTestId('solve-hint'));
-    expect(screen.getByTestId('solve-announcement')).toHaveTextContent('Relevant piece: queen');
+    expect(screen.getByTestId('solve-announcement')).toHaveTextContent('The piece is on h5');
 
     boardMove('d2', 'd3');
     expect(screen.getByTestId('solve-announcement')).toHaveTextContent(
       'not the move that achieves',
     );
 
+    // The wrong move records Failed immediately, but the board stays open so
+    // the user can still find the correct move.
+    await waitFor(() => expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed'));
+
     boardMove('h5', 'f7');
     await waitFor(() =>
-      expect(screen.getByTestId('solve-result')).toHaveTextContent('Solved with hints'),
+      expect(screen.getByTestId('solve-confirm')).toHaveTextContent(
+        'Correct! This was recorded as a failed attempt.',
+      ),
     );
+    expect(screen.getByTestId('solve-result')).toHaveTextContent('Failed');
     await clickNext();
     expect(await screen.findByTestId('puzzles-practice-complete')).toBeInTheDocument();
     expect(await db.puzzleAttempts.count()).toBe(0);
