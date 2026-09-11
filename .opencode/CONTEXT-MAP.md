@@ -82,8 +82,8 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 008/009/010 (game data), 011/012/013 (puzzles/attempts/sets/cycles); output consumed by Feature 015 and the Game Library `masteredPuzzleCount` insight.
 
 ### Feature 015 — Dashboard
-- Required: `ARCHITECTURE.md` §6a; ADRs `decisions/ADR-010`, `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`; domain `domain/statistics.md`, `domain/tactical-training.md`, `domain/game-model.md`; research `research/charting-library.md`.
-- Dependencies: Feature 014 (sole read-only data source), Feature 013 (training data).
+- Required: `ARCHITECTURE.md` §6a; ADRs `decisions/ADR-010`, `decisions/ADR-013`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-031`; domain `domain/statistics.md`, `domain/tactical-training.md`, `domain/game-model.md`, `domain/game-library.md`; research `research/charting-library.md`.
+- Dependencies: Feature 014 (sole read-only data source), Feature 013 (training data), Feature 009 (accuracy/classification formatting), Feature 004/007 (canonical filter/date model).
 
 ### Feature 016 — Synchronization
 - Required: `ARCHITECTURE.md` §8; ADRs `decisions/ADR-008`, `decisions/ADR-015`, `decisions/ADR-016`, `decisions/ADR-017`, `decisions/ADR-001`, `decisions/ADR-018` (cache is not synced); domain `domain/game-model.md`, `domain/tactical-training.md`; research `research/synchronization.md`.
