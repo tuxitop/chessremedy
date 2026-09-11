@@ -183,11 +183,14 @@ structured exact-time-control model (base, increment, days-per-turn,
 estimated length) is persisted with each game so every consumer uses one
 model (`specs/domain/time-control.md`).
 
-The canonical category is computed with one platform-agnostic rule
-(estimated length `base + 40 × increment` with the Lichess-style boundaries)
-so identical clocks classify identically regardless of platform; each
-platform's own label is retained as a hint and never silently replaces the
-canonical category.
+The canonical category is **platform-specific**: each game is classified
+with the published definition of the platform that produced it (Chess.com
+and Lichess differ, e.g. `5+5` is Blitz on Chess.com and Rapid on Lichess,
+and Chess.com has no classical category). Both platforms estimate game
+length as `base + 40 × increment`; only the boundaries differ. `local` and
+`fixture` games use a neutral `generic` profile (the Lichess boundaries).
+Each platform's own label is retained as a hint and never silently replaces
+the canonical category (`specs/domain/time-control.md`, ADR-013).
 
 Time controls are displayed in `M|I` house style (`5|5`, `10|0`, `3|2`,
 `15|10`); raw seconds are never shown as if they were minutes. The exact

@@ -57,6 +57,23 @@ Full evaluation: `specs/research/browser-stockfish.md`.
 - Engine service must support loading different WASM builds based
   on browser capability detection.
 - Hash size capped at 64 MB on mobile, 256 MB on desktop.
+- **Thread cap.** The global engine thread budget is
+  `B = canMultiThread ? max(1, min(hardwareConcurrency, MAX_THREADS_CAP)) : 1`,
+  with `MAX_THREADS_CAP = 8`. The hard ceiling is 8 rather than the
+  previous 2 so multi-core desktops can use the engine fully, while
+  staying bounded: the `lite` build's hash (128 MB for `tactical`,
+  64 MB for `normal`) is shared across threads and every extra thread
+  costs memory and CPU, so an unbounded `hardwareConcurrency` is never
+  requested. The `Threads` UCI option is set **only on the
+  multi-threaded `lite` build**; `lite-single` (no cross-origin
+  isolation, no `SharedArrayBuffer`) always uses exactly 1 thread. The
+  global budget is split across engine instances (ADR-034): the
+  verification engine uses 1 thread, so the analysis engine's
+  user-selectable cap is `max(1, B - 1)` and the two engines never run
+  at maximum together.
+- **Profile depth is a default.** The `tactical` profile's depth (22)
+  is the default for the user-tunable Feature-010 verification depth
+  (ADR-026); MultiPV, hash and WDL remain profile-authoritative.
 - Analysis profiles map directly to UCI option configurations:
 
   | Profile        | Depth | Hash   | MultiPV |

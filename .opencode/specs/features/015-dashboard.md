@@ -99,6 +99,11 @@ section**, and a **training section**, followed by a **provenance footer**.
   `domain/game-library.md`), **time control** (`All`, bullet, blitz, rapid,
   classical, correspondence, unknown — ADR-013), **date range** (the canonical
   presets plus a custom range).
+- Category membership is **platform-correct** (ADR-013): with platform
+  `Chess.com` the `classical` filter has no games (Chess.com long games are
+  `rapid`) and a `5|5` game appears under `blitz`; with `Lichess` it appears
+  under `rapid`. The filter still operates on the stored
+  `normalizedTimeControl`, never on a re-derived value.
 - Reuses the canonical `GameLibraryFilters` dimension types and labels; it does
   **not** introduce a parallel filter model (`domain/game-library.md`).
   `search`, `side` and `result` are not surfaced; the Feature-014 query is
@@ -280,7 +285,9 @@ free of statistics:
    `mm:ss` / `h:mm:ss`, ratings as integers. Rounding is presentation.
 5. **Partition labels** — canonical platform order (Lichess, Chess.com) and
    ADR-013 category names; exact time control shown in `M|I` house style where
-   relevant (`domain/time-control.md`).
+   relevant (`domain/time-control.md`). The category is platform-correct, so
+   the same raw clock may appear under different category labels on different
+   platforms (`5|5`: Lichess Rapid, Chess.com Blitz).
 
 These selectors live in the presentation layer; they must not be added to the
 Feature-014 domain modules and must not import React. The `useDashboard` hook
@@ -490,7 +497,9 @@ Charts must be usable without colour, without hover and without a pointer.
    absent data is never shown as `0`.
 4. Rapid and Blitz (and every other ADR-013 category) are never silently
    combined; `All` produces explicitly labeled dimensioned views and mixed
-   views are never the default.
+   views are never the default; category membership is platform-correct
+   (Chess.com `5|5` is Blitz, Lichess `5|5` is Rapid; Chess.com has no
+   `classical` partition).
 5. Rating lines are always per `(platform, timeControl)`; no cross-platform or
    cross-time-control averaging/conversion.
 6. Game-phase charts use the normalized `errorsPer100Moves` by default (counts
@@ -531,6 +540,9 @@ Charts must be usable without colour, without hover and without a pointer.
     period-boundary point;
   - two concrete partitions (Lichess + Chess.com, rapid + blitz) proving no
     merge;
+  - a per-platform time-control pair (`5|5`) proving Lichess Rapid and
+    Chess.com Blitz render as separate partitions and that a Chess.com
+    `classical` filter yields an explicit empty state;
   - rating histories with a missing rating and an undated game;
   - phase metrics with differing per-phase move exposure;
   - a training set with an `inProgress`, a `completed` and an `abandoned`

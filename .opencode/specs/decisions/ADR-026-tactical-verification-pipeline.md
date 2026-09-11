@@ -47,8 +47,12 @@ For each raw candidate:
 1. Look up the position-keyed analysis cache (ADR-018). If a
    `(startingFen, profile=tactical, engineName, engineVersion,
    engineBuild)` entry exists, reuse it.
-2. Otherwise, run the **tactical profile** (ADR-012: depth 22,
-   MultiPV 5, 128 MB hash, WDL on) from the starting position.
+2. Otherwise, run the **tactical profile** (ADR-012: MultiPV 5,
+   128 MB hash, WDL on) from the starting position at the user's
+   **verification depth** setting (default 22 — the profile's own
+   depth; see "Verification engine and depth" below). The search runs
+   on the dedicated verification engine worker (ADR-034), so it does
+   not interleave with game analysis on the shared FIFO.
 3. For each candidate move in the MultiPV result, walk the
    engine's principal variation until the tactical objective is
    reached, the depth exceeds 8 plies, or the position
@@ -114,6 +118,38 @@ A candidate that survives all guards becomes a `puzzleCandidate`
 passed to Feature 011. Unverified raw candidates are discarded
 after the run.
 
+### Verification engine and depth
+
+- **Dedicated engine (ADR-034).** Stage 2 runs on its own Stockfish worker
+  and FIFO, injected into `TacticalDetectionService` through its existing
+  `engine: EngineService` seam. Game analysis and live analysis keep the
+  shared analysis worker, so a detection pass and the next game's analysis
+  overlap instead of serializing. The verification engine is created lazily
+  on the first Stage-2 job and disposed on idle; both engines share the
+  ADR-018 position cache.
+- **Verification depth setting.** The tactical profile's depth is the
+  *default* (`22`); the user sets `verificationDepth` in Settings
+  (`analysis.tacticalDetection`, default 22, bounds 10..40, clamped). The
+  setting is the user-facing quality/cost lever for detection. The profile
+  still fixes MultiPV 5, hash 128 MB and WDL on. The Stage-2 stored-analysis
+  fast path is unaffected — it records the stored analysis's own depth.
+- **Movetime backstop.** `VERIFY_MOVETIME_MS` (45 s) is unchanged and still
+  bounds every verification search; the engine stops at whichever limit it
+  reaches first, so a deeper setting can still return a shallower result.
+- **Cache scope.** The ADR-018 key includes the effective verification depth
+  and the verification engine's thread count (ADR-018 §"Tactical-detection
+  verification scope"), so results produced at different depths are never
+  mixed.
+- **Freshness.** The per-analysis summary records the effective
+  `verificationDepth` of its pass. The freshness gate (already keyed on
+  `detectionVersion`) additionally treats a summary whose
+  `verificationDepth` differs from the current setting as **outdated**, so a
+  depth change re-derives on the next scan instead of silently reusing
+  old-depth verdicts. This is an additive, non-indexed summary property — no
+  schema/version bump. Changing the setting never auto-runs a scan; it marks
+  completed results outdated for the on-demand scan, consistent with the
+  game-analysis `outdated` model.
+
 ### Output
 
 A verified candidate is persisted with the schema defined in
@@ -141,6 +177,14 @@ metadata used for verification (`engineName`, `engineVersion`,
   before it ever fails a healthy-but-slow search. Verification can
   therefore return a shallower result instead of timing out (this is
   part of `detectionVersion` 4).
+- **Two-engine contention (ADR-034).** Detection and analysis run on
+  independent workers/queues. A failed, cancelled or wedged verification job
+  never fails or cancels an analysis job, and cancelling a scan cancels only
+  the verification engine's jobs; the global thread budget keeps the two
+  engines from oversubscribing the CPU. A worker-creation failure on the
+  verification engine (e.g. memory pressure) fails the pass per the deferral
+  rule above and is retryable; detection never silently falls back to the
+  analysis worker.
 - Engine-version change (ADR-020). Existing verified candidates
   remain valid for the engine that verified them. A future
   re-verification pass may upgrade them; this is opt-in, not
@@ -180,8 +224,14 @@ Full evaluation: `specs/research/tactical-detection.md`.
   interrupted pass never claims progress. Writing progress is one
   small IndexedDB put per settled candidate (≤ the 16-candidate cap).
 - The pipeline depends on Feature 005 (Stockfish), Feature 008
-  (game analysis), and ADR-018 (cache). It cannot run before those
-  exist.
+  (game analysis), ADR-018 (cache) and ADR-034 (dedicated verification
+  engine). It cannot run before those exist.
+- Stage 2 runs on the dedicated verification engine (ADR-034): detection
+  overlaps the next game's analysis instead of head-of-line blocking it, at
+  the cost of a second lazily-created/disposed WASM instance whose hash is
+  clamped by ADR-012. The verification engine uses 1 thread and the analysis
+  engine's cap is `max(1, B - 1)`, so the pair never exceeds the global
+  budget `B = min(hardwareConcurrency, MAX_THREADS_CAP)`.
 - The `detectionVersion` field is incremented whenever the pipeline
   thresholds, guards or verification sources change. Existing candidates
   retain their original detection version — but since version 9 that
@@ -218,7 +268,22 @@ Full evaluation: `specs/research/tactical-detection.md`.
    failing the game's whole scan. Version 8 (plan 14, owner decision)
    relaxes the stabilisation stop (narrow) and scopes the WDL veto to
    terminal-prefix objectives — see Stage 2 above and
-   `research/tactical-detection.md` §5.
+   `research/tactical-detection.md` §5. **Version 11 (2026-09-11)** carries the
+   ADR-023 **missed-tactic exclusivity** rule: a ply with a current-version
+   verified missed tactic is not additionally an inaccuracy/mistake/blunder
+   (the persisted classifier label is retained but suppressed from
+   presentation and from classification/error counts), and the per-analysis
+   summary is rebuilt under the rule when the pass completes. The bump exists
+   so existing summaries and markers re-derive through the freshness gate; it
+  changes no candidate-generation or verification guard, so the verified set
+  is unchanged and the re-scan is cheap (settled rows and the ADR-018 cache
+  are reused). **W2** extends the freshness gate with the effective
+  **verification depth** (recorded on the per-analysis summary): a completed
+  pass whose depth differs from the current setting is outdated and is
+  re-derived on the next scan, so old-depth verdicts are never silently
+  reused. No `DETECTION_VERSION` bump is required: no candidate rule, guard or
+  threshold changed, the default depth is unchanged, and the depth mismatch
+  itself is the freshness key (the re-derivation is cache-cheap).
 
 ## Sources
 
@@ -232,4 +297,5 @@ Full evaluation: `specs/research/tactical-detection.md`.
 - `specs/research/tactical-detection.md`
 - `specs/research/puzzle-generation.md`
 - `specs/research/browser-stockfish.md`
-- ADR-005, ADR-006, ADR-012, ADR-018, ADR-019, ADR-020, ADR-023, ADR-025
+- ADR-005, ADR-006, ADR-012, ADR-018, ADR-019, ADR-020, ADR-023, ADR-025,
+  ADR-034

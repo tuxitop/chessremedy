@@ -34,6 +34,14 @@ This feature:
 - owns the canonical **puzzle-mastery** derivation (a legitimate first-try
   solve in 3 distinct cycles) shared with Feature 014 — **informational only**,
   driving no automatic retirement;
+- owns the full **block lifecycle**: one-click create, repeated cycles,
+  finish/abandon (which archive the block and preserve its history) and
+  **delete** (which removes the block and cascades its cycles/attempts behind a
+  destructive confirmation);
+- performs a **one-time, idempotent startup cleanup** of the pre-block-model
+  legacy auto sets (`auto:all-puzzles`, `auto:woodpecker-random`) and their
+  cycles/attempts — remediation for rows written before the explicit block
+  model, never a block-creation path;
 - never computes the Dashboard's statistics (Feature 014) or renders charts
   (Feature 015).
 
@@ -57,8 +65,9 @@ rules are removed.
 
 1. **Set management** — create a custom set from a puzzle source/criteria,
    name and (re)configure it, select it for training, archive/unarchive it,
-   delete it (with confirmation); create/close a **Woodpecker block** with one
-   click.
+   delete it (with confirmation); create/close/delete a **Woodpecker block**
+   with one click (close archives and preserves history; delete removes the
+   block and its history behind a destructive confirmation).
 2. **Cycle lifecycle** — start a cycle over a set/block, present its puzzles
    in the cycle's order, record every attempt through Feature 012, handle
    wrong answers/hints/skips/retries per the configured behavior, resume an
@@ -90,6 +99,9 @@ rules are removed.
 11. **Legitimate in-cycle solve rule** — the hint / wrong-move / restart
     disqualification and the immutable one-row-per-presentation guarantee that
     prevents re-rolling a clean first-try credit.
+12. **Legacy auto-set cleanup** — the one-time, idempotent startup removal of
+    the pre-block-model `auto:all-puzzles` / `auto:woodpecker-random` rows and
+    their cycles/attempts.
 
 ### Out of scope
 
@@ -217,8 +229,13 @@ and behaviors are:
   start/continue action. It explains that the block is **fixed** (new puzzles
   are not added mid-plan) and that finishing or abandoning it returns its
   still-unmastered members to the pool. A block has no rename, no membership
-  editing and no per-cycle refresh; it closes via **Finish block** (the plan is
-  complete) or **Abandon block**.
+  editing and no per-cycle refresh. It closes via **Finish block** (the plan is
+  complete) or **Abandon block** — both **archive** it and keep its history —
+  and it can also be **deleted** via a destructive **Delete block** action that
+  removes the block and all of its cycles and recorded attempts (see "11.
+  Ownership, archive and deletion"). The delete confirmation names the block
+  and its cycle/attempt counts and cannot be undone; delete is distinct from
+  finish/abandon, which preserve history.
 - **Custom set detail**: rename, edit configuration, view membership, view
   cycle history, start/continue a cycle, archive/unarchive and delete
   (destructive confirmation naming the set and its cycle/attempt counts).
@@ -423,6 +440,14 @@ interface TacticalTrainingSetRow {
 - At most one set with `source.kind === 'auto'` may be `active` (the open
   block); closing it sets `status: 'archived'`. `source` is provenance for
   custom sets and the block recipe for a block.
+- A Woodpecker block is identified by `source.kind === 'auto'` **and**
+  `source.recipe.kind === 'woodpeckerBlock'`. The extra recipe check is
+  defensive: it prevents a pre-block-model legacy auto row (`allPuzzles` /
+  `woodpeckerRandom`, removed by the startup cleanup) from ever being read as
+  the open block if cleanup has not run.
+- Deletion is **row removal**, not a third `status`: there is no `deleted`
+  status. Finish/Abandon keep the row (`status: 'archived'`); delete removes it
+  and its cycles/attempts.
 
 ### 2. Set creation and membership resolution
 
@@ -506,6 +531,18 @@ formWoodpeckerBlock(puzzles, mastery, openBlock, size):
   to the pool; mastered members stay outside the pool by definition. The same
   create button then forms the next block from the remaining pool plus any
   newly generated puzzles.
+- **Delete (full removal).** A block (open or closed) can be **deleted**
+  entirely, not only closed. Deletion removes the block row and cascades its
+  `trainingCycles` and `puzzleAttempts` rows in the same transaction as a
+  custom-set delete (the `trainingSetId`/`cycleId` indexes); the puzzles and
+  every other game/analysis are untouched. It is behind an explicit destructive
+  confirmation naming the block and its cycle/attempt counts. Delete is
+  **distinct from Finish/Abandon**: Finish/Abandon archive the block
+  (`status: 'archived'`) and **preserve** its cycle history, while delete
+  **discards** that history and cannot be undone. Deleting the open block
+  immediately frees the single open-block slot (its members were never removed
+  from `puzzles`, so the pool and the create action behave as if it never
+  existed).
 - **Small / empty pool.** If the pool is smaller than `size`, the block takes
   all of it (never padded or fabricated). If the pool is empty, creation is
   blocked with an explanation and a link to generate puzzles; the user can
@@ -780,12 +817,17 @@ new ADR and is not V1 scope.
 - **Blocks** are user-created sets: `status: 'active'` while open (at most
   one), `status: 'archived'` once finished or abandoned. Closing a block
   returns its still-unmastered members to the pool (a read-time consequence,
-  no row mutation of the puzzles). A block is not deleted when closed; it
-  keeps its history.
-- **Delete set** removes the set, its cycles, and their attempt rows
-  (via the `trainingSetId`/`cycleId` indexes). The puzzles themselves are
-  untouched — they remain owned by their source games. This is the
-  set/cycle-owned removal Feature 012 anticipated.
+  no row mutation of the puzzles) and **preserves its cycle history** (the row
+  stays, archived). A block is therefore **closed — not deleted — by
+  Finish/Abandon**.
+- **Delete** removes the set row, its cycles, and their attempt rows (via the
+  `trainingSetId`/`cycleId` indexes), whether the set is a custom set or a
+  Woodpecker block, and whether the block is open or closed. The puzzles
+  themselves are untouched — they remain owned by their source games. This is
+  the set/cycle-owned removal Feature 012 anticipated. Deleting a block
+  **discards** its history, unlike Finish/Abandon, which archives and preserves
+  it; the destructive confirmation names the block and its cycle/attempt counts.
+  Deleting the open block frees the single open-block slot.
 - **Quick train** has no `trainingSets` row; its sentinel cycle/attempts are
   not covered by set deletion and are removed only by the game-deletion/puzzle
   cascade (see §3c and "Conflicts surfaced").
@@ -841,13 +883,15 @@ inspection of the stored shapes:
   addition to `puzzles`, an unindexed field needs no Dexie version bump;
 - mastery is **derived**, never stored: no mastery column, table or index;
 - Quick train's ad-hoc cycle uses the existing `trainingCycles` row with a
-  sentinel `trainingSetId`; no new table or column.
+  sentinel `trainingSetId`; no new table or column;
+- the one-time legacy cleanup only deletes existing rows by deterministic id
+  and writes one settings marker; it needs no new column, table or index.
 
 A schema bump (v11) would be required only if a genuinely new **stored** field
 or index were needed (e.g. a persisted pool, a stored open-block pointer, or a
 mastery index). None is needed: the pool is a derived view, the open block is
-`active` + `source.kind === 'auto'` (at most one), and mastery is derived from
-attempts. If profiling later shows the mastery read needs an index, that is an
+`active` + `source.kind === 'auto'` + `recipe.kind === 'woodpeckerBlock'` (at
+most one), and mastery is derived from attempts. If profiling later shows the mastery read needs an index, that is an
 **additive v11** change (e.g. a compound `[puzzleId+result]` index on
 `puzzleAttempts`), never a rewrite of existing rows; it is not required for V1
 because mastery reads scan the bounded attempts table through the existing
@@ -872,11 +916,15 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
 ### Repositories
 
 - `trainingSetsRepository` — `get`, `list({ status? })`, `create`, `update`
-  (name/config/membership/status), `delete` (cascades cycles + attempts),
-  `removePuzzleIds` (game-deletion cascade), `listContainingPuzzle(puzzleId)`,
-  `getOpenBlock()` (the single `active` `source.kind === 'auto'` row, if any)
-  and `closeBlock(id, now)` (sets `status: 'archived'`). There is **no**
-  `ensureAutoSets()`; the app never seeds a set.
+  (name/config/membership/status), `delete` (kind-agnostic; cascades cycles +
+  attempts for a custom set or a block), `removePuzzleIds` (game-deletion
+  cascade), `listContainingPuzzle(puzzleId)`, `getOpenBlock()` (the single
+  `active` `source.kind === 'auto'` + `recipe.kind === 'woodpeckerBlock'` row,
+  if any) and `closeBlock(id, now)` (sets `status: 'archived'`). There is
+  **no** `ensureAutoSets()`; the app never seeds a set. The set service's
+  `delete` accepts a block (it no longer refuses one as `auto-set-immutable`);
+  that typed refusal remains only for a block's rename/config/membership/archive
+  mutation.
 - `trainingCyclesRepository` — `get`, `listForSet`, `getByNumber`, `create`,
   `updateStatus` (`completed`/`abandoned` timestamps), `deleteForSet`,
   `createQuickTrain` (a cycle under the `QUICK_TRAIN_SET_ID` sentinel). Set
@@ -892,7 +940,10 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
 
 ### Deletion cascade
 
-- Set deletion removes its cycles and attempt rows in one transaction.
+- Set deletion removes its cycles and attempt rows in one transaction, for a
+  custom set or a Woodpecker block (open or closed).
+- The one-time legacy auto-set cleanup reuses the same transaction for the two
+  deterministic legacy ids (see "Legacy auto-set cleanup (one-time)").
 - Game deletion (existing `deleteGames` transaction) additionally removes the
   deleted puzzle ids from all sets' `puzzleIds` (custom sets and the open
   block's frozen snapshot); extend the cascade-ready dependent-kind list per
@@ -902,6 +953,44 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
   removed by the game-deletion/puzzle cascade only.
 - No orphaned cycle or attempt may remain (the sentinel is a documented
   exception to the "cycle belongs to a set row" rule).
+
+### Legacy auto-set cleanup (one-time)
+
+Before the explicit block model, the app seeded two system-managed auto sets
+with deterministic ids — `auto:all-puzzles` and `auto:woodpecker-random` — and
+stored their cycles and attempts under those ids. Those rows are dead data under
+the current model (the app no longer seeds or reads them), so a **one-time,
+idempotent cleanup** removes them on startup / first load:
+
+- It deletes exactly the persisted `trainingSets` rows whose `id` is
+  `auto:all-puzzles` or `auto:woodpecker-random`, together with their
+  `trainingCycles` rows and their `puzzleAttempts` rows, by reusing the existing
+  set-delete transaction (`trainingSetsRepository.delete(id)`), which already
+  cascades through the `trainingSetId`/`cycleId` indexes. No second cascade
+  path is introduced.
+- It touches **no other data**: not custom sets, not current Woodpecker blocks
+  (their ids are generated and their recipe is `woodpeckerBlock`), not puzzles,
+  games, analyses, jobs or the engine cache.
+- It is **idempotent**: a second run finds no matching rows and is a no-op; a
+  legacy row whose cycles/attempts are already gone is still removed.
+- It is **guarded** by a persisted settings marker (a boolean flag such as
+  `training.legacyAutoSetsCleaned` in the settings table) so the scan runs once
+  per install; the marker is written after the cleanup completes. If the app is
+  interrupted before the marker is written, the next startup re-runs the
+  cleanup safely (idempotent).
+- It runs in the **infrastructure** layer during app bootstrap, awaited before
+  the training surfaces read `trainingSets`, so a legacy row is never rendered
+  or mistaken for the open block. It is **not** a Dexie schema migration: the
+  schema stays v10 (no `upgrade()` callback, no version bump, no backfill).
+- It is **not** block creation and never creates a row. The cleanup only
+  removes pre-existing legacy rows; the invariant that the app never creates a
+  block without an explicit user action is unchanged (see §3a).
+
+Cleanup removals are a local data-remediation step, not a user-facing deletion:
+they are not a block/set delete the user performed. Feature 016 need not
+tombstone them (the legacy rows predate sync and never appear in a synced
+envelope); the deterministic ids make the removal reproducible on any device
+that still holds them.
 
 ### Sync
 
@@ -915,8 +1004,11 @@ trainingCycles  &id, &[trainingSetId+cycleNumber], trainingSetId, status
 
 - **Set states**: `active`, `archived`, plus transient UI states (loading,
   empty membership, load error).
-- **Block states**: `open` (the single `active` `source.kind === 'auto'` row),
-  `closed` (archived after finish/abandon), `none` (no open block yet).
+- **Block states**: `open` (the single `active` `source.kind === 'auto'` +
+  `recipe.kind === 'woodpeckerBlock'` row), `closed` (archived after
+  finish/abandon, history retained), `none` (no open block yet). **Deleted** is
+  not a state: deletion removes the row and its history, so a deleted block
+  simply ceases to exist.
 - **Pool states**: `ready` (≥1 eligible puzzle), `empty` (no puzzles at all),
   `belowRecommended` (< ~100, guidance only), `small` (< requested size, the
   block takes all of it).
@@ -956,6 +1048,12 @@ The feature must never crash a consumer and must never fabricate data:
 - **Attempt to edit a block's membership or refresh it per cycle** — rejected
   (fixed snapshot); the UI explains the block is fixed and offers close +
   create-next instead.
+- **Delete block with zero cycles/attempts** — allowed; the destructive
+  confirmation shows `0 cycles` / `0 attempts` rather than hiding the action.
+- **Legacy cleanup fails** (storage error mid-transaction) — the cleanup is
+  best-effort and never blocks app startup; the guard marker is only written on
+  success, so the next startup retries, and no data outside the two legacy ids
+  is touched.
 - **Unknown block recipe / malformed `source`** (row written by a future
   build) — rejected on read with a typed error; never silently coerced or
   trained.
@@ -1021,6 +1119,16 @@ The feature must never crash a consumer and must never fabricate data:
 - **Closing a block with an `inProgress` cycle** — closing abandons that
   cycle (it becomes terminal, keeps its attempts) and returns the block's
   still-unmastered members to the pool.
+- **Deleting a block with an `inProgress` cycle** — delete removes the block,
+  that cycle and all attempts; no resumable cycle remains. Unlike
+  Finish/Abandon (which abandon the in-progress cycle but keep it in history),
+  delete removes the history.
+- **Deleting a closed block** — allowed; removes the archived block and its
+  history. Close preserves history; delete does not.
+- **Legacy auto sets present at startup** — removed once by the guarded
+  cleanup; the training home and set lists never show `auto:all-puzzles` or
+  `auto:woodpecker-random`. A fresh install (no such rows) is a no-op, and a
+  second run is a no-op.
 - **Restart then clean line** — the presentation derives `solvedWithHelp`
   (`restartCount > 0`); no clean first-try credit.
 - **Hint/restart then leave and re-enter** — the abandoned presentation is
@@ -1066,8 +1174,10 @@ The feature must never crash a consumer and must never fabricate data:
   set, start/resume/abandon/repeat cycle, quick train, skip, exit session,
   start next cycle) is a real labelled control, reachable by keyboard and
   touch — never hover-only, never shortcut-only.
-- Destructive actions (delete set, abandon cycle, abandon block) require an
-  explicit confirmation dialog that names the object and its consequences.
+- Destructive actions (delete set, delete block, abandon cycle, abandon block)
+  require an explicit confirmation dialog that names the object and its
+  consequences; the delete-block dialog names the block and its cycle/attempt
+  counts and is distinct from Finish/Abandon.
 - The one-click **Create Woodpecker block** action is a labelled button whose
   accessible name states the default size and that the block is fixed; the
   size selector is behind a labelled "Advanced" disclosure.
@@ -1175,7 +1285,8 @@ The feature must never crash a consumer and must never fabricate data:
    game-analysis metrics.
 10. A puzzle may belong to multiple sets; per-set/cycle aggregates never
     double-count across sets; deleting a set removes its cycles and attempt
-    rows but never its puzzles.
+    rows but never its puzzles, and the same holds when the deleted set is a
+    Woodpecker block (open or closed).
 11. Deleting a source game removes its puzzles/attempts and the deleted puzzle
     ids from every set's membership; no orphaned cycle or attempt remains and
     no session crashes.
@@ -1191,9 +1302,12 @@ The feature must never crash a consumer and must never fabricate data:
 15. All essential set/cycle/session actions are keyboard- and touch-operable,
     status is never colour-only, and destructive actions are confirmed.
 16. The app never creates a set or block on its own: there is no
-    `ensureAutoSets()`, no system seeding and no auto-generated row; the only
-    block creation path is the explicit one-click **Create Woodpecker block**
-    action.
+    `ensureAutoSets()`, no system seeding and no auto-generated row — not at
+    startup/first load and not on any data change; the only block creation path
+    is the explicit one-click **Create Woodpecker block** action. A one-time,
+    idempotent, guarded startup cleanup removes only the pre-block-model legacy
+    auto sets (`auto:all-puzzles`, `auto:woodpecker-random`) and their
+    cycles/attempts; it touches no other data and is not a schema migration.
 17. The one-click action auto-selects up to N (default 200) puzzles from the
     derived pool (unmastered, not in the open block) in `difficultyAsc` order
     (ties by `sourcePly` then `puzzleId`), stores them as the block's frozen
@@ -1234,6 +1348,12 @@ The feature must never crash a consumer and must never fabricate data:
 25. A same-day cycle restart (a new cycle started on the same local calendar
     day as the previous cycle of the same block ended) shows a non-blocking
     spacing nudge; the user may proceed.
+26. A Woodpecker block can be **deleted** entirely, not only closed: deletion
+    removes the block row and cascades its `trainingCycles` and
+    `puzzleAttempts` rows in one transaction, leaving puzzles, games and
+    analyses untouched; it is behind an explicit destructive confirmation
+    naming the block and its cycle/attempt counts. Delete is distinct from
+    Finish/Abandon, which archive the block and preserve its history.
 
 ---
 
@@ -1259,11 +1379,18 @@ cover at least:
   fully-mastered pool; mastery exclusion; the fixed easy→hard order with
   `sourcePly`/`puzzleId` tie-breaks; the frozen snapshot after a new puzzle is
   generated; one-open-block enforcement; close/finish/abandon returning
-  unmastered members to the pool.
+  unmastered members to the pool; a block with cycles/attempts to delete
+  (open and closed, including one with an `inProgress` cycle).
 - **Pool & Quick train** — the derived pool excludes mastered and open-block
   members; Quick train over a small pool creates no set row and writes a
   sentinel cycle + ordinary attempts; the sentinel is excluded from
   set-scoped reads.
+- **Legacy cleanup** — a persisted DB seeded with the `auto:all-puzzles` and
+  `auto:woodpecker-random` set rows plus their cycles/attempts, alongside a
+  custom set, an open block and unrelated puzzles/games; the guarded cleanup
+  removes only the legacy rows and their dependents, leaves everything else
+  untouched, writes the guard marker, and a second run is a no-op (including
+  when a legacy row's cycles/attempts are already gone).
 - **Mastery** — 0/1/2/3 distinct-cycle credits; multiple rows in one cycle
   counting once; a retry-presentation clean row adding no credit; a
   hint/wrong-move/restart row adding no credit; credits earned across
@@ -1291,8 +1418,9 @@ cover at least:
   `SolveHintConfig`; `restartCount` outcome derivation; version stamping.
 - **Repository (infrastructure):** `trainingSets`/`trainingCycles` create/get/
   list/update/delete; the unique `[trainingSetId+cycleNumber]` key; status
-  filters; `getOpenBlock`/`closeBlock`; no `ensureAutoSets` exists; the
-  mastery `listAll` read; set-deletion cascade over cycles and attempts;
+  filters; `getOpenBlock`/`closeBlock` (recipe-aware block detection); no
+  `ensureAutoSets` exists; the mastery `listAll` read; set-deletion cascade
+  over cycles and attempts, including a **block** row (kind-agnostic `delete`);
   game-deletion membership cleanup (custom sets + open block); Quick-train
   sentinel cycle creation and exclusion; no orphans.
 - **Service/application:** create a block from the pool (including the
@@ -1301,19 +1429,25 @@ cover at least:
   through the Feature-012 host contract (order, retries, skips, completion); a
   restart during a presentation; abandon-after-hint/restart then re-enter;
   resume after reload; abandon; repeat; close a block and confirm members
-  return to the pool; Quick train; results computation incl. the time goal;
-  mastery read and mastered-list assembly; write-failure containment (no
-  advance while a row is unwritten).
+  return to the pool; **delete a block** (open and closed, incl. an in-progress
+  cycle) with the correct cycle/attempt counts and no puzzle/game mutation; the
+  guarded legacy cleanup removes only the two legacy ids, leaves everything
+  else untouched and is idempotent; Quick train; results computation incl. the
+  time goal; mastery read and mastered-list assembly; write-failure containment
+  (no advance while a row is unwritten).
 - **Component:** training home (open block / no open block, pool count, Quick
   train, guidance copy, empty/resume banner), block detail (fixed membership,
-  finish/abandon, history), custom set detail, mastered list
+  finish/abandon, delete with a confirmation naming the block and its
+  cycle/attempt counts, history), custom set detail, mastered list
   (populated/empty), cycle session chrome (progress/exit/skip + spacing
   nudge), cycle results (per-puzzle outcomes + aggregates + cross-cycle time
   comparison), archive/delete confirmations, keyboard/AT behavior, mobile
   layout; the interim practice host is gone.
 - **End-to-end:** create block from pool → cycle → solve (via Feature 012,
   including a restart-disqualified attempt) → attempt rows → cycle completion
-  → close block → next block from the remaining pool; Quick train writes a
+  → close block → next block from the remaining pool; **delete a block** (its
+  cycles/attempts disappear and its puzzles stay); a startup with seeded legacy
+  auto rows removes them before the training home renders; Quick train writes a
   sentinel cycle; results/mastered list, using the real persistence layer and
   the Feature-012 screen with a stubbed engine.
 
@@ -1420,6 +1554,15 @@ localized change:
     `trainingCycles` row with no `trainingSets` row; excluded from set-scoped
     reads/aggregates (default). Alternative: create a hidden ephemeral set row
     (rejected: violates "no set row" and pollutes set listing).
+20. **Block deletion** — a Woodpecker block (open or closed) can be **deleted**
+    entirely, cascading its cycles/attempts through the existing set-delete
+    transaction; the destructive confirmation names the block and its
+    cycle/attempt counts. Delete is distinct from Finish/Abandon, which archive
+    the block and preserve its history (owner-approved).
+21. **Legacy auto-set cleanup** — a one-time, idempotent, guarded startup
+    cleanup removes only the pre-block-model `auto:all-puzzles` /
+    `auto:woodpecker-random` rows and their cycles/attempts; no other data is
+    touched and no schema bump is needed (owner-approved).
 
 ### Reconciliations applied
 
@@ -1451,6 +1594,10 @@ before implementation; they do not change the model above:
 - **`features/012-puzzle-training.md`** — the restart contract
   (`restartCount`, `solvedWithHelp` after restart) has landed; Feature 013
   consumes it.
+- **`domain/tactical-training.md`** — added the explicit block **delete**
+  lifecycle (distinct from finish/abandon) and the one-time legacy auto-set
+  cleanup; block detection is recipe-aware so legacy rows can never shadow the
+  open block.
 
 ---
 
@@ -1495,6 +1642,14 @@ or follow-up spec decision:
    block) shares the name with the existing `'pool'` **set source** (a
    creation-time filter snapshot). They are distinct; if the collision is
    undesirable, rename one (e.g. the source kind to `'filters'`).
+7. **Legacy auto rows shadow the open block.** Block detection currently keys
+   only on `source.kind === 'auto'`; a pre-block-model `auto:all-puzzles` row is
+   `active` with that source kind, so it could be read as the open block if the
+   cleanup has not run (or fails). The encoded mitigation is twofold: the
+   guarded startup cleanup removes the legacy rows, and block identification
+   additionally requires `source.recipe.kind === 'woodpeckerBlock'` (see §1).
+   Confirm the recipe check is the intended defensive rule rather than relying
+   on cleanup ordering alone.
 
 ## ADR assessment
 
@@ -1515,6 +1670,11 @@ with the current decisions:
   3-distinct-cycle mastery threshold are **product parameters** recorded as
   owner decisions, not architectural decisions; changing them is a versioned
   spec change (`MASTERY_VERSION`/`BLOCK_RECIPE_VERSION`), not a new ADR.
+- **Block deletion** reuses the existing set-owned deletion cascade (no new
+  persistence architecture or table), and the **legacy cleanup** is a one-time,
+  idempotent data remediation in the infrastructure layer, not a schema
+  migration (schema stays v10). Neither changes an architectural decision, so no
+  new ADR is required.
 
 ---
 

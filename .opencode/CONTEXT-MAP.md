@@ -39,7 +39,7 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 001, 003.
 
 ### Feature 005 — Stockfish
-- Required: `ARCHITECTURE.md` §2/§5; ADRs `decisions/ADR-004`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-020`, `decisions/ADR-009`, `decisions/ADR-027`; domain `domain/analysis-model.md`; research `research/browser-stockfish.md`.
+- Required: `ARCHITECTURE.md` §2/§5; ADRs `decisions/ADR-004`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-034`, `decisions/ADR-020`, `decisions/ADR-009`, `decisions/ADR-027`; domain `domain/analysis-model.md`; research `research/browser-stockfish.md`.
 - Dependencies: Features 001, 002, 003.
 
 ### Feature 006 — Live Analysis Board
@@ -52,7 +52,7 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Features 001, 003, 004 (persistence + duplicate detection).
 
 ### Feature 008 — Game Analysis
-- Required: ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-033`, `decisions/ADR-009`; domain `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/game-model.md`, `domain/time-control.md`, `domain/clock.md`; research `research/browser-stockfish.md`, `research/move-classification.md`.
+- Required: ADRs `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-023`, `decisions/ADR-026`, `decisions/ADR-033`, `decisions/ADR-009`, `decisions/ADR-034`; domain `domain/analysis-model.md`, `domain/classification.md`, `domain/game-phase.md`, `domain/game-model.md`, `domain/time-control.md`, `domain/clock.md`; research `research/browser-stockfish.md`, `research/move-classification.md`.
 - Dependencies: Features 002, 003, 004 (persistence), 005 (Stockfish service + profiles), 007 (Game Library entry/status). Classification and game-phase rules are canonical domain rules (never later features). Output consumed by Features 009/010/011/014.
 
 ### Feature 009 — Move Classification (post-008 tooling)
@@ -60,7 +60,7 @@ features, ADRs, research, or the whole documentation tree.
 - Dependencies: Feature 008 (persisted `MoveAnalysis[]` input). The canonical classifier is domain-owned and applied inside Feature 008, so Feature 009 never gates 008. Output: classification tooling (glyph/accuracy surfacing per ADR-024) and statistics helpers consumed by Features 008 (review polish)/014/015.
 
 ### Feature 010 — Tactical Detection
-- Required: ADRs `decisions/ADR-026`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-025`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`; domain `domain/tactics.md`, `domain/analysis-model.md`, `domain/puzzle-model.md`, `domain/classification.md`, `domain/game-library.md`; research `research/tactical-detection.md`, `research/move-classification.md`.
+- Required: ADRs `decisions/ADR-026`, `decisions/ADR-023`, `decisions/ADR-024`, `decisions/ADR-025`, `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-019`, `decisions/ADR-020`, `decisions/ADR-034`; domain `domain/tactics.md`, `domain/analysis-model.md`, `domain/puzzle-model.md`, `domain/classification.md`, `domain/game-library.md`; research `research/tactical-detection.md`, `research/move-classification.md`.
 - Dependencies: Features 005, 007 (Library surface + canonical filter state), 008 (persisted `MoveAnalysis` + analysis status), 009 (per-game summary/accuracy tooling); output consumed by Features 011, 014 and by the Game Library read-only row insights.
 
 ### Feature 011 — Tactical Puzzle Generation
@@ -89,9 +89,17 @@ features, ADRs, research, or the whole documentation tree.
 - Required: `ARCHITECTURE.md` §8; ADRs `decisions/ADR-008`, `decisions/ADR-015`, `decisions/ADR-016`, `decisions/ADR-017`, `decisions/ADR-001`, `decisions/ADR-018` (cache is not synced); domain `domain/game-model.md`, `domain/tactical-training.md`; research `research/synchronization.md`.
 - Dependencies: Features 001, 003, 004 (persistence), 008 (analysis), 013 (training data).
 
+### Feature 017 — W1 UI/UX Refinements
+- Required: `ARCHITECTURE.md` §3/§7; ADRs `decisions/ADR-009`, `decisions/ADR-010`, `decisions/ADR-013`, `decisions/ADR-031`; `PRODUCT.md` §10/§14; features `features/007-game-import.md`, `features/008-game-analysis.md`, `features/013-tactical-training-cycles.md`, `features/014-game-history-statistics.md`, `features/015-dashboard.md`; domain `domain/game-library.md`.
+- Dependencies: Features 001 (shell/settings), 007 (Library surface), 008 (Library actions), 013 (training routes/sets), 014 (statistics partitions), 015 (the renamed page). No new dependency, ADR or schema change.
+
+### Feature 018 — W6 Home Page
+- Required: `ARCHITECTURE.md` §3/§6a/§7/§10; ADRs `decisions/ADR-001`, `decisions/ADR-010`, `decisions/ADR-013`, `decisions/ADR-031`; `PRODUCT.md` §2/§12/§13/§14; features `features/007-game-import.md`, `features/008-game-analysis.md`, `features/013-tactical-training-cycles.md`, `features/014-game-history-statistics.md`, `features/015-dashboard.md`, `features/017-w1-ui-ux-refinements.md`; domain `domain/game-library.md`, `domain/statistics.md`, `domain/tactical-training.md`.
+- Dependencies: Features 001 (shell/routes), 007 (Game Library + game count), 008 (analysis status), 011/012/013 (puzzles/attempts/sets/cycles + canonical mastery), 014 (sole statistics source), 015 (honest-state helpers), 017 (section naming/routes). No new dependency, ADR or schema change.
+
 ## Lookup: decisions by area
 
-- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
+- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020/034 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
 
 ## Lookup: research by consumer
 
@@ -112,7 +120,7 @@ features, ADRs, research, or the whole documentation tree.
 ## Lookup: domain specs by feature
 
 - `domain/game-model.md` → Features 002/003/004/007/014/015/016
-- `domain/game-library.md` → Features 007/008/010/011/013/014/016
+- `domain/game-library.md` → Features 007/008/010/011/013/014/016/017/018
 - `domain/analysis-model.md` → Features 005/006/008/009/010/012/014
 - `domain/classification.md` → Features 006/008/009/010/014
 - `domain/time-control.md` → Features 003/007/008/014/015
@@ -120,5 +128,5 @@ features, ADRs, research, or the whole documentation tree.
 - `domain/game-phase.md` → Features 008/014/015
 - `domain/tactics.md` → Features 010/011/014
 - `domain/puzzle-model.md` → Features 010/011/012/013/014
-- `domain/tactical-training.md` → Features 011/012/013/014/015/016
-- `domain/statistics.md` → Features 013/014/015
+- `domain/tactical-training.md` → Features 011/012/013/014/015/016/018
+- `domain/statistics.md` → Features 013/014/015/018

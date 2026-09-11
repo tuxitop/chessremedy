@@ -73,7 +73,11 @@ Integration"); the canonical semantics are:
 - **`hasBlunders`** — evaluated on the user side of the game's latest
   completed analysis: `yes` = at least one user move classified
   `blunder`; `no` = a completed analysis exists and zero user blunders.
-  Games without a completed analysis match neither `yes` nor `no`.
+  Games without a completed analysis match neither `yes` nor `no`. A
+  current-version verified missed-tactic ply is **not** a blunder for this
+  filter (ADR-023 amendment): a game whose only blunder is such a ply reads
+  `no` once detection has completed. Before a current completed detection
+  pass exists the raw counts apply.
 - **`hasMissedTactics`** — `yes` = the latest completed analysis's
   detection pass completed and at least one user move carries
   `missedTactic: true`; `no` = the detection pass completed and zero.
@@ -155,9 +159,9 @@ type LibraryGameView = GameSummary & {
     classificationCounts: {           // user-side counts, latest completed analysis
       best: number;                   //   canonical Feature-009 per-game summary
       good: number;                   //   (one ADR-023 classification per persisted move)
-      inaccuracy: number;
-      mistake: number;
-      blunder: number;
+      inaccuracy: number;             //   current-version verified missed-tactic
+      mistake: number;                //   plies are excluded from all five buckets
+      blunder: number;                //   (ADR-023 amendment; counted as missedTactics)
     };
     detectionState:                  // Feature-010 pass state of the latest completed analysis
       | 'absent'                     //   never scanned (older run / not yet scheduled)

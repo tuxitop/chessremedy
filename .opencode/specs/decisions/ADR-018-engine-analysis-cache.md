@@ -60,6 +60,28 @@ historical tuple key, so previously stored default-config rows remain
 readable unchanged (stored-key compatibility; no migration or prune
 needed).
 
+### Tactical-detection verification scope
+
+The Feature-010 Stage-2 verification search (ADR-026) has its own key
+scope: the ADR-018 tuple above plus the **effective verification depth**,
+the verification movetime backstop (`VERIFY_MOVETIME_MS`) and the
+verification engine's effective thread count:
+
+```
+(positionKey, profile='tactical', engineName, engineVersion, engineBuild,
+ depth=verificationDepth, movetimeMs=VERIFY_MOVETIME_MS, threads=verificationThreads)
+```
+
+The `depth` component is **mandatory**: the verification depth is a user
+setting (ADR-026), so two passes at different depths must never share a
+cache entry, and a cached result produced at one depth is never served to a
+search at another. The `threads` component is the verification engine's own
+thread count (ADR-034), **not** the game-analysis run's override. The
+`VERIFY_MOVETIME_MS` component keeps a time-capped shallow result
+distinguishable from a depth-completed one. The engine identity
+(name/version/build) still scopes the entry, so a verification result is
+never reused by a differently-built engine.
+
 ## Invalidation
 
 Cached entries are **invalidated** when any of the following changes:

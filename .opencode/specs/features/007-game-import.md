@@ -154,7 +154,12 @@ time zone plus explicit-offset cases.
 - Single "All" default, plus each canonical category from ADR-013:
   bullet, blitz, rapid, classical, correspondence, unknown.
 - Filters operate on `normalizedTimeControl` (stored normalized data),
-  never on UI strings; no second enumeration is introduced.
+  never on UI strings; no second enumeration is introduced. The stored
+  category is **platform-correct** (ADR-013): a Chess.com `5+5` game
+  matches `blitz` and a Lichess `5+5` game matches `rapid`; a Chess.com
+  import has no `classical` matches because Chess.com classifies long
+  games as `rapid`. The import filter therefore evaluates the record
+  through its provider profile, not a platform-agnostic rule.
 - "Unknown/Other" and correspondence follow the canonical ADR-013 model
   (kept distinct; never silently merged).
 

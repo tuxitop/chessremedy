@@ -90,6 +90,31 @@ Consumers should interact with a typed application-level API rather than sending
 
 ---
 
+# 1a. Engine Instances & Concurrency
+
+Feature 005 defines the engine service; the application may run **more than
+one instance**, each with its own Worker and FIFO queue (ADR-034):
+
+- the **analysis engine** — shared by Live Analysis (Feature 006) and
+  full-game analysis (Feature 008);
+- the **verification engine** — dedicated to the Feature-010 Stage-2
+  tactical verification pass (ADR-026).
+
+Instances are independent: no shared worker, transport or queue. They share
+the engine build selection (ADR-012) and the persistent ADR-018
+position-keyed cache. A global **engine thread budget**
+`B = min(hardwareConcurrency, MAX_THREADS_CAP)` (`MAX_THREADS_CAP = 8`)
+bounds the total search threads: the verification engine uses 1 thread, and
+the analysis engine's user-selectable cap is `max(1, B - 1)`; the two engines
+never run at their maximum together. On the single-threaded build each
+instance uses exactly 1 search thread. Full rule: ADR-034.
+
+The verification instance is created lazily on the first verification job and
+disposed on idle or teardown, so a second WASM instance is only resident
+while detection actually runs.
+
+---
+
 # 2. Stockfish WASM
 
 Use a browser-compatible Stockfish WASM build suitable for running inside a Web Worker.
@@ -403,6 +428,11 @@ This profile may use stronger search limits and/or MultiPV.
 
 The exact numerical parameters for each profile must be documented and tested.
 
+The `tactical` profile's depth (22) is the **default** for the Feature-010
+verification depth; Feature 010 may override it per the user setting
+(ADR-026). The profile's MultiPV (5), hash (128 MB) and WDL remain
+authoritative.
+
 Profiles must be configuration data rather than duplicated engine-control logic.
 
 ---
@@ -425,9 +455,16 @@ The application must not blindly allocate all available CPU or memory.
 
 Default settings should favor usability on ordinary desktop and mobile devices.
 
-User-facing engine customization will be introduced through a future
-settings surface (no Settings feature exists in the V1 roadmap); this
-feature only establishes the configuration mechanism.
+Threads are only sent to the **multi-threaded `lite` build**; the
+single-threaded `lite-single` build always uses 1. The global engine thread
+budget is `B = min(hardwareConcurrency, MAX_THREADS_CAP)` with
+`MAX_THREADS_CAP = 8`; the analysis engine's user-selectable cap is
+`max(1, B - 1)` because 1 thread is reserved for the dedicated verification
+engine (ADR-034). On the single-threaded build the analysis cap is 1. Hash is
+clamped by the capability cap (64 MB mobile / 256 MB desktop). The Settings
+page ("Engine" and "Game analysis" groups) is the user-facing surface for
+these values; the engine layer establishes the mechanism and never blindly
+allocates all CPU or memory.
 
 ---
 
@@ -475,6 +512,12 @@ and failure/disposal states.
 The Worker must not be created repeatedly for every analysis request unless required by the selected implementation.
 
 The service must provide explicit disposal so that the application can release the Worker when it is no longer needed.
+
+The application may run a second, dedicated **verification worker** instance
+(Feature 010, ADR-034). It uses the same lifecycle, is created lazily on the
+first verification job, and is disposed after an idle window
+(`VERIFICATION_ENGINE_IDLE_MS`) or on explicit teardown, so the second WASM
+instance's memory is only held while detection runs.
 
 ---
 
@@ -632,6 +675,13 @@ Worker communication should be asynchronous.
 
 Performance targets should be established using representative desktop and mobile environments rather than assuming desktop hardware.
 
+Multiple engine instances must respect the global thread budget (ADR-034):
+the analysis and verification engines never run at their maximum together,
+and the verification engine is conservative (1 thread). Two instances must
+not oversubscribe a low-core device; on the single-threaded build both are
+1-thread, so the app relies on lazy/idle lifecycle rather than parallel
+speedup.
+
 ---
 
 # 21. Security and Privacy
@@ -678,6 +728,18 @@ The engine Worker must not require network access during normal analysis after t
 * [ ] `tactical-verification` / `tactical` profile exists.
 * [ ] Profiles produce deterministic engine configurations.
 
+### Concurrency & resources
+
+* [ ] The analysis and verification engines run in separate Workers with
+      independent FIFO queues.
+* [ ] Detection does not head-of-line block game analysis.
+* [ ] The global engine thread budget is `min(hardwareConcurrency, 8)`; it is
+      1 when the environment is not cross-origin isolated.
+* [ ] `Threads` is sent only to the multi-threaded `lite` build.
+* [ ] The verification engine uses 1 thread and the two engines' threads
+      never exceed `min(hardwareConcurrency, 8)`.
+* [ ] The verification worker is created lazily and disposed on idle.
+
 ### Failure handling
 
 * [ ] Invalid positions are rejected.
@@ -713,7 +775,8 @@ The engine Worker must not require network access during normal analysis after t
 
 - `ARCHITECTURE.md` §2 (Technology), §5 (Engine)
 - `decisions/ADR-004`, `decisions/ADR-012`, `decisions/ADR-018`,
-  `decisions/ADR-020`, `decisions/ADR-009`, `decisions/ADR-027`
+  `decisions/ADR-020`, `decisions/ADR-026`, `decisions/ADR-034`,
+  `decisions/ADR-009`, `decisions/ADR-027`
 - `domain/analysis-model.md`
 - `research/browser-stockfish.md`
 
@@ -739,7 +802,8 @@ The engine Worker must not require network access during normal analysis after t
 Feature 005 produces:
 
 1. Stockfish WASM integration.
-2. Stockfish Web Worker.
+2. Stockfish Web Worker (the shared analysis instance; a second dedicated
+   verification instance per ADR-034).
 3. Typed engine service.
 4. Analysis job queue.
 5. Cancellation mechanism.

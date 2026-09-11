@@ -102,10 +102,46 @@ or:
 
 Both are valid analyzed moves.
 
+## Missed-tactic exclusivity (ADR-023 amendment)
+
+A ply whose analysis carries a **current-version verified missed tactic**
+(`MoveAnalysis.missedTactic === true` with `detectionVersion ===
+DETECTION_VERSION`, or a `verified` puzzle candidate for the same
+`[analysisId, sourcePly]` at the current `DETECTION_VERSION`) is **exclusive**.
+
+- The persisted `classification` is the raw ADR-023 classifier output and is
+  retained for provenance. The classifier (Feature 008) runs before detection
+  exists and is never rewritten by Feature 010.
+- The ply's **effective classification** is the derived state `missedTactic`:
+  a presentation/statistics state, **not** a sixth persisted
+  `MoveClassification` and **not** a `classificationVersion` change.
+- Presentation renders exactly one annotation for the ply — the canonical
+  missed-tactic marker (NAG 9, `MISSED_TACTIC_NAG`) with the missed-tactic
+  colour. The negative-classification glyph, colour, board chip and
+  start/end-square highlight are suppressed.
+- Classification **counts** (Feature-009 summaries and Feature-014 error
+  aggregates) exclude the ply from every one of the five buckets; the ply is
+  counted only as a missed tactic. Move-exposure denominators
+  (`userMoves`, per-phase `userMovesInPhase`) keep the ply.
+- Accuracy is **not** affected: ADR-024 computes from evaluations and includes
+  the ply. Accuracy is a quality metric, not a classification count, and is
+  never derived from classification or detection emphasis (see Feature 009).
+- The exclusivity is gated by the Feature-010 freshness rule. A marker written
+  by an older `detectionVersion` is suppressed: the ply falls back to its raw
+  ADR-023 classification and is counted normally until a fresh scan re-derives
+  it.
+
+Before a current completed detection pass exists for the analysis, the
+missed-tactic determination does not exist yet, so the raw ADR-023 counts apply;
+when the pass completes, the per-analysis summary is rebuilt under this rule.
+
 ## Future Extensions
 
 Additional attributes such as `missedTactic` and tactical motifs are
-separate from the primary move classification.
+separate from the primary move classification, **except** for the
+current-version verified missed-tactic case, which is exclusive (above).
+For an exclusive ply the persisted classifier label is retained but is not the
+ply's effective classification.
 
 They must not force every move to receive a classification.
 

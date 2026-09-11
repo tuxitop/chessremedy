@@ -182,10 +182,13 @@ For classification purposes:
 
 - The `MoveAnalysis` record carries a `missedTactic: boolean` flag
   populated by Feature 010.
-- If `missedTactic == true`, the move's classification is **not**
-  downgraded (a missed tactic may already be a `blunder` or
-  `mistake`); the flag is an additional attribute, not a replacement
-  classification.
+- A **current-version verified** missed tactic is **exclusive** with the
+  classification (ADR-023 amendment): the persisted classifier label is
+  retained as provenance but the ply is not additionally an
+  inaccuracy/mistake/blunder for presentation, classification counts or error
+  aggregates. A stale `missedTactic` (older `detectionVersion`) is suppressed
+  and the raw classification applies. See `specs/domain/classification.md`
+  "Missed-tactic exclusivity".
 - `puzzleId` on the move links the missed tactic to its corresponding
   puzzle candidate.
 

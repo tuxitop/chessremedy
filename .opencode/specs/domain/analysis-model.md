@@ -45,12 +45,19 @@ One record per analyzed ply of a game. Each record:
   value.
 - `classification` (`best`/`good`/`inaccuracy`/`mistake`/`blunder`)
   plus `classificationVersion` — canonical rules in
-  `domain/classification.md` (ADR-023)
+  `domain/classification.md` (ADR-023). This is the **raw classifier
+  output**. When Feature 010 later sets a current-version verified
+  `missedTactic` on the ply, the raw label is retained as provenance but is
+  not the ply's effective classification (exclusivity; ADR-023 amendment,
+  `domain/classification.md`).
 - `gamePhase` (`opening`/`middlegame`/`endgame`) — canonical rule in
   `domain/game-phase.md`
 - Reserved missed-tactic contract: `missedTactic: boolean` (default
   false) and `detectionVersion` (null until set). Set by Feature 010;
-  never computed by Feature 008.
+  never computed by Feature 008. A `missedTactic: true` at the current
+  `DETECTION_VERSION` is **exclusive** with the raw classification for
+  presentation, classification counts and puzzle generation (ADR-023
+  amendment); a stale version is suppressed by the freshness gate.
 - Engine metadata: `engineName`, `engineVersion`, `engineBuild`,
   `profile`
 - Record timestamps

@@ -58,7 +58,13 @@ so puzzles and any later practice/attempts stay stable across engine or
 detection upgrades. When a ply is **both** a verified tactical candidate and a
 user blunder, the tactical row wins (the generation pass processes candidates
 before blunder plies and writes add-only); no blunder row is created for that
-ply. Cross-game FEN merging/dedup is out of scope in V1.
+ply. A ply that is a **current-version verified missed tactic** therefore
+yields **exactly one** puzzle, and the blunder-origin input set excludes any
+ply already owned by a current-version verified candidate (ADR-023 amendment).
+A ply whose verified candidate is **not** current-version (stale
+`detectionVersion`) is not a missed tactic for generation: the candidate is
+ignored and, if the ply is a user-side blunder, the blunder origin may still
+produce a puzzle. Cross-game FEN merging/dedup is out of scope in V1.
 
 Rows are plain objects, so the version-2 additions (`origin`, optional
 tactical-only fields) need **no persistence schema change** — the `puzzles`

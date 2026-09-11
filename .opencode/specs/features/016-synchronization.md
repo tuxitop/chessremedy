@@ -29,6 +29,12 @@ a game never purges shared FEN-keyed engine cache entries (ADR-018).
 Game Library filter/search/selection state (ephemeral, URL-encoded) and
 derived per-game insights are never synced.
 
+Derived time-control fields (`timeControlModel`, `normalizedTimeControl`)
+are recomputed from the verbatim `timeControl` and the game's `source` on
+import and on sync merge; they are never trusted from a remote payload, so
+a device on an older time-control category mapping cannot reintroduce a
+stale category (ADR-013, `domain/time-control.md`).
+
 ## Acceptance Criteria
 
 Two devices can synchronize the same user's data without requiring a

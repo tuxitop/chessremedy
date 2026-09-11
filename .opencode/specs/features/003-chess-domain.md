@@ -50,8 +50,10 @@ with the game.
 
 The normalized categories must be defined consistently across all domain,
 statistics and product specifications (see `domain/time-control.md` and
-ADR-013). The canonical category is platform-agnostic; provider-specific
-labels are optional hints only.
+ADR-013). The canonical category is **platform-specific**: it is computed
+with the published definition of the game's `source` platform (Chess.com /
+Lichess), with a neutral `generic` profile for `local`/`fixture`.
+Provider-specific labels are optional hints only.
 
 The design must allow statistics to be separated by time control.
 

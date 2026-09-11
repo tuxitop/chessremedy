@@ -107,6 +107,59 @@ and the defensive objectives still surface from lost positions; only the
 material objective is floored. Genuine recall forks from slightly-lost
 positions (≈ −200cp) still verify.
 
+## Verification depth & freshness (W2)
+
+The Stage-2 verification depth is a user setting: default `22` (the ADR-012
+`tactical` profile depth), bounds `10..40`, stored under
+`analysis.tacticalDetection`. It is:
+
+- recorded as `verificationMetadata.verificationDepth` on every verified
+  candidate, and as an additive (non-indexed) field on the per-analysis
+  summary for the pass;
+- part of the ADR-018 cache scope, so a result produced at one depth is never
+  served to a search at another depth;
+- part of the **freshness gate** alongside `detectionVersion`: a completed
+  pass whose recorded depth differs from the current setting is **outdated**
+  and is re-derived on the next scan, never silently reused.
+
+The default depth is the profile depth, so a pass under default settings is
+unchanged. The 45 s `VERIFY_MOVETIME_MS` backstop is unchanged and bounds
+every search at whichever limit is reached first.
+
+## Verified-miss exclusivity (ADR-023 amendment)
+
+A verified candidate is **exclusive** with move classification once it is
+current-version. A ply is a **current-version verified missed tactic** when:
+
+- a `verified` candidate exists for its `[analysisId, sourcePly]` with
+  `detectionVersion === DETECTION_VERSION`, and
+- the owning `MoveAnalysis` carries `missedTactic: true` with the same
+  `detectionVersion`.
+
+Feature 010 guarantees the two agree: a current-version verified candidate
+annotates its ply, and a stale annotation is cleared before a re-derivation.
+For such a ply:
+
+- the persisted `MoveAnalysis.classification` is retained as raw classifier
+  provenance but is **not** the ply's effective classification (the effective
+  state is the derived `missedTactic` — not a sixth `MoveClassification`);
+- Game Review renders exactly one annotation, the missed-tactic marker
+  (`MISSED_TACTIC_NAG`); the negative-classification glyph/colour/chip/
+  highlight are suppressed;
+- classification counts and error aggregates exclude the ply (Feature 009 /
+  Feature 014); move-exposure denominators keep it; ADR-024 accuracy is
+  unchanged and includes it;
+- Feature 011 yields exactly one puzzle (the verified candidate wins; the
+  blunder origin skips plies owned by a current-version verified candidate).
+
+**Fallback when the candidate is not current-version verified.** A stale
+marker (`missedTactic: true` but `detectionVersion !== DETECTION_VERSION`) or
+an unannotated ply is treated as **not** a missed tactic: the Feature-010
+freshness gate suppresses the marker, the raw ADR-023 classification is the
+effective classification again, and (for a user-side blunder) the Feature-011
+blunder origin may still produce a puzzle. A `verified` candidate whose
+`detectionVersion` is older is likewise ignored by Feature 011.
+
 ## Persisted candidate shape
 
 A verified tactical candidate is persisted game-scoped with natural key
@@ -126,12 +179,15 @@ identity that produced it:
 
 Candidates are derived data owned by their source game and removed with
 it (ARCHITECTURE.md §7). Guard/threshold/verification-source changes bump
-`DETECTION_VERSION` (currently 10; v5 dropped the ADR-025 difficulty
+`DETECTION_VERSION` (currently 11; v5 dropped the ADR-025 difficulty
 rejection floor, v6 lowered `winning_material` to 2 points, v7 removed the
 unicity gate, v8 relaxed the stabilisation stop and scoped the WDL veto
 to terminal-prefix objectives, v9 introduced the freshness gate above
 without changing any rule, v10 added the lost-position material floor —
-mechanics in ADR-026 and `research/tactical-detection.md` §5) and
+mechanics in ADR-026 and `research/tactical-detection.md` §5, v11 introduced
+the ADR-023 missed-tactic exclusivity: a current-version verified miss is
+exclusive with the classification and the per-analysis summary is rebuilt
+under the rule) and
 candidate-rule changes bump
 `CANDIDATE_GENERATION_VERSION` (currently 2 after the plan-013
 position-centric rules); existing records retain theirs (ARCHITECTURE.md

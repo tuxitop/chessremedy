@@ -98,6 +98,10 @@ user-facing and honest:
   such, so the UI never renders them as a literal zero;
 - time-control and platform dimensions are returned separately, so the UI
   can label a mixed view and never present one by default;
+- categories are platform-correct, so a Chess.com `5|5` game is counted
+  under Blitz (not Rapid), a Chess.com long game is Rapid (not Classical)
+  and Chess.com has no `classical` partition; the Library/Dashboard labels
+  follow the stored category;
 - rating series are returned per platform and per time control, so the UI
   can never average Chess.com and Lichess ratings;
 - trend points carry their period boundaries and state, so the UI can render
@@ -124,7 +128,7 @@ or selection:
 ```ts
 interface StatisticsQuery {
   platform: 'all' | GameSource;          // GameSource = lichess | chesscom | local | fixture
-  timeControl: 'all' | TimeControlCategory; // ADR-013 six categories
+  timeControl: 'all' | TimeControlCategory; // ADR-013 six categories, platform-correct
   side: 'all' | Color;                   // Game.userColor
   result: 'all' | GameOutcome;           // via outcomeOf(Game.result)
   dateRange: StatisticsDateRange;        // resolved local calendar-day boundaries
@@ -146,6 +150,20 @@ interface StatisticsQuery {
   label is presentation, not a new domain dimension.
 - Dimensions combine with AND, single-select in V1 (multi-select can be
   added without redesign).
+
+**Platform-correct categories (ADR-013).** A game's
+`normalizedTimeControl` is the category produced by its own platform
+profile, not a platform-agnostic rule. The same raw clock can therefore be
+a different category on different platforms (`5|5` is Lichess `rapid` and
+Chess.com `blitz`; Chess.com never produces `classical`; Chess.com `2|12`
+is `rapid`). Statistics group by the stored category, so a
+`(platform, timeControl)` partition is always platform-correct. When
+`platform: 'all'`, results stay dimensioned by both `platform` and
+`timeControl`; a category from one platform is never merged with the same
+category name from another platform's different definition. The user-visible
+effect of the platform-specific mapping is that a Chess.com `5|5` game moves
+from the Rapid partition to Blitz (and Chess.com long games from Classical
+to Rapid).
 
 **Anti-combination rule.** When `platform` and/or `timeControl` is `'all'`,
 the service returns **dimensioned results** — one result per concrete
@@ -244,7 +262,7 @@ interface GameHistoryEntry {
   gameId: GameId;
   playedAt: string | null;
   source: GameSource;
-  normalizedTimeControl: TimeControlCategory;
+  normalizedTimeControl: TimeControlCategory; // platform-correct (ADR-013)
   userColor: Color;
   outcome: GameOutcome;               // via outcomeOf(Game.result)
   userRating: number | null;          // the user's Player.rating
@@ -252,7 +270,8 @@ interface GameHistoryEntry {
   analysisStatus: GameAnalysisStatus; // Feature-008 derivation
   accuracy: number | null;            // persisted summary (ADR-024)
   accuracyMoves: number;
-  classificationCounts: ClassificationCounts | null; // user side
+  classificationCounts: ClassificationCounts | null; // user side; current-version
+                                                      // verified misses excluded
   missedTactics: number | null;       // null until a current completed pass
 }
 ```
@@ -267,7 +286,14 @@ Denominators (canonical, and distinct):
   (no `playedAt`, excluded from date windows) — diagnostics, never errors.
 
 Classification counts (user side only, from the per-analysis summary's
-`classificationCounts`; canonical Feature-009 function):
+`classificationCounts`; canonical Feature-009 function). **ADR-023 missed-tactic
+exclusivity:** a current-version verified missed-tactic ply is excluded from
+every classification bucket — it is counted only in the missed-tactic metrics —
+and a game whose only blunder is such a ply is **not** a
+`gamesWithBlunderShare` member. Before a current completed detection pass the
+raw counts apply (the determination does not exist yet); the per-analysis
+summary is rebuilt under the rule when the pass completes. The persisted
+`MoveAnalysis.classification` is never rewritten:
 
 | Metric | Definition | Sample unit |
 |---|---|---|
@@ -314,6 +340,12 @@ Accuracy (ADR-024, never re-implemented):
   exposed as the weighting denominator.
 - Accuracy series are always separated by time-control category and platform;
   a cross-time-control accuracy series is never produced.
+- **Missed-tactic exclusivity does not change accuracy.** A current-version
+  verified missed-tactic ply stays in the ADR-024 per-move accuracy and in the
+  `accuracyMoves` weight. Accuracy is a quality metric computed from
+  evaluations, not a classification count; excluding the ply would inflate
+  accuracy and would require an ADR-024 amendment plus a `MOVE_ACCURACY_VERSION`
+  bump. *(Owner-confirmable — see Owner decisions to confirm.)*
 
 ### 5. Game-phase metrics
 
@@ -326,6 +358,13 @@ Each analyzed move carries a canonical `gamePhase`
   detection pass (`notDetected` otherwise);
 - normalized rate `errorsPer100Moves = count / userMovesInPhase × 100` for
   each negative class and for missed tactics.
+
+**ADR-023 missed-tactic exclusivity:** a current-version verified missed-tactic
+ply is excluded from the per-phase `inaccuracies`/`mistakes`/`blunders`
+numerators (and therefore from `errorsPer100Moves`), but is kept in
+`userMovesInPhase` — the move-exposure denominator counts every user move, so a
+missed tactic neither inflates the error rate nor shrinks the exposure base. It
+is counted in `missedTactics` (and in `detectedUserMovesInPhase`).
 
 Denominator rules:
 
@@ -526,12 +565,18 @@ Per-cycle aggregates (`sample.unit = 'puzzles'` for rate metrics):
 
 - All functions are deterministic for fixed inputs, a fixed `now` and a
   fixed time zone; no hidden clock or locale reads.
-- `STATISTICS_VERSION` (starting at `1`) is returned with every result and
-  bumped when aggregation semantics change (denominators, period rules,
-  accuracy aggregation, phase grouping, mastered/repeatedly-failed
-  definitions, category mapping, state thresholds). It is recorded per
-  `ARCHITECTURE.md` §9. The mastered definition also carries the canonical
-  `MASTERY_VERSION` (Feature 013/domain), surfaced in the version summary.
+- `STATISTICS_VERSION` is returned with every result and bumped when
+  aggregation semantics change (denominators, period rules, accuracy
+  aggregation, phase grouping, mastered/repeatedly-failed definitions,
+  category mapping, state thresholds). It is recorded per `ARCHITECTURE.md`
+  §9. The mastered definition also carries the canonical `MASTERY_VERSION`
+  (Feature 013/domain), surfaced in the version summary. The
+  platform-specific time-control mapping (ADR-013, category version 2) is one
+  such change: results computed after the v11 re-normalization carry
+  `STATISTICS_VERSION = 2`. The ADR-023 missed-tactic exclusivity rule is a
+  further aggregation-semantics change (error counts/rates now exclude
+  current-version verified missed-tactic plies) and carries
+  `STATISTICS_VERSION = 3`; both changes are listed in the version provenance.
 - Every result carries a `VersionSummary` of the contributing analyses:
   distinct `analysisVersion`, `classificationVersion`, `gamePhaseVersion`,
   `detectionVersion`, engine identities (`name version build`) and the
@@ -564,6 +609,22 @@ localized change:
    alternative: exclude stale-version analyses.
 9. **Median metrics** — include for per-game blunder/mistake distributions
    and cycle solving time (default).
+10. **Missed-tactic accuracy denominator** — a current-version verified
+    missed-tactic ply stays in the ADR-024 per-move accuracy and the
+    `accuracyMoves` weight (default; accuracy is a quality metric and stays
+    independent of classification and detection). Alternative: exclude the ply
+    from the `accuracyMoves` weight, which requires an ADR-024 amendment and a
+    `MOVE_ACCURACY_VERSION` bump and would raise accuracy by dropping the
+    largest losses.
+11. **Missed-tactic error exclusion** — a current-version verified
+    missed-tactic ply is excluded from the classification/error counts and
+    rates (default; owner intent, recorded as the ADR-023 amendment). The ply
+    is counted only in the missed-tactic metrics; move-exposure denominators
+    keep it.
+10. **Platform-specific time-control categories** — Chess.com and Lichess
+    use their own published boundaries (ADR-013); Chess.com long games map
+    to `rapid` (no `classical`); `local`/`fixture` use the Lichess-equivalent
+    `generic` profile. This is an owner-approved decision (2026-09-11).
 
 ---
 
@@ -749,9 +810,14 @@ Dashboard:
 1. Statistics can be computed from deterministic analyzed fixtures with no
    Chess.com/Lichess/Stockfish access.
 2. Blunders, mistakes, inaccuracies and missed tactics aggregate per game and
-   per period.
+   per period. A current-version verified missed-tactic ply is excluded from
+   the blunder/mistake/inaccuracy counts and from the per-phase error rates,
+   is counted only as a missed tactic, and stays in the ADR-024 accuracy
+   denominator; a stale marker falls back to the raw classification counts.
 3. All six ADR-013 time-control categories remain separate; no two are
-   silently combined; mixed views are dimensioned and explicitly labeled.
+   silently combined; mixed views are dimensioned and explicitly labeled;
+   category membership is platform-correct (e.g. Chess.com `5|5` is Blitz
+   while Lichess `5|5` is Rapid, and Chess.com has no `classical`).
 4. Chess.com and Lichess rating histories remain separate per time control;
    no conversion or averaging occurs.
 5. Game-phase statistics distinguish opening, middlegame and endgame with
@@ -793,6 +859,11 @@ cover at least:
 - **Small dataset** — one analyzed rapid game with known counts/accuracy.
 - **Mixed time controls** — rapid, blitz, bullet, classical,
   correspondence, unknown (all six).
+- **Per-platform time controls** — the same raw clock classified under
+  both profiles: `5|5` (Lichess `rapid` vs Chess.com `blitz`), `30|0`
+  (Lichess `classical` vs Chess.com `rapid`), Chess.com `2|12`
+  (`rapid`), and Chess.com daily (`1/259200` → `correspondence`); plus a
+  `local`/`fixture` game proving the `generic` profile matches Lichess.
 - **Mixed platforms** — Lichess and Chess.com (ratings separate).
 - **Multiple periods** — ≥ 4 weeks including an ISO year-spanning week and a
   month/year boundary.
@@ -800,7 +871,10 @@ cover at least:
   with differing move exposure to exercise normalized rates.
 - **Detection states** — `absent`, `queued`, `inProgress`, `failed`,
   `completed` at the current version and `completed` at an older version
-  (freshness gate), including a completed pass with a real `0`.
+  (freshness gate), including a completed pass with a real `0`, and a
+  completed pass containing a ply that is both a raw `blunder` and a
+  current-version verified missed tactic (excluded from error counts, counted
+  as a missed tactic).
 - **Missing data** — missing rating, missing `playedAt`, unknown time
   control, game with no analyzed moves.
 - **Version provenance** — games analyzed under different engine identities
@@ -820,11 +894,22 @@ cover at least:
   hand-computed fixture values.
 - **Time control**: rapid/blitz/bullet/classical/correspondence/unknown
   remain separate; no silent merge; `'all'` returns dimensioned results.
+- **Per-platform time control**: a Chess.com `5|5` game aggregates in the
+  Chess.com Blitz partition (not Rapid), a Lichess `5|5` game in the
+  Lichess Rapid partition, a Chess.com `30|0` game in Chess.com Rapid
+  (never Classical), and no `(Chess.com, classical)` partition is
+  produced.
 - **Platform**: Lichess and Chess.com ratings never combine.
 - **Accuracy**: aggregate is the ADR-024 move-weighted mean; per-game
   accuracy is read, not recomputed.
 - **Phase**: counts and `errorsPer100Moves` use the correct per-phase user
   move denominator; missed tactics by phase honor detection state.
+- **Missed-tactic exclusivity**: a current-version verified missed-tactic ply is
+  absent from the per-game blunder/mistake/inaccuracy counts and the phase
+  error numerators, present in the missed-tactic count, and still present in
+  the `accuracyMoves` weight and per-phase move denominator; the same fixture
+  with a stale `detectionVersion` counts the ply in its raw bucket and yields
+  `notDetected` missed-tactic metrics.
 - **Trends**: correct period assignment (pinned `TZ`), ISO week/edge cases,
   explicit empty periods, deterministic ordering.
 - **States**: `ok`/`insufficient`/`empty`/`notDetected` at the

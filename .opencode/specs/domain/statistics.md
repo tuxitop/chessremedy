@@ -33,6 +33,16 @@ conflated with game-analysis metrics.
 
 Aggregates must clearly indicate sample size.
 
+**Missed-tactic exclusivity (ADR-023 amendment).** A ply whose analysis carries
+a current-version verified missed tactic is not an `inaccuracy`, `mistake` or
+`blunder`: the error counts (`blunders`/`mistakes`/`inaccuracies` and their
+per-game rates/shares) and the per-phase `errorsPer100Moves` numerators exclude
+it, and it is counted only in the missed-tactic metrics. Move-exposure
+denominators (`userMoves`, per-phase `userMovesInPhase`/`detectedUserMovesInPhase`)
+keep the ply. ADR-024 accuracy is **unchanged** and still includes the ply.
+Before a current completed detection pass exists for an analysis, the raw
+ADR-023 counts apply (the missed-tactic determination does not exist yet).
+
 ## V1 sample-size rule
 
 - Every aggregate displayed in the dashboard shows the underlying
@@ -45,9 +55,12 @@ Aggregates must clearly indicate sample size.
 - Aggregates never combine different time-control categories
   (`domain/time-control.md`); they may additionally group by the exact
   time control when useful, in which case the label shows the exact
-  control (house style `M|I`). A source platform label (Lichess `speed`,
-  Chess.com `time_class`) is never used in place of the canonical
-  category in an aggregate.
+  control (house style `M|I`). Categories are **platform-correct**
+  (ADR-013): a `(platform, category)` partition uses that platform's own
+  definition, so the same raw clock may appear in different categories on
+  different platforms (e.g. `5|5` is Lichess `rapid`, Chess.com `blitz`).
+  A source platform label (Lichess `speed`, Chess.com `time_class`) is
+  never used in place of the canonical category in an aggregate.
 
 ## Cycle-training comparisons
 

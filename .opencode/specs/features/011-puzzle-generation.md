@@ -81,16 +81,21 @@ A puzzle originates from the user's own decision point in one of two ways:
 2. **User-side blunder not captured by a verified candidate (new; version-2
    generator).** A `MoveAnalysis` ply of the generation's analysis where the
    side to move is the user and the ADR-023 classification is `'blunder'`
-   (`wpLoss ≥ 15`, Feature 009) and that **same ply produced no verified
-   candidate** becomes a one-move **"correct-move"** puzzle: *find the move you
-   should have played*. Its solution is the ply's stored analysis `bestMove`
-   (single move), its side to move is the user, and it is included however lost
-   the position was. There is no engine work, no Stage-2 verification and no
+   (`wpLoss ≥ 15`, Feature 009) and that **same ply produced no
+   current-version verified candidate** becomes a one-move **"correct-move"**
+   puzzle: *find the move you should have played*. Its solution is the ply's
+   stored analysis `bestMove` (single move), its side to move is the user, and
+   it is included however lost the position was. There is no engine work, no Stage-2 verification and no
    difficulty recompute behind it — the row is assembled deterministically from
-   the ply's own stored analysis record. If the same ply is *both* a verified
-   tactical candidate and a user blunder, the tactical puzzle wins (see
-   Deduplication & re-analysis): the blunder row is only created for plies the
-   tactical pipeline did not already own.
+   the ply's own stored analysis record. A ply that is a **current-version
+   verified missed tactic is excluded from this origin entirely** (ADR-023
+   exclusivity): it yields exactly one puzzle, the tactical one. If the same
+   ply is *both* a current-version verified tactical candidate and a user
+   blunder, the tactical puzzle wins (see Deduplication & re-analysis): the
+   blunder row is only created for plies the current tactical pipeline did not
+   already own. A verified candidate whose `detectionVersion` is **not** current
+   is ignored (freshness gate), so the ply falls back to its raw ADR-023
+   classification and may still produce a blunder row.
 
 The earlier direction — "a blunder or mistake that Feature-010 did **not**
 verify as a tactical opportunity never becomes a puzzle" — is superseded for
@@ -294,14 +299,19 @@ blunder is always "find the better move", even in a lost game).
   re-analysis — maps to the existing row and is skipped (see re-analysis
   below).
 - **Tactical rows win over blunder rows at the same ply.** A generation pass
-  processes its verified candidates **before** its blunder plies, and writes
-  through the same add-only natural key: a ply that is *both* a verified
-  tactical candidate and a user blunder keeps the richer tactical row, and no
-  blunder row is created for it. A blunder ply whose `(game, sourcePly)` already
-  has a puzzle from an older analysis is likewise skipped (rows are immutable).
-  Pass progress counts **items settled** (candidate + blunder at the same ply
-  settle twice), exactly like a resumed pass counts an already-persisted row;
-  the Library/row count is always the live `puzzles` row count.
+  processes its **current-version** verified candidates **before** its blunder
+  plies, and writes through the same add-only natural key: a ply that is *both*
+  a current-version verified tactical candidate and a user blunder keeps the
+  richer tactical row, and no blunder row is created for it. Under the ADR-023
+  exclusivity rule the blunder input set **excludes** every ply owned by a
+  current-version verified candidate, so a missed tactic yields **exactly one**
+  puzzle and each input ply settles **once** (the earlier "candidate + blunder
+  at the same ply settle twice" progress behavior is superseded). A blunder ply
+  whose `(game, sourcePly)` already has a puzzle from an older analysis is
+  likewise skipped (rows are immutable). A verified candidate whose
+  `detectionVersion` is not current is not an input at all; the ply remains a
+  blunder input if it is a user-side blunder. The Library/row count is always
+  the live `puzzles` row count.
 - **No cross-game FEN merge.** Two games containing the same tactic produce two
   puzzles, each owned by its source game (deletion cascade). The stale
   FEN-keyed "update the existing record when strictly stronger" dedup of
@@ -530,7 +540,11 @@ Additive persistence only:
   two-origin generator), `detectionVersion` and `candidateGenerationVersion`
   (plus the candidate's engine/analysis metadata on tactical rows) so existing
   records remain identifiable after algorithm or engine changes
-  (ARCHITECTURE §9, ADR-020).
+  (ARCHITECTURE §9, ADR-020). The ADR-023 missed-tactic exclusivity does not
+  change the persisted puzzle row set (a current-version verified candidate
+  already won the natural key), so `PUZZLE_GENERATOR_VERSION` stays **2**; only
+  the blunder-input selection is tightened to exclude current-version verified
+  plies.
 
 ## States, errors and edge cases
 
@@ -580,9 +594,12 @@ Additive persistence only:
   (no lost-position floor for the correct-move origin). An unparseable blunder
   starting FEN is a pipeline defect: assembly throws and the pass reports
   `failed` (mirroring the tactical-assembly contract).
-- **A ply that is both a verified candidate and a user blunder** → one tactical
-  row; the blunder item settles against that row (see Deduplication). The
-  Library count is unchanged (still the live `puzzles` row count).
+- **A ply that is both a current-version verified candidate and a user
+  blunder** → one tactical row; the blunder origin excludes the ply, so it is
+  not an input item at all (see Deduplication). The Library count is unchanged
+  (still the live `puzzles` row count). A ply whose only verified candidate is
+  stale is not a missed tactic and, if it is a user-side blunder, produces the
+  blunder row.
 
 ## Accessibility
 
@@ -670,12 +687,16 @@ reveal and the red-played/green-solution arrows).
    membership once those tables exist); no orphaned puzzle remains.
 9. Puzzle fixtures are deterministic and require no engine/network for UI
    tests.
-10. A user-side blunder ply of the analysis that has no verified candidate at
-    its `(game, sourcePly)` produces exactly one one-move correct-move puzzle
-    row (`origin: 'blunder'`, `bestPv = [bestMove]`, no tactical-only fields,
-    deterministic provisional difficulty from the ply's stored eval swing,
-    version-2 generator). A ply that is *both* a verified candidate and a
-    blunder produces only the tactical row (dedup; Library count unchanged).
+10. A user-side blunder ply of the analysis that has no current-version
+    verified candidate at its `(game, sourcePly)` produces exactly one one-move
+    correct-move puzzle row (`origin: 'blunder'`, `bestPv = [bestMove]`, no
+    tactical-only fields, deterministic provisional difficulty from the ply's
+    stored eval swing, version-2 generator). A ply that is *both* a
+    current-version verified candidate and a blunder produces **exactly one**
+    puzzle — the tactical row (the blunder origin excludes the ply; Library
+    count unchanged). A ply whose only verified candidate is stale is not a
+    missed tactic: it falls back to the blunder origin if it is a user-side
+    blunder.
 11. The per-game puzzle view hides each card's solution behind an accessible
     per-card reveal; revealing shows the SAN solution (and accepted
     alternatives where present) and draws the green solution arrow, while the
@@ -705,10 +726,12 @@ reveal and the red-played/green-solution arrows).
   handled), version retention.
 - **Service (infrastructure):** the engine-free pass over verified candidates
   **plus** qualifying user-side blunder plies — state machine, freshness gate,
-  real-zero completion, per-input-item progress, candidate-first ordering so a
-  ply that is both keeps the tactical row, natural-key idempotency across
-  resume/abort/failure, opponent/non-blunder/no-best-move plies never produce
-  rows.
+  real-zero completion, per-input-item progress, candidate-first ordering and
+  the exclusivity input filter (a ply owned by a current-version verified
+  candidate is never a blunder input and yields exactly one row; a stale
+  candidate is ignored so the ply falls back to the blunder origin),
+  natural-key idempotency across resume/abort/failure,
+  opponent/non-blunder/no-best-move plies never produce rows.
 - **Repository (infrastructure):** `puzzles` natural-key put/get/list-by-game,
   idempotent re-put, per-analysis generation-state holders, cascade deletion
   with the game (and, once Feature-012/013 tables exist, transitive attempt/set
@@ -785,10 +808,11 @@ Feature 011 output is consumed by:
 Required reading (see `.opencode/CONTEXT-MAP.md`):
 
 - Architecture/decisions: `decisions/ADR-006`, `decisions/ADR-025`,
-  `decisions/ADR-026`, `decisions/ADR-012`, `decisions/ADR-018`,
-  `decisions/ADR-031`
+  `decisions/ADR-026`, `decisions/ADR-023` (missed-tactic exclusivity),
+  `decisions/ADR-012`, `decisions/ADR-018`, `decisions/ADR-031`
 - Domain: `domain/puzzle-model.md`, `domain/tactics.md`,
-  `domain/tactical-training.md`, `domain/game-library.md`
+  `domain/classification.md`, `domain/tactical-training.md`,
+  `domain/game-library.md`
 - Research: `research/puzzle-generation.md`, `research/tactical-detection.md`
 
 Feature dependencies: Feature 007 (Library row surface + capability registry),

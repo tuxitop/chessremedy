@@ -76,6 +76,13 @@ auto-creates a set. Every set's membership and order are stored state, not
 derived from mutable query results; a block's membership is frozen at
 creation.
 
+A block's lifecycle is **close or delete**. **Finish**/**Abandon** archive it
+(`status: 'archived'`) and preserve its cycle history, while **delete** removes
+the set row and cascades its cycles and attempts (the puzzles themselves are
+untouched). Deletion is row removal, not a third status. Block detection
+requires `source.kind === 'auto'` **and** `recipe.kind === 'woodpeckerBlock'` so
+a pre-block-model legacy auto row can never be read as the open block.
+
 ## Pool, Woodpecker block and Quick train
 
 The training model has three related concepts; none is created without an
@@ -104,6 +111,10 @@ pool by one click:
 - only **one block is open at a time**; finishing or abandoning it closes it
   and returns its still-unmastered members to the pool, and the next block is
   formed from the remaining pool plus new puzzles;
+- a block may also be **deleted** entirely (open or closed): the block row, its
+  cycles and their attempts are removed; its puzzles are untouched and its
+  members return to the pool because they were never removed from `Puzzle`.
+  Closing preserves history; deleting discards it;
 - guidance copy recommends **200–400** puzzles and warns that below about
   **100** later cycles risk memorising diagrams; the order is never shuffled
   (same easy→hard order every cycle).
@@ -115,6 +126,12 @@ brand-new user (or any time) who wants to practise before committing a block:
 - it snapshots the pool into a real ad-hoc `TrainingCycle` row under a
   reserved sentinel `trainingSetId` and writes ordinary immutable attempts;
 - the sentinel is excluded from set-scoped reads and set deletion.
+
+**Legacy auto sets.** Rows from the pre-block-model auto sets
+(`auto:all-puzzles`, `auto:woodpecker-random`) are dead data; a one-time,
+idempotent startup cleanup removes them and their cycles/attempts. It is
+remediation, not a creation path: the app still never creates a set or block on
+its own.
 
 There is **no 100% accuracy gate** and no automatic retirement. Success is
 speed and automaticity: cycle results track total solving time against the

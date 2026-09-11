@@ -132,12 +132,15 @@ Feature 008 must not redefine engine profile behavior.
 
 The Settings "Game analysis" group may additionally carry an optional
 **threads override** for a run (default: the engine's capability-derived
-threads, `min(2, hardwareConcurrency)` under cross-origin isolation, ADR-012).
-A threads override applies to the game-analysis engine jobs and to the
-Feature-010 tactical scans of the completed run, and is part of the run's
-identity (`AnalysisJob.config`), of the `outdated` derivation and of the
-ADR-018 cache scope — a value of 1 (the single-thread default) is never an
-override and keeps the historical identity/cache key.
+threads, `max(1, B - 1)` where `B = min(hardwareConcurrency, 8)` under
+cross-origin isolation, ADR-012/ADR-034). A threads override applies to the
+game-analysis engine jobs **only**; the Feature-010 tactical scan of the
+completed run uses the dedicated verification engine's own conservative
+thread count (ADR-034) and never inherits this override. The override is
+part of the run's identity (`AnalysisJob.config`), of the `outdated`
+derivation and of the ADR-018 analysis cache scope — a value of 1 (the
+single-thread default) is never an override and keeps the historical
+identity/cache key.
 
 Game analysis is driven by a dedicated Settings **Game analysis** group
 (keyed `analysis.game` on the Settings surface, the Feature 001/006 seam).

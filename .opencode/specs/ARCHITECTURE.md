@@ -56,6 +56,16 @@ UI → engine service → Web Worker → Stockfish. The UI never synchronously
 executes engine analysis. Jobs support queueing, cancellation, progress,
 completion, failure, and resumability.
 
+Two engine **instances** may run, each in its own Worker with its own FIFO
+queue: the shared **analysis engine** (Live Analysis + full-game analysis) and
+a dedicated **verification engine** for the Feature-010 Stage-2 tactical pass
+(ADR-034). They share the build selection (ADR-012) and the ADR-018 cache but
+never a worker or queue, so detection overlaps game analysis instead of
+head-of-line blocking it. A global thread budget
+`B = min(hardwareConcurrency, MAX_THREADS_CAP)` (`MAX_THREADS_CAP = 8`) is
+split between them — verification uses 1 thread and the analysis engine's cap
+is `max(1, B - 1)` — so the two never run at maximum together.
+
 Full-game-analysis **runs** (Feature 008) serialize on the shared analysis
 service: a request issued during a run queues behind it and starts when the
 running run completes — it never aborts it; run cancellation is explicit
@@ -74,9 +84,15 @@ Classification → Tactical detection → Puzzle candidates →
 Puzzle verification → Puzzle
 ```
 
-- Classification uses ADR-023 thresholds. Tactical detection is the
-  ADR-026 two-stage pipeline; the puzzle generator and verification step
-  use the ADR-012 engine profiles and ADR-018 position-keyed cache.
+- Classification uses ADR-023 thresholds. A ply later annotated by Feature 010
+  as a **current-version verified missed tactic** is *exclusive* (ADR-023
+  amendment): its raw ADR-023 label is retained as classifier provenance but is
+  suppressed from presentation and from classification/error counts, and the
+  missed-tactic marker is the only annotation. The suppression is gated by the
+  Feature-010 freshness rule, so an outdated detection verdict falls back to the
+  raw classification. Tactical detection is the ADR-026 two-stage pipeline; the
+  puzzle generator and verification step use the ADR-012 engine profiles and
+  ADR-018 position-keyed cache.
 - Feature 008 performs classification and game-phase assignment **while
   producing `MoveAnalysis`** (canonical rules in
   `specs/domain/classification.md`, `specs/domain/game-phase.md`) — that
@@ -113,8 +129,11 @@ read-only by the dashboard (Feature 015), which never calculates.
 Aggregates: analyzed games/reviews into time-control, platform- and
 phase-controlled metrics; trend data; sample size per aggregate; distinct
 empty/zero/"insufficient data" states. All aggregates respect the canonical
-time-control categories (ADR-013) and never silently combine different time
-controls. Accuracy uses ADR-024; puzzle difficulty uses ADR-025.
+time-control categories (ADR-013) — which are **platform-specific**: each
+game is classified with its own platform's published boundaries (Chess.com /
+Lichess), so a `(platform, timeControl)` partition is platform-correct and
+different time controls are never silently combined. Accuracy uses ADR-024;
+puzzle difficulty uses ADR-025.
 
 ## 7. Storage
 
@@ -123,7 +142,7 @@ games, moves, analyses, analysis summaries, puzzle candidates, puzzles,
 training sets, training cycles, puzzle attempts, import jobs, analysis
 jobs, application settings, sync metadata.
 
-The schema is **versioned, currently v10** (additive): v4 added the
+The schema is **versioned, currently v11** (additive): v4 added the
 analysis tables; v5 added the structured time-control value
 (base/increment/days/estimate/display, `domain/time-control.md`) to the
 games row while retaining the verbatim `timeControl` string and the indexed
@@ -133,7 +152,9 @@ tables `analysisSummaries` and `puzzleCandidates`; v8 adds the Feature-011
 `puzzles` table; v9 adds the Feature-012 `puzzleAttempts` table (one
 immutable row per puzzle presentation, indexed for per-cycle/per-puzzle
 reads and the game-deletion cascade); v10 adds the Feature-013
-`trainingSets`/`trainingCycles` tables.
+`trainingSets`/`trainingCycles` tables; v11 re-normalizes every game's
+`normalizedTimeControl` and structured time control with the
+platform-specific profiles (ADR-013) — no store shape changes.
 
 ### Data ownership & deletion
 

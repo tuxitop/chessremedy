@@ -7,6 +7,7 @@ Accepted — **revised (V2)** 2026-09-06 after Lichess-source verification
 curve; that was not Lichess's published behaviour and over-produced
 inaccuracies while under-producing blunders. The reasons for the V1 decision
 (use a win-percentage-loss signal, not raw centipawns) are unchanged.
+**Amended 2026-09-11 — missed-tactic exclusivity (see below).**
 
 ## Decision
 
@@ -95,6 +96,58 @@ Stored records retain their version; a completed run below the current
 version reads `outdated` and is re-analyzed on request. Any change to the
 algorithm or thresholds increments the version (ARCHITECTURE.md §9).
 
+## Amendment — Missed-tactic exclusivity (2026-09-11)
+
+A ply whose analysis carries a **current-version verified missed tactic** — a
+`MoveAnalysis` with `missedTactic === true` and `detectionVersion ===
+DETECTION_VERSION`, or equivalently a `verified` puzzle candidate for the same
+`[analysisId, sourcePly]` at the current `DETECTION_VERSION` — is **exclusive**:
+it is not additionally an `inaccuracy`, `mistake` or `blunder` for any
+user-visible or derived purpose.
+
+- The persisted `MoveAnalysis.classification` produced by this classifier is
+  **retained unchanged** as raw classifier provenance. The classifier runs in
+  Feature 008, before tactical detection exists, and must stay pure; the
+  exclusivity is applied downstream by consumers.
+- The ply's **effective classification** is the derived state
+  `missedTactic` — a presentation/statistics state, **not** a sixth
+  `MoveClassification` and **not** a `classificationVersion` change.
+- Exactly one annotation renders: the canonical missed-tactic marker (NAG 9).
+  The negative-classification glyph, colour, board chip and square highlight
+  are suppressed for the ply.
+- Feature-009 classification counts and Feature-014 error aggregates **exclude**
+  the ply (it is counted only as a missed tactic). Feature 014's per-phase
+  `userMovesInPhase`/`detectedUserMovesInPhase` move-exposure denominators keep
+  the ply; only the error numerators exclude it.
+- The ADR-024 accuracy formula is **not** changed by this amendment: accuracy
+  stays evaluation-based and includes the ply. Accuracy is a quality metric, not
+  a classification count, and making it depend on detection would require an
+  ADR-024 amendment and a `MOVE_ACCURACY_VERSION` bump. *(Owner-confirmable —
+  see `features/009-move-classification.md` and
+  `features/014-game-history-statistics.md`; the
+  alternative is to exclude the ply from the `accuracyMoves` weight.)*
+- Exclusivity is gated by the Feature-010 freshness rule: a marker written by an
+  older `detectionVersion` is suppressed and the ply falls back to its raw
+  ADR-023 classification (and, for puzzle generation, to the Feature-011
+  blunder origin if it is a blunder).
+- Feature-011 puzzle generation is unchanged in row output — a current-version
+  verified candidate already wins over the blunder origin by the
+  `[sourceGameId, sourcePly]` natural key — but the blunder-origin input set
+  now **excludes** plies owned by a current-version verified candidate, so a
+  missed tactic yields exactly one puzzle and the pass settles the ply once.
+
+This supersedes the V2 consequence statement that `missedTactic` "is *not* a
+replacement classification" for the **current-version verified** case: a
+verified miss now replaces the classification in every consumer.
+`CLASSIFICATION_VERSION` stays **2** (the classifier algorithm and thresholds
+are unchanged). Because the derived per-analysis summary and error aggregates
+change, the detection pipeline bumps `DETECTION_VERSION` (10 → 11) so existing
+summaries re-derive under the rule through the Feature-010 freshness gate, and
+Feature 014 bumps `STATISTICS_VERSION` for the changed error-aggregation
+semantics (the next value after the ADR-013 v11 time-control mapping bump; see
+Feature 014 §12). `MOVE_ACCURACY_VERSION` and `PUZZLE_GENERATOR_VERSION` are
+unchanged.
+
 ## Reasons
 
 - Raw centipawn loss under-weights endgames and ignores mating sequences; the
@@ -118,7 +171,10 @@ algorithm or thresholds increments the version (ARCHITECTURE.md §9).
   centipawn fallback. Statistics that aggregate across profiles must
   distinguish them (or only include WDL-classified moves).
 - The `missedTactic: boolean` flag is set by Feature 010 independently of the
-  classification. It is *not* a replacement classification.
+  classification. It is *not* a replacement classification **except** for the
+  current-version verified case defined by the amendment above, where it is
+  exclusive (the raw classifier label is retained but suppressed from
+  presentation and from classification/error counts).
 - Changing the bands re-keys completed jobs (`outdated`), so users are
   offered a one-time re-analysis to refresh stored counts.
 - Phase-dependent fallback thresholds are documented here. They are *not*
