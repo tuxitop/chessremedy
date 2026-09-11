@@ -32,6 +32,34 @@ console.error = (...args: unknown[]) => {
   originalError(...args);
 };
 
+// Recharts (<ResponsiveContainer>) and reduced-motion queries need these in
+// happy-dom. Only define them when the environment does not already provide
+// them, so a real browser/test runner is unaffected.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+}
+
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    // Report reduced motion in tests: Recharts animates by default, and
+    // leaving animations on makes chart-heavy component tests slow and flaky
+    // under parallel load. Charts already honour this media query.
+    matches: query.includes('prefers-reduced-motion'),
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
+
 // Reset IndexedDB between tests so Dexie does not leak state.
 const indexedDB = globalThis.indexedDB;
 if (indexedDB) {

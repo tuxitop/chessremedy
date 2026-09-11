@@ -10,7 +10,6 @@ import { MasteredPuzzlesPage } from '@/pages/MasteredPuzzlesPage';
 import { SetEditorPage } from '@/pages/SetEditorPage';
 import { SetDetailPage } from '@/pages/SetDetailPage';
 import { CycleResultsPage } from '@/pages/CycleResultsPage';
-import { DashboardPage } from '@/pages/DashboardPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -44,6 +43,12 @@ const GamePuzzlesPage = lazy(() =>
 // pages.
 const CycleSessionPage = lazy(() =>
   import('@/pages/CycleSessionPage').then((m) => ({ default: m.CycleSessionPage })),
+);
+
+// The dashboard pulls in the Recharts bundle; keep it out of the initial
+// bundle alongside the other heavy pages.
+const DashboardPage = lazy(() =>
+  import('@/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 );
 
 // react-router-dom@7 enables v7 future flags by default; no `future` option
@@ -93,7 +98,14 @@ export const router = createBrowserRouter([
         ),
       },
       { path: 'puzzles/sets/:setId/cycles/:cycleNumber/results', element: <CycleResultsPage /> },
-      { path: 'dashboard', element: <DashboardPage /> },
+      {
+        path: 'dashboard',
+        element: (
+          <Suspense fallback={null}>
+            <DashboardPage />
+          </Suspense>
+        ),
+      },
       { path: 'settings', element: <SettingsPage /> },
       {
         path: 'playground',
