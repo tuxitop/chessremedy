@@ -6,9 +6,12 @@ import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
+import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
 import type { AnalysisSummaryRow } from '@/infrastructure/db/summaries-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { puzzleFixtures } from '@/domain/puzzle/test-support';
+import { puzzleIdOf } from '@/domain/puzzle/id';
+import { cycleAttemptFixture } from '@/domain/training/test-support';
 import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import {
   analysisJobId,
@@ -1098,6 +1101,73 @@ describe('GameLibrary puzzle insight + generation actions (Feature 011, Stage D)
     // The immutable rows stay inspectable via the per-game action.
     expect(await screen.findByTestId(`game-puzzles-${game.id}`)).toBeInTheDocument();
     expect(screen.queryByTestId(`row-puzzles-generate-${game.id}`)).not.toBeInTheDocument();
+  });
+});
+
+describe('GameLibrary mastered-puzzle insight (Feature 014, Stage E)', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.puzzles.clear();
+    await db.puzzleAttempts.clear();
+  });
+
+  /** A completed analysis so the row strip renders (mastery is separate). */
+  function completedAnalysisOverrides(): SummaryOverrides {
+    return {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+    };
+  }
+
+  /** Seed legitimate first-try solves of one puzzle in the given cycles. */
+  async function seedFirstTrySolves(gameId: string, cycleIds: readonly string[]): Promise<string> {
+    const puzzleId = puzzleIdOf(gameId, 0);
+    for (const cycleId of cycleIds) {
+      await attemptsRepository.addAttempt(
+        cycleAttemptFixture({ puzzleId, cycleId, presentationIndex: 1, result: 'solvedFirstTry' }),
+      );
+    }
+    return puzzleId;
+  }
+
+  it('renders a read-only Mastered N with accessible text for a mastered puzzle', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', completedAnalysisOverrides());
+    await seedFirstTrySolves(game.id, ['cycle-1', 'cycle-2', 'cycle-3']);
+    renderLibrary();
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    const mastered = within(strip).getByTestId('row-insights-mastered');
+    expect(mastered).toHaveTextContent('Mastered 1');
+    expect(strip).toHaveAttribute('aria-label', expect.stringContaining('1 mastered puzzle'));
+    // Read-only insight: no link or action inside the item.
+    expect(within(mastered).queryByRole('link')).not.toBeInTheDocument();
+    expect(within(mastered).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('omits the mastered item when the game has no attempts (absent ≠ zero)', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', completedAnalysisOverrides());
+    renderLibrary();
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).queryByTestId('row-insights-mastered')).not.toBeInTheDocument();
+    expect(strip.getAttribute('aria-label')).not.toContain('mastered');
+  });
+
+  it('renders a real zero as Mastered 0 when the game has unmastered attempts', async () => {
+    const game = await seedAnalyzedGame('cc-bullet-blunder', completedAnalysisOverrides());
+    // Two distinct cycles is one short of mastery: a real, present zero.
+    await seedFirstTrySolves(game.id, ['cycle-1', 'cycle-2']);
+    renderLibrary();
+
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-mastered')).toHaveTextContent('Mastered 0');
+    expect(strip).toHaveAttribute('aria-label', expect.stringContaining('0 mastered puzzles'));
   });
 });
 

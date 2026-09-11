@@ -18,6 +18,12 @@ export interface AnalysisRepository {
   listForGame(gameId: GameId): Promise<readonly MoveAnalysis[]>;
   /** Records of one game + analysis identity, ordered by ply. */
   listForGameAndAnalysis(gameId: GameId, analysisId: string): Promise<readonly MoveAnalysis[]>;
+  /**
+   * Records for a set of analysis identities (Feature 014 phase metrics),
+   * ordered deterministically by `[analysisId, ply]`. One indexed query over
+   * the existing `analysisId` index; an empty input is a no-op returning `[]`.
+   */
+  listForAnalyses(analysisIds: readonly string[]): Promise<MoveAnalysis[]>;
   /** Number of persisted records for a game. */
   countForGame(gameId: GameId): Promise<number>;
   /** Remove every record of one analysis run (force re-analysis). */
@@ -59,6 +65,17 @@ export class DexieAnalysisRepository implements AnalysisRepository {
     return this.sortByPly(rows);
   }
 
+  async listForAnalyses(analysisIds: readonly string[]): Promise<MoveAnalysis[]> {
+    if (analysisIds.length === 0) {
+      return [];
+    }
+    const rows = await this.database.analyses
+      .where('analysisId')
+      .anyOf([...analysisIds])
+      .toArray();
+    return rows.sort(compareByAnalysisThenPly);
+  }
+
   async countForGame(gameId: GameId): Promise<number> {
     return this.database.analyses.where('gameId').equals(gameId).count();
   }
@@ -80,6 +97,11 @@ export class DexieAnalysisRepository implements AnalysisRepository {
   private sortByPly(rows: readonly MoveAnalysis[]): readonly MoveAnalysis[] {
     return [...rows].sort((a, b) => a.ply - b.ply);
   }
+}
+
+/** Deterministic `[analysisId, ply]` order for the batched read. */
+function compareByAnalysisThenPly(a: MoveAnalysis, b: MoveAnalysis): number {
+  return a.analysisId.localeCompare(b.analysisId) || a.ply - b.ply;
 }
 
 export const analysesRepository: AnalysisRepository = new DexieAnalysisRepository();

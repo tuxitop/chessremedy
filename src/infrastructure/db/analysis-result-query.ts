@@ -96,16 +96,30 @@ export function resolveGameAnalysis(
  * when the generation pass `completed` **and** the detection result is
  * `completed` at the current pipeline version (plan-015 freshness gate / plan
  * R-6: a stale detection suppresses the count with the Feature-010 note). The
- * function stays pure — counts are a parameter, never a repository import.
+ * Feature-014 `masteredPuzzleCount` follows the same absent-vs-zero discipline:
+ * it is exposed only when the caller loaded a real number for the game (a real
+ * `0` is kept; a missing key — an `empty` mastery read — exposes nothing), and
+ * it is independent of analysis freshness (a puzzle's attempts are immutable
+ * provenance). The function stays pure — counts are a parameter, never a
+ * repository import.
  */
 export function analysisInsightsForGame(
   jobs: readonly AnalysisJob[],
   summaries: readonly AnalysisSummaryRow[],
   puzzleCountsByGame?: Readonly<Record<GameId, number>>,
+  masteredCountsByGame?: Readonly<Record<GameId, number>>,
 ): GameRowInsights {
   const { status, summary } = resolveGameAnalysis(jobs, summaries);
+  // The game id is known even without a persisted summary (the row always has
+  // jobs/summaries); mastery is analysis-independent, so a present count is
+  // exposed in both branches. Absent ≠ zero: a missing key exposes no value.
+  const gameId = summary?.gameId ?? jobs[0]?.gameId ?? summaries[0]?.gameId;
+  const masteredPuzzleCount = gameId !== undefined ? masteredCountsByGame?.[gameId] : undefined;
   if (summary === null) {
-    return { analysisStatus: status };
+    return {
+      analysisStatus: status,
+      ...(masteredPuzzleCount !== undefined ? { masteredPuzzleCount } : {}),
+    };
   }
   // A detection pass is only "completed" when it was produced by the current
   // pipeline version (plan 015 freshness gate): an older completed result is
@@ -135,6 +149,7 @@ export function analysisInsightsForGame(
     puzzleGeneratorVersion: summary.puzzleGeneratorVersion ?? null,
     puzzleProgress,
     ...(puzzleCount !== undefined ? { puzzleCount } : {}),
+    ...(masteredPuzzleCount !== undefined ? { masteredPuzzleCount } : {}),
   };
 }
 

@@ -1021,7 +1021,9 @@ function spokenCount(count: number, singular: string, plural: string): string {
  * once the detection pass completed at the current version: a stale completed
  * detection (plan-015 freshness gate / plan R-6) suppresses the puzzle notes
  * with the Feature-010 "out of date" note, and an interrupted pass never reads
- * as "generating…" (`generationRunning` = live in this session).
+ * as "generating…" (`generationRunning` = live in this session). The Feature-014
+ * `Mastered N` aggregate follows the same absent-vs-zero discipline and is
+ * rendered read-only (no action) whenever the row carries a real count.
  */
 function rowInsightItemsFor(
   row: LibraryGameRow,
@@ -1195,14 +1197,29 @@ function rowInsightItemsFor(
       });
     }
   }
+  // Feature-014 mastered-puzzle aggregate (read-only): a real number (zero
+  // included) reads as `Mastered N` with the canonical zero-green palette;
+  // absent (no attempt rows / no loaded count) renders nothing — never a fake
+  // zero. Mastery is analysis-independent, so this is outside the detection
+  // gate above.
+  if (typeof row.masteredPuzzleCount === 'number') {
+    const count = row.masteredPuzzleCount;
+    items.push({
+      key: 'mastered',
+      testId: 'row-insights-mastered',
+      text: `Mastered ${count}`,
+      spoken: spokenCount(count, 'mastered puzzle', 'mastered puzzles'),
+      color: puzzleCountColor(count),
+    });
+  }
   return items;
 }
 
 /**
  * Full-width insights line under a row's meta: Accuracy · Blunders ·
- * Mistakes · Inaccuracies · Missed tactics · Puzzles for the user's latest
- * completed analysis. One labelled region per row whose screen-reader text
- * spells out every value.
+ * Mistakes · Inaccuracies · Missed tactics · Puzzles · Mastered for the user's
+ * latest completed analysis. One labelled region per row whose screen-reader
+ * text spells out every value.
  */
 function GameRowInsights({
   row,

@@ -327,6 +327,33 @@ describe('analysisInsightsForGame', () => {
       expect(insights.puzzleCount).toBeUndefined();
     });
   });
+
+  describe('mastered-puzzle insight (Feature 014 absent-vs-zero)', () => {
+    const job = completedJob(G_BLUNDER, 10);
+    const gameId = G_BLUNDER;
+
+    it('exposes a present mastered count (zero included) from the map', () => {
+      const present = analysisInsightsForGame([job], [summaryFor(job.id, gameId)], undefined, {
+        [gameId]: 2,
+      });
+      expect(present.masteredPuzzleCount).toBe(2);
+      const zero = analysisInsightsForGame([job], [summaryFor(job.id, gameId)], undefined, {
+        [gameId]: 0,
+      });
+      expect(zero.masteredPuzzleCount).toBe(0);
+    });
+
+    it('omits the count when the game is absent from the map (empty ≠ zero)', () => {
+      const insights = analysisInsightsForGame([job], [summaryFor(job.id, gameId)], undefined, {});
+      expect(insights.masteredPuzzleCount).toBeUndefined();
+    });
+
+    it('exposes the count even without a completed-analysis summary', () => {
+      const active = markInProgress(makeJob(G_QUEUED, 2), 10);
+      const insights = analysisInsightsForGame([active], [], undefined, { [G_QUEUED]: 3 });
+      expect(insights).toEqual({ analysisStatus: 'inProgress', masteredPuzzleCount: 3 });
+    });
+  });
 });
 
 describe('resolveAnalysisResultFilter', () => {

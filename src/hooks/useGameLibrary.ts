@@ -11,6 +11,7 @@ import {
   resolveAnalysisResultFilter,
 } from '@/infrastructure/db/analysis-result-query';
 import { gameLibraryQueryFor } from '@/infrastructure/db/game-library-query';
+import { getBrowserStatisticsService } from '@/infrastructure/statistics';
 import type { AnalysisJob } from '@/domain/analysis';
 import type { AnalysisSummaryRow } from '@/infrastructure/db/summaries-repository';
 import {
@@ -68,12 +69,40 @@ interface LibraryLoad {
 }
 
 /**
+ * Load the Feature-014 mastered-puzzle aggregate for the listed games through
+ * the shared statistics service (the canonical Feature-013 `masteryOf`
+ * derivation over all attempt rows). Only games with at least one attempt row
+ * carry a value; an `empty` read (no attempts) is omitted so the row renders no
+ * insight rather than a fake `0`. A failed read degrades to no insight — it
+ * never blocks the Library.
+ */
+async function loadMasteredCounts(
+  gameIds: readonly string[],
+): Promise<Readonly<Record<string, number>>> {
+  if (gameIds.length === 0) {
+    return {};
+  }
+  const result = await getBrowserStatisticsService().masteredPuzzleCounts(gameIds);
+  if (!result.ok) {
+    return {};
+  }
+  const counts: Record<string, number> = {};
+  for (const [gameId, aggregate] of result.result) {
+    if (typeof aggregate.value === 'number') {
+      counts[gameId] = aggregate.value;
+    }
+  }
+  return counts;
+}
+
+/**
  * Load the filtered Library rows. Metadata/time dimensions push down into the
  * games query; when an analysis-result dimension is active it is resolved
  * from persisted jobs + per-analysis summaries (never a `MoveAnalysis` scan)
  * into an id restriction pushed into the same query. Listed rows are then
- * enriched with their per-game analysis insights (Feature 010) and per-game
- * `puzzles`-row counts (Feature 011) before the in-memory filter/search pass.
+ * enriched with their per-game analysis insights (Feature 010), per-game
+ * `puzzles`-row counts (Feature 011) and the Feature-014 mastered-puzzle
+ * aggregate before the in-memory filter/search pass.
  */
 async function loadLibraryRows(
   filters: GameLibraryFilters,
@@ -108,8 +137,14 @@ async function loadLibraryRows(
   // row (one query over the `sourceGameId` index). The map is threaded into
   // the insight overlay, which exposes a count only for a `completed`
   // generation pass (absent ≠ zero — see analysis-result-query.ts).
+  // Feature-014 Stage E: the mastered-puzzle aggregate of every listed row
+  // (the canonical global mastery read over the `puzzleAttempts` table); the
+  // overlay exposes a value only for a game with a real count (absent ≠ zero).
   const ids = gameRows.map((summary) => summary.id);
-  const puzzleCountsByGame = await puzzlesRepository.countForGames(ids);
+  const [puzzleCountsByGame, masteredCountsByGame] = await Promise.all([
+    puzzlesRepository.countForGames(ids),
+    loadMasteredCounts(ids),
+  ]);
 
   const jobsByGame = groupJobsByGame(jobs);
   const summariesByGame = groupSummariesByGame(summaries);
@@ -119,6 +154,7 @@ async function loadLibraryRows(
       jobsByGame.get(row.id) ?? [],
       summariesByGame.get(row.id) ?? [],
       puzzleCountsByGame,
+      masteredCountsByGame,
     );
     return withRowInsights(row, insights);
   });
