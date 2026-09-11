@@ -243,12 +243,13 @@ export class CycleService {
     if (!check.ok) {
       return { ok: false, reason: 'invalid-config', message: check.message };
     }
-    const [puzzles, attempts, openBlock] = await Promise.all([
+    const [puzzles, attempts, openBlock, cycles] = await Promise.all([
       this.puzzles.listAll(),
       this.attempts.listAll(),
       this.sets.getOpenBlock(),
+      this.cycles.listAll(),
     ]);
-    const masteredIds = masteredPuzzleIds(attempts);
+    const masteredIds = masteredPuzzleIds(attempts, cycles);
     const pool = derivePool({
       puzzles,
       masteredIds,

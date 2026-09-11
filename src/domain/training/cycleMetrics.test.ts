@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  SPACING_RECOMMENDED_MS,
   compareCycleMetrics,
   computeCycleMetrics,
   cycleTimeGoal,
+  isSameLocalCalendarDay,
   spacingNudgeFor,
 } from './cycleMetrics';
 import { attemptRowsForCycle, cycleFixture } from './test-support';
@@ -184,63 +184,87 @@ describe('cycleTimeGoal', () => {
   });
 });
 
+describe('isSameLocalCalendarDay', () => {
+  function at(year: number, month: number, day: number, hour: number, minute = 0): number {
+    return new Date(year, month, day, hour, minute).getTime();
+  }
+
+  it('is true for two instants on the same local calendar date', () => {
+    expect(isSameLocalCalendarDay(at(2023, 0, 1, 0, 0), at(2023, 0, 1, 23, 59))).toBe(true);
+  });
+
+  it('is false across midnight and across a year boundary', () => {
+    expect(isSameLocalCalendarDay(at(2023, 0, 1, 23, 30), at(2023, 0, 2, 0, 30))).toBe(false);
+    expect(isSameLocalCalendarDay(at(2023, 11, 31, 23, 30), at(2024, 0, 1, 0, 30))).toBe(false);
+  });
+});
+
 describe('spacingNudgeFor', () => {
-  const BASE = 1_700_000_000_000;
+  function at(year: number, month: number, day: number, hour: number, minute = 0): number {
+    return new Date(year, month, day, hour, minute).getTime();
+  }
 
   function previousCycle(overrides: Parameters<typeof cycleFixture>[0] = {}) {
     return cycleFixture({ id: 'c1', cycleNumber: 1, status: 'completed', ...overrides });
   }
 
-  it('nudges when the previous cycle of the same block ended less than a day ago', () => {
-    const previous = previousCycle({ startedAt: BASE, completedAt: BASE });
-    const current = cycleFixture({
-      id: 'c2',
-      cycleNumber: 2,
-      startedAt: BASE + 2 * 60 * 60 * 1000,
+  it('nudges when the previous cycle ended earlier on the same local day', () => {
+    const previous = previousCycle({
+      startedAt: at(2023, 0, 1, 8),
+      completedAt: at(2023, 0, 1, 9),
     });
+    const current = cycleFixture({ id: 'c2', cycleNumber: 2, startedAt: at(2023, 0, 1, 11) });
     const nudge = spacingNudgeFor([previous, current], current);
     expect(nudge).toEqual({
       previousCycleNumber: 1,
-      previousEndedAt: BASE,
+      previousEndedAt: at(2023, 0, 1, 9),
       elapsedMs: 2 * 60 * 60 * 1000,
     });
   });
 
-  it('does not nudge once the gap meets the recommendation', () => {
-    const previous = previousCycle({ startedAt: BASE, completedAt: BASE });
-    const current = cycleFixture({
-      id: 'c2',
-      cycleNumber: 2,
-      startedAt: BASE + SPACING_RECOMMENDED_MS,
-    });
+  it('does not nudge once the previous cycle ended on an earlier local day', () => {
+    const previous = previousCycle({ completedAt: at(2023, 0, 1, 9) });
+    const current = cycleFixture({ id: 'c2', cycleNumber: 2, startedAt: at(2023, 0, 2, 11) });
+    expect(spacingNudgeFor([previous, current], current)).toBeNull();
+  });
+
+  it('does not nudge when the gap crosses midnight into the next date', () => {
+    const previous = previousCycle({ completedAt: at(2023, 0, 1, 23, 30) });
+    const current = cycleFixture({ id: 'c2', cycleNumber: 2, startedAt: at(2023, 0, 2, 1, 30) });
+    expect(spacingNudgeFor([previous, current], current)).toBeNull();
+  });
+
+  it('does not nudge across a year boundary even within a few hours', () => {
+    const previous = previousCycle({ completedAt: at(2023, 11, 31, 23, 30) });
+    const current = cycleFixture({ id: 'c2', cycleNumber: 2, startedAt: at(2024, 0, 1, 1, 30) });
     expect(spacingNudgeFor([previous, current], current)).toBeNull();
   });
 
   it('uses an abandoned previous cycle end and the immediately preceding cycle', () => {
-    const first = previousCycle({ id: 'c1', cycleNumber: 1, completedAt: BASE });
+    const first = previousCycle({ id: 'c1', cycleNumber: 1, completedAt: at(2023, 0, 1, 8) });
     const second = previousCycle({
       id: 'c2',
       cycleNumber: 2,
       status: 'abandoned',
-      startedAt: BASE + 60_000,
+      startedAt: at(2023, 0, 1, 8, 1),
       completedAt: null,
-      abandonedAt: BASE + 90_000,
+      abandonedAt: at(2023, 0, 1, 8, 2),
     });
-    const current = cycleFixture({ id: 'c3', cycleNumber: 3, startedAt: BASE + 120_000 });
+    const current = cycleFixture({ id: 'c3', cycleNumber: 3, startedAt: at(2023, 0, 1, 9) });
     const nudge = spacingNudgeFor([first, second, current], current);
     expect(nudge?.previousCycleNumber).toBe(2);
-    expect(nudge?.previousEndedAt).toBe(BASE + 90_000);
+    expect(nudge?.previousEndedAt).toBe(at(2023, 0, 1, 8, 2));
   });
 
   it('does not nudge without a previous cycle or when it never ended', () => {
-    const current = cycleFixture({ id: 'c2', cycleNumber: 2, startedAt: BASE });
+    const current = cycleFixture({ id: 'c2', cycleNumber: 2, startedAt: at(2023, 0, 1, 9) });
     expect(spacingNudgeFor([current], current)).toBeNull();
 
     const running = cycleFixture({
       id: 'c1',
       cycleNumber: 1,
       status: 'inProgress',
-      startedAt: BASE - 1_000,
+      startedAt: at(2023, 0, 1, 8),
     });
     expect(spacingNudgeFor([running, current], current)).toBeNull();
   });

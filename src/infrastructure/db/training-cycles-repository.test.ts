@@ -27,6 +27,31 @@ describe('training cycles repository', () => {
     expect(await trainingCyclesRepository.listForSet('set:missing')).toEqual([]);
   });
 
+  it('lists every cycle across sets in deterministic trainingSetId/cycleNumber/id order', async () => {
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cycle:b2', trainingSetId: 'set:b', cycleNumber: 2 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cycle:a2', trainingSetId: 'set:a', cycleNumber: 2 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cycle:a1', trainingSetId: 'set:a', cycleNumber: 1 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cycle:quick', trainingSetId: QUICK_TRAIN_SET_ID, cycleNumber: 1 }),
+    );
+
+    expect((await trainingCyclesRepository.listAll()).map((c) => c.id)).toEqual([
+      'cycle:quick',
+      'cycle:a1',
+      'cycle:a2',
+      'cycle:b2',
+    ]);
+    expect(await trainingCyclesRepository.listAll()).toEqual(
+      await trainingCyclesRepository.listAll(),
+    );
+  });
+
   it('getByNumber reads the compound [trainingSetId+cycleNumber] key', async () => {
     const cycle = cycleFixture({ id: 'cycle:1', trainingSetId: 'set:a', cycleNumber: 1 });
     await trainingCyclesRepository.create(cycle);

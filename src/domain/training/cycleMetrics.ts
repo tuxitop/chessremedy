@@ -265,8 +265,20 @@ function flatten(metrics: CycleMetrics): Readonly<Record<CycleMetricKey, number 
  */
 export const FIRST_CYCLE_FIRST_TRY_BAND = { min: 0.6, max: 0.75 } as const;
 
-/** Recommended minimum spacing between cycles of the same block (spec §4). */
-export const SPACING_RECOMMENDED_MS = 24 * 60 * 60 * 1000;
+/**
+ * Whether two epoch-millis instants fall on the **same local calendar day**
+ * (local year/month/date equal). Used by the spacing nudge so the boundary is a
+ * calendar day, not a rolling 24 hours (spec §4, AC #18/#25).
+ */
+export function isSameLocalCalendarDay(a: number, b: number): boolean {
+  const left = new Date(a);
+  const right = new Date(b);
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
 
 /**
  * The Woodpecker time-halving guidance for one cycle against the previous cycle
@@ -311,7 +323,8 @@ export function cycleTimeGoal(current: CycleMetrics, previous: CycleMetrics | nu
 /**
  * A same-block spacing nudge: the immediately preceding cycle of the block and
  * how long ago it ended. `null` when the block has no previous cycle, the
- * previous cycle never ended, or the gap already meets the recommendation.
+ * previous cycle never ended, or the previous end and the current start fall on
+ * different local calendar days.
  */
 export interface CycleSpacingNudge {
   readonly previousCycleNumber: number;
@@ -321,10 +334,11 @@ export interface CycleSpacingNudge {
 }
 
 /**
- * Derive the spacing nudge for a cycle of a block (spec §4). Finds the
- * immediately preceding cycle by number and returns a nudge when it ended less
- * than `SPACING_RECOMMENDED_MS` before the current cycle started. Pure; the
- * caller decides whether the set is a block and whether to surface it.
+ * Derive the spacing nudge for a cycle of a block (spec §4, AC #18/#25). Finds
+ * the immediately preceding cycle by number and returns a nudge when it ended
+ * on the **same local calendar day** as the current cycle started (a day
+ * boundary, not a rolling 24 hours). Pure; the caller decides whether the set
+ * is a block and whether to surface it.
  */
 export function spacingNudgeFor(
   cycles: readonly TrainingCycleRow[],
@@ -346,9 +360,12 @@ export function spacingNudgeFor(
   if (endedAt === null) {
     return null;
   }
-  const elapsedMs = current.startedAt - endedAt;
-  if (elapsedMs >= SPACING_RECOMMENDED_MS) {
+  if (!isSameLocalCalendarDay(endedAt, current.startedAt)) {
     return null;
   }
-  return { previousCycleNumber: previous.cycleNumber, previousEndedAt: endedAt, elapsedMs };
+  return {
+    previousCycleNumber: previous.cycleNumber,
+    previousEndedAt: endedAt,
+    elapsedMs: current.startedAt - endedAt,
+  };
 }

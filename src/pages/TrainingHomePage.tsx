@@ -95,6 +95,7 @@ export function TrainingHomePage({
         puzzles: puzzlesRepository,
         games: gamesRepository,
         attempts: attemptsRepository,
+        cycles: trainingCyclesRepository,
       }),
     [providedSets],
   );
@@ -453,17 +454,18 @@ async function loadHome(
   puzzlesRepo: PuzzlesRepository,
   attemptsRepo: PuzzleAttemptsRepository,
 ): Promise<HomeData> {
-  const [activeSets, archivedSets, puzzles, attempts, openBlockRow] = await Promise.all([
+  const [activeSets, archivedSets, puzzles, attempts, openBlockRow, cycles] = await Promise.all([
     setsService.list({ status: 'active' }),
     setsService.list({ status: 'archived' }),
     puzzlesRepo.listAll(),
     attemptsRepo.listAll(),
     setsService.getOpenBlock(),
+    trainingCyclesRepository.listAll(),
   ]);
 
   const pool = derivePool({
     puzzles,
-    masteredIds: masteredPuzzleIds(attempts),
+    masteredIds: masteredPuzzleIds(attempts, cycles),
     openBlockPuzzleIds: new Set(openBlockRow?.puzzleIds ?? []),
   });
 

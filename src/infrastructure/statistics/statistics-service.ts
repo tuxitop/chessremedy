@@ -435,10 +435,10 @@ export class StatisticsService {
     gameIds: readonly GameId[],
     options: StatisticsReadOptions = {},
   ): Promise<StatisticsResult<ReadonlyMap<GameId, Aggregate>>> {
-    const attempts = await this.attempts.listAll();
+    const [attempts, cycles] = await Promise.all([this.attempts.listAll(), this.cycles.listAll()]);
     const snapshot: StatisticsTrainingSnapshot = {
       sets: [],
-      cycles: [],
+      cycles,
       attempts,
       puzzles: [],
     };

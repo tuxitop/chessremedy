@@ -17,7 +17,7 @@ describe('SpacingNudge', () => {
 
     expect(screen.getByTestId('nudge')).toHaveTextContent('Spacing guidance');
     expect(screen.getByTestId('nudge-text')).toHaveTextContent('cycle 2');
-    expect(screen.getByTestId('nudge-text')).toHaveTextContent('at least a day apart');
+    expect(screen.getByTestId('nudge-text')).toHaveTextContent('different days');
     expect(screen.getByTestId('nudge-text')).toHaveTextContent('guidance, not a rule');
 
     const start = screen.getByTestId('nudge-start');

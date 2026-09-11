@@ -234,9 +234,10 @@ and behaviors are:
   (resumable) and a **Skip** control when skipping is allowed.
 - Does **not** show puzzle difficulty, cycle ordering rationale or any
   scheduling language (no "due", no "next review"; ADR-031).
-- When a new cycle is started **less than ~1 day** after the previous cycle of
-  the same block ended, shows a non-blocking **spacing nudge** recommending at
-  least a 1-day break; the user may proceed. This is guidance, not a gate.
+- When a new cycle is started **on the same local calendar day** as the
+  previous cycle of the same block ended, shows a non-blocking **spacing nudge**
+  recommending training the block on different days; the user may proceed. This
+  is guidance, not a gate.
 - Advancing happens only after the attempt row is durably written (Feature
   012 guarantees this); an unwritten outcome keeps the result visible with an
   inline retry and the session does not advance.
@@ -1045,9 +1046,9 @@ The feature must never crash a consumer and must never fabricate data:
 - **`targetSize` smaller/larger than the source** — selection takes the first
   N under the ordering; fewer sources yield a smaller set. For a block, the
   pool smaller than `recipe.size` yields a block of the whole pool.
-- **Same-day cycle restart** — a cycle started less than ~1 day after the
-  previous cycle of the same block shows the spacing nudge; it is never
-  blocked.
+- **Same-day cycle restart** — a cycle started on the same local calendar day
+  as the previous cycle of the same block ended shows the spacing nudge; it is
+  never blocked.
 - **Archived set with an `inProgress` cycle** — archiving does not abandon
   the cycle; the resume banner still surfaces it, and the set can be
   unarchived.
@@ -1230,8 +1231,9 @@ The feature must never crash a consumer and must never fabricate data:
     previous cycle and a "beat half the previous cycle's time" target, plus
     the optional ~6-cycle suggestion and the 60–75% first-cycle band as
     guidance only.
-25. A same-day cycle restart (less than ~1 day after the previous cycle of the
-    same block) shows a non-blocking spacing nudge; the user may proceed.
+25. A same-day cycle restart (a new cycle started on the same local calendar
+    day as the previous cycle of the same block ended) shows a non-blocking
+    spacing nudge; the user may proceed.
 
 ---
 
@@ -1411,8 +1413,9 @@ localized change:
     delta vs the previous cycle, target "beat half the previous cycle's time",
     suggest ~6 cycles and the 60–75% first-cycle band (default; guidance only,
     never enforced).
-18. **Spacing nudge** — warn on a same-day cycle restart (less than ~1 day
-    since the previous cycle of the same block); non-blocking (default).
+18. **Spacing nudge** — warn on a same-day cycle restart (a new cycle started
+    on the same local calendar day as the previous cycle of the same block
+    ended); non-blocking (default).
 19. **Quick-train identity** — a reserved `QUICK_TRAIN_SET_ID` sentinel
     `trainingCycles` row with no `trainingSets` row; excluded from set-scoped
     reads/aggregates (default). Alternative: create a hidden ephemeral set row
@@ -1444,7 +1447,7 @@ before implementation; they do not change the model above:
 - **`research/cycle-training.md`** — reconciled the "what to encode"
   recommendations with the final block model: no auto-creation, an explicit
   one-click fixed block, no 100% gate, no retirement, a time-halving goal and
-  a ≥1-day spacing nudge.
+  a same-local-calendar-day spacing nudge.
 - **`features/012-puzzle-training.md`** — the restart contract
   (`restartCount`, `solvedWithHelp` after restart) has landed; Feature 013
   consumes it.
@@ -1492,10 +1495,6 @@ or follow-up spec decision:
    block) shares the name with the existing `'pool'` **set source** (a
    creation-time filter snapshot). They are distinct; if the collision is
    undesirable, rename one (e.g. the source kind to `'filters'`).
-7. **Spacing-nudge threshold.** The agreed model says "≥1-day spacing nudge"
-   and "warn on a same-day cycle restart"; the encoded threshold is "less than
-   ~1 day since the previous cycle of the same block ended". Confirm the exact
-   boundary (calendar day vs 24 h).
 
 ## ADR assessment
 

@@ -66,7 +66,8 @@ vi.mock('@/components/puzzles/solve', () => ({
   ),
 }));
 
-const NOW = 1_700_000_000_000;
+/** Local noon so same-day/next-day spacing cases are time-zone independent. */
+const NOW = new Date(2023, 10, 14, 12, 0, 0, 0).getTime();
 const SET_ID = 'set-session';
 
 function puzzleFor(ply: number): PuzzleRow {

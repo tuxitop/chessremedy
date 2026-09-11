@@ -46,7 +46,13 @@ function poolPuzzle(ply: number): PuzzleRow {
 
 /** Write a legitimate first-try solve for `puzzleId` in 3 distinct cycles. */
 async function masterPuzzle(puzzleId: string): Promise<void> {
-  for (const row of legitimateFirstTryRows(puzzleId, ['c1', 'c2', 'c3'])) {
+  const cycleIds = ['c1', 'c2', 'c3'];
+  for (const [index, cycleId] of cycleIds.entries()) {
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: cycleId, cycleNumber: index + 1, puzzleIds: [puzzleId] }),
+    );
+  }
+  for (const row of legitimateFirstTryRows(puzzleId, cycleIds)) {
     await attemptsRepository.addAttempt(row);
   }
 }

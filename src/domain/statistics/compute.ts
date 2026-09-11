@@ -265,7 +265,13 @@ export function computeStatistics(input: StatisticsComputeInput): StatisticsComp
     case 'masteredPuzzleCounts':
       return {
         operation: 'masteredPuzzleCounts',
-        counts: [...masteredPuzzleCountsForGames(input.gameIds, input.snapshot.attempts)],
+        counts: [
+          ...masteredPuzzleCountsForGames(
+            input.gameIds,
+            input.snapshot.attempts,
+            input.snapshot.cycles,
+          ),
+        ],
       };
   }
 }

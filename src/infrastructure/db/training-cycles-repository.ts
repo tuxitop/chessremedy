@@ -35,6 +35,13 @@ export interface TrainingCyclesRepository {
   get(id: string): Promise<TrainingCyclesRow | undefined>;
   /** Every cycle of one set, ordered by `cycleNumber` ascending. */
   listForSet(setId: string): Promise<TrainingCyclesRow[]>;
+  /**
+   * Every persisted cycle across all sets, ordered deterministically by
+   * `trainingSetId`, then `cycleNumber`, then `id`. Used by the global mastery
+   * read so an orphaned attempt row (a `cycleId` with no cycle row) never
+   * credits.
+   */
+  listAll(): Promise<TrainingCyclesRow[]>;
   /** One set's cycle by its 1-based number (the compound unique key read). */
   getByNumber(setId: string, cycleNumber: number): Promise<TrainingCyclesRow | undefined>;
   /** Insert or replace one cycle row. */
@@ -71,6 +78,16 @@ export class DexieTrainingCyclesRepository implements TrainingCyclesRepository {
   async listForSet(setId: string): Promise<TrainingCyclesRow[]> {
     const rows = await this.database.trainingCycles.where('trainingSetId').equals(setId).toArray();
     return rows.sort((a, b) => a.cycleNumber - b.cycleNumber || a.id.localeCompare(b.id));
+  }
+
+  async listAll(): Promise<TrainingCyclesRow[]> {
+    const rows = await this.database.trainingCycles.toArray();
+    return rows.sort(
+      (a, b) =>
+        a.trainingSetId.localeCompare(b.trainingSetId) ||
+        a.cycleNumber - b.cycleNumber ||
+        a.id.localeCompare(b.id),
+    );
   }
 
   async getByNumber(setId: string, cycleNumber: number): Promise<TrainingCyclesRow | undefined> {

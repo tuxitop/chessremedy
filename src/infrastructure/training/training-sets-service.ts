@@ -49,6 +49,7 @@ import type {
 import type { PuzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import type { GameSummary, GamesRepository } from '@/infrastructure/db/games-repository';
 import type { PuzzleAttemptsRepository } from '@/infrastructure/db/attempts-repository';
+import type { TrainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
 
 /** Inputs to `TrainingSetsService.createFromGame`. */
 export interface CreateSetFromGameInput {
@@ -192,6 +193,12 @@ export interface TrainingSetsServiceOptions {
    * writes here.
    */
   readonly attempts: PuzzleAttemptsRepository;
+  /**
+   * Feature-013 cycle rows. Used for the derived-mastery read behind the pool
+   * (`masteredPuzzleIds`), which ignores orphaned attempts, and to abandon a
+   * block's still-in-progress cycle when the block is closed.
+   */
+  readonly cycles: TrainingCyclesRepository;
   /** Wall clock for create timestamps (Unix epoch millis); defaults to `Date.now`. */
   readonly now?: () => number;
   /** Id factory for new set ids; defaults to `crypto.randomUUID()`. */
@@ -203,6 +210,7 @@ export class TrainingSetsService {
   private readonly puzzles: PuzzlesRepository;
   private readonly games: GamesRepository;
   private readonly attempts: PuzzleAttemptsRepository;
+  private readonly cycles: TrainingCyclesRepository;
   private readonly now: () => number;
   private readonly newId: () => string;
 
@@ -211,6 +219,7 @@ export class TrainingSetsService {
     this.puzzles = options.puzzles;
     this.games = options.games;
     this.attempts = options.attempts;
+    this.cycles = options.cycles;
     this.now = options.now ?? (() => Date.now());
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
@@ -280,14 +289,15 @@ export class TrainingSetsService {
    * never stored as a set.
    */
   async listPool(): Promise<PuzzleRow[]> {
-    const [puzzles, attempts, openBlock] = await Promise.all([
+    const [puzzles, attempts, openBlock, cycles] = await Promise.all([
       this.puzzles.listAll(),
       this.attempts.listAll(),
       this.sets.getOpenBlock(),
+      this.cycles.listAll(),
     ]);
     return derivePool({
       puzzles,
-      masteredIds: masteredPuzzleIds(attempts),
+      masteredIds: masteredPuzzleIds(attempts, cycles),
       openBlockPuzzleIds: new Set(openBlock?.puzzleIds ?? []),
     });
   }
@@ -313,11 +323,12 @@ export class TrainingSetsService {
     if (openBlock !== undefined) {
       return { ok: false, reason: 'block-open', block: openBlock };
     }
-    const [puzzles, attempts] = await Promise.all([
+    const [puzzles, attempts, cycles] = await Promise.all([
       this.puzzles.listAll(),
       this.attempts.listAll(),
+      this.cycles.listAll(),
     ]);
-    const masteredIds = masteredPuzzleIds(attempts);
+    const masteredIds = masteredPuzzleIds(attempts, cycles);
     const pool = derivePool({
       puzzles,
       masteredIds,
@@ -352,10 +363,12 @@ export class TrainingSetsService {
 
   /**
    * Close an open Woodpecker block: Finish/Abandon reuses `status: 'archived'`
-   * (no new field, schema stays v10). Its still-unmastered members return to
-   * the pool implicitly — the pool excludes only the **open** block's members,
-   * so no membership is mutated here. Idempotent: an already-closed block is
-   * returned unchanged.
+   * (no new field, schema stays v10). Any cycle of the block still
+   * `inProgress` is abandoned with the same `now`, so a closed block never
+   * leaves a resumable cycle behind. Its still-unmastered members return to the
+   * pool implicitly — the pool excludes only the **open** block's members, so no
+   * membership is mutated here. Idempotent: an already-closed block is returned
+   * unchanged.
    */
   async closeBlock(id: string): Promise<SetMutationResult> {
     const existing = await this.sets.get(id);
@@ -368,7 +381,14 @@ export class TrainingSetsService {
     if (existing.status === 'archived') {
       return { ok: true, set: existing };
     }
-    const closed = await this.sets.closeBlock(id, this.now());
+    const now = this.now();
+    const cycles = await this.cycles.listForSet(id);
+    for (const cycle of cycles) {
+      if (cycle.status === 'inProgress') {
+        await this.cycles.updateStatus(cycle.id, { status: 'abandoned', abandonedAt: now });
+      }
+    }
+    const closed = await this.sets.closeBlock(id, now);
     if (closed === undefined) {
       return { ok: false, reason: 'not-found' };
     }

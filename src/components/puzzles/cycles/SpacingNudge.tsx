@@ -14,9 +14,9 @@ export interface SpacingNudgeProps {
 
 /**
  * The non-blocking spacing nudge (spec §4/§18): shown before a block cycle when
- * the previous cycle of the same block ended less than a day ago. It recommends
- * a ≥1-day break and offers a clear "Start anyway" control; it never blocks the
- * session and is announced politely.
+ * the previous cycle of the same block ended on the same local calendar day. It
+ * recommends training the block on different days and offers a clear "Start
+ * anyway" control; it never blocks the session and is announced politely.
  */
 export function SpacingNudge({
   setName,
@@ -30,9 +30,9 @@ export function SpacingNudge({
         Spacing guidance
       </h2>
       <p className={styles.text} role="status" aria-live="polite" data-testid={`${testId}-text`}>
-        You last trained “{setName}” in cycle {previousCycleNumber}, which ended less than a day
-        ago. Spacing cycles at least a day apart is recommended for this method. This is guidance,
-        not a rule — you can start now.
+        You already trained “{setName}” in cycle {previousCycleNumber} today. Spacing cycles across
+        different days is recommended for this method. This is guidance, not a rule — you can start
+        now.
       </p>
       <div className={styles.actions}>
         <Button data-testid={`${testId}-start`} onClick={onStartAnyway}>

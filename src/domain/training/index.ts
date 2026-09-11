@@ -102,9 +102,10 @@ export {
   compareCycleMetrics,
   computeCycleMetrics,
   cycleTimeGoal,
+  isSameLocalCalendarDay,
   spacingNudgeFor,
 } from './cycleMetrics';
-export { FIRST_CYCLE_FIRST_TRY_BAND, SPACING_RECOMMENDED_MS } from './cycleMetrics';
+export { FIRST_CYCLE_FIRST_TRY_BAND } from './cycleMetrics';
 export type {
   ComputeCycleMetricsInput,
   CycleComparison,

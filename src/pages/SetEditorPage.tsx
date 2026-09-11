@@ -29,6 +29,7 @@ import {
 import { TrainingSetsService } from '@/infrastructure/training';
 import { trainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
 import type { TrainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
+import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import type { PuzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
@@ -90,6 +91,7 @@ export function SetEditorPage({
         puzzles: puzzlesRepository,
         games: gamesRepository,
         attempts: attemptsRepository,
+        cycles: trainingCyclesRepository,
       }),
     [providedSets],
   );

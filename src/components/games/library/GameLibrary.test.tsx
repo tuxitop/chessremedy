@@ -7,11 +7,12 @@ import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-reposi
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
+import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
 import type { AnalysisSummaryRow } from '@/infrastructure/db/summaries-repository';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { puzzleFixtures } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
-import { cycleAttemptFixture } from '@/domain/training/test-support';
+import { cycleAttemptFixture, cycleFixture } from '@/domain/training/test-support';
 import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
 import {
   analysisJobId,
@@ -1112,6 +1113,7 @@ describe('GameLibrary mastered-puzzle insight (Feature 014, Stage E)', () => {
     await db.analysisSummaries.clear();
     await db.puzzles.clear();
     await db.puzzleAttempts.clear();
+    await db.trainingCycles.clear();
   });
 
   /** A completed analysis so the row strip renders (mastery is separate). */
@@ -1128,7 +1130,10 @@ describe('GameLibrary mastered-puzzle insight (Feature 014, Stage E)', () => {
   /** Seed legitimate first-try solves of one puzzle in the given cycles. */
   async function seedFirstTrySolves(gameId: string, cycleIds: readonly string[]): Promise<string> {
     const puzzleId = puzzleIdOf(gameId, 0);
-    for (const cycleId of cycleIds) {
+    for (const [index, cycleId] of cycleIds.entries()) {
+      await trainingCyclesRepository.create(
+        cycleFixture({ id: cycleId, cycleNumber: index + 1, puzzleIds: [puzzleId] }),
+      );
       await attemptsRepository.addAttempt(
         cycleAttemptFixture({ puzzleId, cycleId, presentationIndex: 1, result: 'solvedFirstTry' }),
       );

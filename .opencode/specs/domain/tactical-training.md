@@ -119,8 +119,9 @@ brand-new user (or any time) who wants to practise before committing a block:
 There is **no 100% accuracy gate** and no automatic retirement. Success is
 speed and automaticity: cycle results track total solving time against the
 previous cycle (target: beat half of it), suggest an optional ~6-cycle plan,
-surface the 60–75% first-cycle first-try band as guidance, and nudge for at
-least a 1-day spacing between cycles. None of these is enforced.
+surface the 60–75% first-cycle first-try band as guidance, and nudge when a
+new cycle starts on the same local calendar day as the previous cycle ended.
+None of these is enforced.
 
 Fixed presets for a block: hints enabled, retry-failed `endOfCycle`, ordering
 `difficultyAsc`; `targetAccuracy` is unset (informational only). These are
@@ -326,8 +327,8 @@ effective size is the recipe's (default 200).
 
 These defaults are not derived from any specific Woodpecker protocol; they are
 ChessRemedy's initial product choices (ADR-031). The time-halving goal, the
-~6-cycle plan, the 60–75% first-cycle band and the ≥1-day spacing nudge are
-guidance aligned with the method, not enforced gates
+~6-cycle plan, the 60–75% first-cycle band and the same-local-calendar-day
+spacing nudge are guidance aligned with the method, not enforced gates
 (`specs/research/cycle-training.md`).
 
 ## Metrics

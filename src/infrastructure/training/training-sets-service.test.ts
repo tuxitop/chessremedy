@@ -13,6 +13,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { db } from '@/infrastructure/db/database';
 import { trainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
+import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
@@ -25,7 +26,7 @@ import {
   WOODPECKER_PLAN_CYCLES,
   type TacticalTrainingSetRow,
 } from '@/domain/training';
-import { legitimateFirstTryRows } from '@/domain/training/test-support';
+import { cycleFixture, legitimateFirstTryRows } from '@/domain/training/test-support';
 import { TrainingSetsService } from './training-sets-service';
 
 const NOW = 1_700_000_000_000;
@@ -38,6 +39,7 @@ function makeService(): TrainingSetsService {
     puzzles: puzzlesRepository,
     games: gamesRepository,
     attempts: attemptsRepository,
+    cycles: trainingCyclesRepository,
     now: () => NOW,
     newId,
   });
@@ -59,7 +61,13 @@ function idOf(puzzle: PuzzleRow): string {
 
 /** Persist three clean first-try rows (three distinct cycles) for one puzzle. */
 async function masterPuzzle(puzzleId: string): Promise<void> {
-  for (const row of legitimateFirstTryRows(puzzleId, ['cycle:1', 'cycle:2', 'cycle:3'])) {
+  const cycleIds = ['cycle:1', 'cycle:2', 'cycle:3'];
+  for (const [index, cycleId] of cycleIds.entries()) {
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: cycleId, cycleNumber: index + 1, puzzleIds: [puzzleId] }),
+    );
+  }
+  for (const row of legitimateFirstTryRows(puzzleId, cycleIds)) {
     await attemptsRepository.addAttempt(row);
   }
 }
@@ -370,6 +378,29 @@ describe('TrainingSetsService', () => {
     });
     if (!custom.ok) throw new Error('expected custom create to succeed');
     expect(await service.closeBlock(custom.set.id)).toEqual({ ok: false, reason: 'not-a-block' });
+  });
+
+  it('closeBlock abandons an in-progress cycle of that block', async () => {
+    const service = makeService();
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
+    const block = await createBlock(service, 200);
+    const cycle = cycleFixture({
+      id: 'cycle:open',
+      trainingSetId: block.id,
+      cycleNumber: 1,
+      status: 'inProgress',
+      startedAt: NOW - 60_000,
+      puzzleIds: block.puzzleIds,
+    });
+    await trainingCyclesRepository.create(cycle);
+
+    const closed = await service.closeBlock(block.id);
+    if (!closed.ok) throw new Error('expected close to succeed');
+
+    const stored = await trainingCyclesRepository.get(cycle.id);
+    expect(stored?.status).toBe('abandoned');
+    expect(stored?.abandonedAt).toBe(NOW);
+    expect(stored?.completedAt).toBeNull();
   });
 
   it('refuses every mutation of a Woodpecker block except closeBlock', async () => {

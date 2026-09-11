@@ -34,6 +34,7 @@ import {
   autoPoolRowFixture,
   blockSetFixture,
   cycleAttemptFixture,
+  cycleFixture,
   legitimateFirstTryRows,
   setFixture,
 } from '@/domain/training/test-support';
@@ -487,7 +488,13 @@ describe('CycleService', () => {
   it('startQuickTrain excludes mastered puzzles and the open block members', async () => {
     const pool = [autoPoolRowFixture(1, 10), autoPoolRowFixture(2, 20), autoPoolRowFixture(3, 30)];
     await puzzlesRepository.addIfAbsent(pool);
-    for (const row of legitimateFirstTryRows(idOf(pool[0]!), ['c1', 'c2', 'c3'])) {
+    const masteredCycleIds = ['c1', 'c2', 'c3'];
+    for (const [index, cycleId] of masteredCycleIds.entries()) {
+      await trainingCyclesRepository.create(
+        cycleFixture({ id: cycleId, cycleNumber: index + 1, puzzleIds: [idOf(pool[0]!)] }),
+      );
+    }
+    for (const row of legitimateFirstTryRows(idOf(pool[0]!), masteredCycleIds)) {
       await attemptsRepository.addAttempt(row);
     }
     await trainingSetsRepository.create(
@@ -533,7 +540,13 @@ describe('CycleService', () => {
         }),
       );
     }
-    expect(masteryOf(puzzleId, await attemptsRepository.listAll())).toBe(true);
+    expect(
+      masteryOf(
+        puzzleId,
+        await attemptsRepository.listAll(),
+        await trainingCyclesRepository.listAll(),
+      ),
+    ).toBe(true);
   });
 });
 

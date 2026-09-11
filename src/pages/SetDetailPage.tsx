@@ -75,6 +75,7 @@ export function SetDetailPage({
         puzzles: puzzlesRepository,
         games: gamesRepository,
         attempts: attemptsRepository,
+        cycles: trainingCyclesRepository,
       }),
     [providedSets],
   );

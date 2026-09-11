@@ -497,13 +497,16 @@ describe('mastery counts', () => {
     cleanFirstTry(otherGamePuzzle, 'set:A', 'c1'),
   ];
 
+  /** The persisted cycle rows the mastery attempts above belong to. */
+  const masteryCycles = ['c1', 'c2', 'c3'].map((id) => cycleFixture({ id }));
+
   it('counts mastered puzzles per game with a puzzles sample', () => {
-    expect(masteredPuzzleCountForGame(GAME, attempts)).toEqual({
+    expect(masteredPuzzleCountForGame(GAME, attempts, masteryCycles)).toEqual({
       value: 1,
       state: 'insufficient',
       sample: { unit: 'puzzles', n: 4 },
     });
-    expect(masteredPuzzleCountForGame(OTHER_GAME, attempts)).toEqual({
+    expect(masteredPuzzleCountForGame(OTHER_GAME, attempts, masteryCycles)).toEqual({
       value: 0,
       state: 'insufficient',
       sample: { unit: 'puzzles', n: 1 },
@@ -511,7 +514,11 @@ describe('mastery counts', () => {
   });
 
   it('returns a map for several games, empty when a game has no attempts', () => {
-    const counts = masteredPuzzleCountsForGames([GAME, OTHER_GAME, 'game:none'], attempts);
+    const counts = masteredPuzzleCountsForGames(
+      [GAME, OTHER_GAME, 'game:none'],
+      attempts,
+      masteryCycles,
+    );
     expect(counts.get(GAME)?.value).toBe(1);
     expect(counts.get(OTHER_GAME)?.value).toBe(0);
     expect(counts.get('game:none')).toEqual({
@@ -529,20 +536,26 @@ describe('mastery counts', () => {
     const setB = setFixture({ id: 'set:B', puzzleIds: [masteredPuzzle, otherGamePuzzle] });
     const emptySet = setFixture({ id: 'set:empty', puzzleIds: [masteredPuzzle] });
 
-    expect(masteredPuzzleCountForSet(setA, attempts)).toEqual({
+    expect(masteredPuzzleCountForSet(setA, attempts, masteryCycles)).toEqual({
       value: 1,
       state: 'insufficient',
       sample: { unit: 'puzzles', n: 4 },
     });
-    expect(masteredPuzzleCountForSet(setB, attempts)).toEqual({
+    expect(masteredPuzzleCountForSet(setB, attempts, masteryCycles)).toEqual({
       value: 1,
       state: 'insufficient',
       sample: { unit: 'puzzles', n: 1 },
     });
-    expect(masteredPuzzleCountForSet(emptySet, attempts)).toEqual({
+    expect(masteredPuzzleCountForSet(emptySet, attempts, masteryCycles)).toEqual({
       value: null,
       state: 'empty',
       sample: { unit: 'puzzles', n: 0 },
     });
+  });
+
+  it('ignores an orphaned third-cycle attempt row', () => {
+    const orphanedCycles = ['c1', 'c2'].map((id) => cycleFixture({ id }));
+    expect(masteredPuzzleCountForGame(GAME, attempts, orphanedCycles).value).toBe(0);
+    expect(masteredPuzzleCountForGame(GAME, attempts, masteryCycles).value).toBe(1);
   });
 });

@@ -4,10 +4,11 @@ import { Route, Routes } from 'react-router-dom';
 import { MasteredPuzzlesPage } from '@/pages/MasteredPuzzlesPage';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
+import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import type { PuzzleRow } from '@/domain/puzzle';
-import { legitimateFirstTryRows } from '@/domain/training/test-support';
+import { cycleFixture, legitimateFirstTryRows } from '@/domain/training/test-support';
 import { renderWithProviders } from '@/test/test-utils';
 
 const GAME = 'game:mastery';
@@ -21,7 +22,13 @@ function idFor(row: PuzzleRow): string {
 }
 
 async function masterPuzzle(puzzleId: string): Promise<void> {
-  for (const row of legitimateFirstTryRows(puzzleId, ['c1', 'c2', 'c3'])) {
+  const cycleIds = ['c1', 'c2', 'c3'];
+  for (const [index, cycleId] of cycleIds.entries()) {
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: cycleId, cycleNumber: index + 1, puzzleIds: [puzzleId] }),
+    );
+  }
+  for (const row of legitimateFirstTryRows(puzzleId, cycleIds)) {
     await attemptsRepository.addAttempt(row);
   }
 }

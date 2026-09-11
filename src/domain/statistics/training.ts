@@ -381,6 +381,7 @@ export function repeatedlyFailedPuzzles(
 export function masteredPuzzleCountForGame(
   gameId: string,
   attempts: readonly PuzzleAttemptRow[],
+  cycles: readonly TrainingCycleRow[],
 ): Aggregate {
   const candidate = new Set<string>();
   for (const attempt of attempts) {
@@ -389,16 +390,19 @@ export function masteredPuzzleCountForGame(
       candidate.add(attempt.puzzleId);
     }
   }
-  return masteredAggregate(candidate, masteredPuzzleIds(attempts));
+  return masteredAggregate(candidate, masteredPuzzleIds(attempts, cycles));
 }
 
 /**
  * Mastered-puzzle counts for several games in one pass. Every requested game id
  * is present in the returned map; a game with no attempt rows maps to `empty`.
+ * `cycles` are the persisted cycles an attempt must belong to in order to
+ * credit (orphaned rows are ignored).
  */
 export function masteredPuzzleCountsForGames(
   gameIds: readonly string[],
   attempts: readonly PuzzleAttemptRow[],
+  cycles: readonly TrainingCycleRow[],
 ): ReadonlyMap<string, Aggregate> {
   const candidates = new Map<string, Set<string>>();
   for (const gameId of gameIds) {
@@ -411,7 +415,7 @@ export function masteredPuzzleCountsForGames(
     }
     candidates.get(parsed.sourceGameId)?.add(attempt.puzzleId);
   }
-  const mastered = masteredPuzzleIds(attempts);
+  const mastered = masteredPuzzleIds(attempts, cycles);
   const result = new Map<string, Aggregate>();
   for (const [gameId, candidate] of candidates) {
     result.set(gameId, masteredAggregate(candidate, mastered));
@@ -423,11 +427,13 @@ export function masteredPuzzleCountsForGames(
  * Distinct mastered puzzles in a set's stored membership, independent of which
  * set earned the mastery (a block's frozen snapshot or a custom set). The
  * sample is the set's membership puzzles that have at least one attempt row; a
- * set with no attempted member is `empty`.
+ * set with no attempted member is `empty`. `cycles` are the persisted cycles an
+ * attempt must belong to in order to credit (orphaned rows are ignored).
  */
 export function masteredPuzzleCountForSet(
   set: TacticalTrainingSetRow,
   attempts: readonly PuzzleAttemptRow[],
+  cycles: readonly TrainingCycleRow[],
 ): Aggregate {
   const attempted = new Set<string>();
   for (const attempt of attempts) {
@@ -441,7 +447,7 @@ export function masteredPuzzleCountForSet(
       candidate.add(puzzleId);
     }
   }
-  return masteredAggregate(candidate, masteredPuzzleIds(attempts));
+  return masteredAggregate(candidate, masteredPuzzleIds(attempts, cycles));
 }
 
 /** Count the mastered puzzles in a candidate universe, or `empty` when none. */

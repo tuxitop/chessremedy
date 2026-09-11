@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { TrainingCycleRow } from './cycleTypes';
 import type { PuzzleAttemptRow } from './types';
 import {
   MASTERY_REQUIRED_CYCLES,
@@ -7,7 +8,12 @@ import {
   masteredPuzzleIds,
   masteryOf,
 } from './mastery';
-import { cycleAttemptFixture, legitimateFirstTryRows, masteryAttemptFixture } from './test-support';
+import {
+  cycleAttemptFixture,
+  cycleFixture,
+  legitimateFirstTryRows,
+  masteryAttemptFixture,
+} from './test-support';
 
 const PUZZLE = 'fixture:puzzle:1';
 const OTHER = 'fixture:puzzle:2';
@@ -15,6 +21,11 @@ const OTHER = 'fixture:puzzle:2';
 /** N clean first-try rows for `PUZZLE`, one per distinct cycle id. */
 function credits(...cycleIds: string[]): PuzzleAttemptRow[] {
   return legitimateFirstTryRows(PUZZLE, cycleIds);
+}
+
+/** The persisted cycle rows for a list of cycle ids. */
+function cycles(...cycleIds: string[]): TrainingCycleRow[] {
+  return cycleIds.map((id) => cycleFixture({ id }));
 }
 
 /** A row without the optional `restartCount` field (a legacy persisted row). */
@@ -82,11 +93,13 @@ describe('isLegitimateFirstTry', () => {
 
 describe('masteryOf', () => {
   it('requires three distinct-cycle legitimate credits', () => {
-    expect(masteryOf(PUZZLE, [])).toBe(false);
-    expect(masteryOf(PUZZLE, credits('c1'))).toBe(false);
-    expect(masteryOf(PUZZLE, credits('c1', 'c2'))).toBe(false);
-    expect(masteryOf(PUZZLE, credits('c1', 'c2', 'c3'))).toBe(true);
-    expect(masteryOf(PUZZLE, credits('c1', 'c2', 'c3', 'c4'))).toBe(true);
+    expect(masteryOf(PUZZLE, [], [])).toBe(false);
+    expect(masteryOf(PUZZLE, credits('c1'), cycles('c1'))).toBe(false);
+    expect(masteryOf(PUZZLE, credits('c1', 'c2'), cycles('c1', 'c2'))).toBe(false);
+    expect(masteryOf(PUZZLE, credits('c1', 'c2', 'c3'), cycles('c1', 'c2', 'c3'))).toBe(true);
+    expect(masteryOf(PUZZLE, credits('c1', 'c2', 'c3', 'c4'), cycles('c1', 'c2', 'c3', 'c4'))).toBe(
+      true,
+    );
   });
 
   it('counts a cycle once no matter how many clean rows it holds', () => {
@@ -95,7 +108,7 @@ describe('masteryOf', () => {
       masteryAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c1' }),
       masteryAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c1' }),
     ];
-    expect(masteryOf(PUZZLE, rows)).toBe(false);
+    expect(masteryOf(PUZZLE, rows, cycles('c1'))).toBe(false);
   });
 
   it('never credits a retry presentation', () => {
@@ -103,42 +116,54 @@ describe('masteryOf', () => {
       ...credits('c1', 'c2'),
       cycleAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c3', presentationIndex: 2 }),
     ];
-    expect(masteryOf(PUZZLE, rows)).toBe(false);
+    expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2', 'c3'))).toBe(false);
   });
 
   it('ignores hint, wrong-move and restart rows', () => {
     expect(
-      masteryOf(PUZZLE, [
-        ...credits('c1', 'c2'),
-        cycleAttemptFixture({
-          puzzleId: PUZZLE,
-          cycleId: 'c3',
-          result: 'solvedFirstTry',
-          hintCount: 1,
-        }),
-      ]),
+      masteryOf(
+        PUZZLE,
+        [
+          ...credits('c1', 'c2'),
+          cycleAttemptFixture({
+            puzzleId: PUZZLE,
+            cycleId: 'c3',
+            result: 'solvedFirstTry',
+            hintCount: 1,
+          }),
+        ],
+        cycles('c1', 'c2', 'c3'),
+      ),
     ).toBe(false);
     expect(
-      masteryOf(PUZZLE, [
-        ...credits('c1', 'c2'),
-        cycleAttemptFixture({
-          puzzleId: PUZZLE,
-          cycleId: 'c3',
-          result: 'solvedFirstTry',
-          wrongMoveCount: 1,
-        }),
-      ]),
+      masteryOf(
+        PUZZLE,
+        [
+          ...credits('c1', 'c2'),
+          cycleAttemptFixture({
+            puzzleId: PUZZLE,
+            cycleId: 'c3',
+            result: 'solvedFirstTry',
+            wrongMoveCount: 1,
+          }),
+        ],
+        cycles('c1', 'c2', 'c3'),
+      ),
     ).toBe(false);
     expect(
-      masteryOf(PUZZLE, [
-        ...credits('c1', 'c2'),
-        cycleAttemptFixture({
-          puzzleId: PUZZLE,
-          cycleId: 'c3',
-          result: 'solvedFirstTry',
-          restartCount: 1,
-        }),
-      ]),
+      masteryOf(
+        PUZZLE,
+        [
+          ...credits('c1', 'c2'),
+          cycleAttemptFixture({
+            puzzleId: PUZZLE,
+            cycleId: 'c3',
+            result: 'solvedFirstTry',
+            restartCount: 1,
+          }),
+        ],
+        cycles('c1', 'c2', 'c3'),
+      ),
     ).toBe(false);
   });
 
@@ -148,7 +173,7 @@ describe('masteryOf', () => {
       cycleAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c4', result: 'failed' }),
       cycleAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c5', result: 'skipped' }),
     ];
-    expect(masteryOf(PUZZLE, rows)).toBe(true);
+    expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2', 'c3', 'c4', 'c5'))).toBe(true);
   });
 
   it('is global across sets (trainingSetId does not scope mastery)', () => {
@@ -157,7 +182,7 @@ describe('masteryOf', () => {
       masteryAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c2', trainingSetId: 'set-b' }),
       masteryAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c3', trainingSetId: 'set-c' }),
     ];
-    expect(masteryOf(PUZZLE, rows)).toBe(true);
+    expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2', 'c3'))).toBe(true);
   });
 
   it('ignores rows for another puzzle', () => {
@@ -165,8 +190,8 @@ describe('masteryOf', () => {
       ...credits('c1', 'c2', 'c3'),
       masteryAttemptFixture({ puzzleId: OTHER, cycleId: 'c4' }),
     ];
-    expect(masteryOf(PUZZLE, rows)).toBe(true);
-    expect(masteryOf(OTHER, rows)).toBe(false);
+    expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2', 'c3', 'c4'))).toBe(true);
+    expect(masteryOf(OTHER, rows, cycles('c1', 'c2', 'c3', 'c4'))).toBe(false);
   });
 
   it('ignores malformed rows with a blank cycle id', () => {
@@ -175,18 +200,24 @@ describe('masteryOf', () => {
       { ...masteryAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c2' }), cycleId: '' },
       { ...masteryAttemptFixture({ puzzleId: PUZZLE, cycleId: 'c3' }), cycleId: '' },
     ] as PuzzleAttemptRow[];
-    expect(masteryOf(PUZZLE, malformed)).toBe(false);
+    expect(masteryOf(PUZZLE, malformed, cycles('c1', 'c2', 'c3'))).toBe(false);
+  });
+
+  it('ignores an orphaned attempt whose cycle row no longer exists', () => {
+    const rows = credits('c1', 'c2', 'c3');
+    expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2'))).toBe(false);
+    expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2', 'c3'))).toBe(true);
   });
 });
 
 describe('masteredPuzzleIds', () => {
   it('returns an empty set when nothing is mastered', () => {
-    expect([...masteredPuzzleIds(credits('c1', 'c2'))]).toEqual([]);
+    expect([...masteredPuzzleIds(credits('c1', 'c2'), cycles('c1', 'c2'))]).toEqual([]);
   });
 
   it('returns only the mastered puzzles', () => {
     const rows = [...credits('c1', 'c2', 'c3'), ...legitimateFirstTryRows(OTHER, ['c1', 'c2'])];
-    expect([...masteredPuzzleIds(rows)]).toEqual([PUZZLE]);
+    expect([...masteredPuzzleIds(rows, cycles('c1', 'c2', 'c3'))]).toEqual([PUZZLE]);
   });
 
   it('is deterministic across calls', () => {
@@ -194,7 +225,14 @@ describe('masteredPuzzleIds', () => {
       ...credits('c1', 'c2', 'c3'),
       ...legitimateFirstTryRows(OTHER, ['c4', 'c5', 'c6']),
     ];
-    expect([...masteredPuzzleIds(rows)].sort()).toEqual([PUZZLE, OTHER].sort());
-    expect(masteredPuzzleIds(rows)).toEqual(masteredPuzzleIds(rows));
+    const allCycles = cycles('c1', 'c2', 'c3', 'c4', 'c5', 'c6');
+    expect([...masteredPuzzleIds(rows, allCycles)].sort()).toEqual([PUZZLE, OTHER].sort());
+    expect(masteredPuzzleIds(rows, allCycles)).toEqual(masteredPuzzleIds(rows, allCycles));
+  });
+
+  it('never credits a puzzle whose third cycle row is orphaned', () => {
+    const rows = credits('c1', 'c2', 'c3');
+    expect([...masteredPuzzleIds(rows, cycles('c1', 'c2'))]).toEqual([]);
+    expect([...masteredPuzzleIds(rows, cycles('c1', 'c2', 'c3'))]).toEqual([PUZZLE]);
   });
 });

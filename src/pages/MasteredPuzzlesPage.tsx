@@ -9,6 +9,8 @@ import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
 import type { PuzzleAttemptsRepository } from '@/infrastructure/db/attempts-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import type { PuzzlesRepository } from '@/infrastructure/db/puzzles-repository';
+import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
+import type { TrainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
 import styles from './MasteredPuzzlesPage.module.css';
 
 /** One mastered puzzle plus its qualifying distinct-cycle count. */
@@ -24,6 +26,8 @@ export interface MasteredPuzzlesPageProps {
   readonly puzzles?: PuzzlesRepository;
   /** Injectable for tests; defaults to the singleton repository. */
   readonly attempts?: PuzzleAttemptsRepository;
+  /** Injectable for tests; defaults to the singleton repository. */
+  readonly cycles?: TrainingCyclesRepository;
 }
 
 /**
@@ -35,9 +39,11 @@ export interface MasteredPuzzlesPageProps {
 export function MasteredPuzzlesPage({
   puzzles: providedPuzzles,
   attempts: providedAttempts,
+  cycles: providedCycles,
 }: MasteredPuzzlesPageProps = {}): React.JSX.Element {
   const puzzlesRepo = providedPuzzles ?? puzzlesRepository;
   const attemptsRepo = providedAttempts ?? attemptsRepository;
+  const cyclesRepo = providedCycles ?? trainingCyclesRepository;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,8 +53,11 @@ export function MasteredPuzzlesPage({
     let cancelled = false;
     void (async () => {
       try {
-        const attempts = await attemptsRepo.listAll();
-        const mastered = masteredPuzzleIds(attempts);
+        const [attempts, cycles] = await Promise.all([
+          attemptsRepo.listAll(),
+          cyclesRepo.listAll(),
+        ]);
+        const mastered = masteredPuzzleIds(attempts, cycles);
         if (mastered.size === 0) {
           if (!cancelled) {
             setItems([]);
@@ -58,17 +67,22 @@ export function MasteredPuzzlesPage({
           return;
         }
         const rows = await puzzlesRepo.getPuzzles([...mastered]);
+        const knownCycleIds = new Set(cycles.map((cycle) => cycle.id));
         const cycleCounts = new Map<string, Set<string>>();
         for (const attempt of attempts) {
-          if (!mastered.has(attempt.puzzleId) || !isLegitimateFirstTry(attempt)) {
+          if (
+            !mastered.has(attempt.puzzleId) ||
+            !isLegitimateFirstTry(attempt) ||
+            !knownCycleIds.has(attempt.cycleId)
+          ) {
             continue;
           }
-          let cycles = cycleCounts.get(attempt.puzzleId);
-          if (cycles === undefined) {
-            cycles = new Set<string>();
-            cycleCounts.set(attempt.puzzleId, cycles);
+          let cyclesForPuzzle = cycleCounts.get(attempt.puzzleId);
+          if (cyclesForPuzzle === undefined) {
+            cyclesForPuzzle = new Set<string>();
+            cycleCounts.set(attempt.puzzleId, cyclesForPuzzle);
           }
-          cycles.add(attempt.cycleId);
+          cyclesForPuzzle.add(attempt.cycleId);
         }
         const next = rows
           .map((row): MasteredPuzzleItem => {
@@ -96,7 +110,7 @@ export function MasteredPuzzlesPage({
     return () => {
       cancelled = true;
     };
-  }, [puzzlesRepo, attemptsRepo]);
+  }, [puzzlesRepo, attemptsRepo, cyclesRepo]);
 
   const countLabel = useMemo(() => {
     if (items.length === 0) {
