@@ -138,10 +138,6 @@ export function buildAuthorizeUrl(params: AuthorizeUrlParams): string {
   return url.toString();
 }
 
-function basicAuthHeader(appKey: string): string {
-  return `Basic ${btoa(`${appKey}:`)}`;
-}
-
 interface TokenEndpointOptions {
   readonly appKey: string;
   readonly fetchImpl: FetchLike;
@@ -192,7 +188,6 @@ async function postToken(body: URLSearchParams, options: TokenEndpointOptions): 
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: basicAuthHeader(options.appKey),
     },
     body: body.toString(),
   });
@@ -236,6 +231,9 @@ export async function exchangeCode(params: ExchangeCodeParams): Promise<DropboxT
   const body = new URLSearchParams();
   body.set('grant_type', 'authorization_code');
   body.set('code', params.code);
+  // PKCE identifies the app with `client_id` in the body (no Basic auth and no
+  // client secret), matching Dropbox's own SDK.
+  body.set('client_id', params.appKey);
   body.set('code_verifier', params.codeVerifier);
   if (params.redirectUri !== undefined) {
     body.set('redirect_uri', params.redirectUri);
@@ -247,6 +245,7 @@ export async function exchangeCode(params: ExchangeCodeParams): Promise<DropboxT
 export async function refreshToken(params: RefreshTokenParams): Promise<DropboxTokens> {
   const body = new URLSearchParams();
   body.set('grant_type', 'refresh_token');
+  body.set('client_id', params.appKey);
   body.set('refresh_token', params.refreshToken);
   return parseTokenResponse(
     await postToken(body, params),

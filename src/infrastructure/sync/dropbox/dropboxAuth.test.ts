@@ -108,16 +108,18 @@ describe('Dropbox PKCE (ADR-015)', () => {
     expect(url.search).not.toContain('client_secret');
   });
 
-  it('exchanges a code with Basic app-key auth and no client secret', async () => {
+  it('exchanges a code with client_id in the body (PKCE) and no client secret', async () => {
     server.use(
       http.post(DROPBOX_TOKEN_URL, async ({ request }) => {
         const body = await request.text();
         const params = new URLSearchParams(body);
         expect(params.get('grant_type')).toBe('authorization_code');
         expect(params.get('code')).toBe('auth-code');
+        expect(params.get('client_id')).toBe('app-key');
         expect(params.get('code_verifier')).toBe('verifier-1');
         expect(body).not.toContain('client_secret');
-        expect(request.headers.get('authorization')).toBe(`Basic ${btoa('app-key:')}`);
+        // PKCE identifies the app via `client_id`; no Basic auth is sent.
+        expect(request.headers.get('authorization')).toBeNull();
         return HttpResponse.json({
           access_token: 'access-1',
           refresh_token: 'refresh-1',
@@ -168,9 +170,10 @@ describe('Dropbox PKCE (ADR-015)', () => {
         const body = await request.text();
         const params = new URLSearchParams(body);
         expect(params.get('grant_type')).toBe('refresh_token');
+        expect(params.get('client_id')).toBe('app-key');
         expect(params.get('refresh_token')).toBe('refresh-1');
         expect(body).not.toContain('client_secret');
-        expect(request.headers.get('authorization')).toBe(`Basic ${btoa('app-key:')}`);
+        expect(request.headers.get('authorization')).toBeNull();
         return HttpResponse.json({ access_token: 'access-2', expires_in: 7200 });
       }),
     );
