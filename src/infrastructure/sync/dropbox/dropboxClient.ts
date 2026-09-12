@@ -144,36 +144,46 @@ function isNotFoundError(error: unknown): boolean {
 }
 
 /** Map any SDK/HTTP/network failure to a typed `SyncProviderError`. */
-export function mapDropboxError(error: unknown): SyncProviderError {
+export function mapDropboxError(error: unknown, context?: string): SyncProviderError {
   if (error instanceof SyncProviderError) {
     return error;
   }
+  const where = context !== undefined ? ` [${context}]` : '';
   const status = dropboxStatus(error);
   if (status !== null) {
-    const summary = dropboxErrorSummary(error);
-    const detail = summary !== null ? `: ${summary}` : '';
+    const detail = dropboxErrorDetail(error);
+    const suffix = detail !== null ? `: ${detail}` : '';
     if (status === 401) {
-      return new SyncProviderError('auth', `Dropbox rejected the access token (401)${detail}.`);
+      return new SyncProviderError(
+        'auth',
+        `Dropbox rejected the access token (401)${where}${suffix}.`,
+      );
     }
     if (status === 403) {
-      return new SyncProviderError('forbidden', `Dropbox refused the request (403)${detail}.`);
+      return new SyncProviderError(
+        'forbidden',
+        `Dropbox refused the request (403)${where}${suffix}.`,
+      );
     }
     if (status === 409) {
-      return new SyncProviderError('conflict', `Dropbox reported a conflict (409)${detail}.`);
+      return new SyncProviderError(
+        'conflict',
+        `Dropbox reported a conflict (409)${where}${suffix}.`,
+      );
     }
     if (status === 429) {
       return new SyncProviderError(
         'rate-limited',
-        `Dropbox rate-limited the request (429)${detail}.`,
+        `Dropbox rate-limited the request (429)${where}${suffix}.`,
       );
     }
     if (status === 404) {
       return new SyncProviderError(
         'http',
-        `Dropbox could not find the requested path (404)${detail}.`,
+        `Dropbox could not find the requested path (404)${where}${suffix}.`,
       );
     }
-    return new SyncProviderError('http', `Dropbox returned HTTP ${status}${detail}.`);
+    return new SyncProviderError('http', `Dropbox returned HTTP ${status}${where}${suffix}.`);
   }
   if (error instanceof Error && error.name === 'AbortError') {
     return new SyncProviderError('aborted', 'The Dropbox request was aborted.');
@@ -184,17 +194,31 @@ export function mapDropboxError(error: unknown): SyncProviderError {
   );
 }
 
-/** Extract Dropbox's human-readable `error_summary` from an SDK error body. */
-function dropboxErrorSummary(error: unknown): string | null {
+/**
+ * Best-effort detail from a Dropbox/SDK error body. File-API errors carry
+ * `{ error_summary, error: {...} }`; OAuth-style errors carry `{ error: "code" }`.
+ */
+function dropboxErrorDetail(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) {
     return null;
   }
   const record = error as { error?: unknown; error_summary?: unknown };
   const body = record.error;
+  if (typeof body === 'string' && body.length > 0) {
+    return body;
+  }
   if (typeof body === 'object' && body !== null) {
     const summary = (body as { error_summary?: unknown }).error_summary;
     if (typeof summary === 'string' && summary.length > 0) {
       return summary;
+    }
+    try {
+      const json = JSON.stringify(body);
+      if (json.length > 0 && json !== '{}') {
+        return json.length > 300 ? `${json.slice(0, 300)}…` : json;
+      }
+    } catch {
+      // Fall through to the top-level summary.
     }
   }
   if (typeof record.error_summary === 'string' && record.error_summary.length > 0) {
@@ -287,7 +311,7 @@ export class DropboxClient {
       if (isNotFoundError(error)) {
         return null;
       }
-      throw mapDropboxError(error);
+      throw mapDropboxError(error, `files/get_metadata ${this.path}`);
     }
   }
 
@@ -297,7 +321,7 @@ export class DropboxClient {
       const response = await this.sdk.filesDownload({ path: this.path });
       return await extractDownloadBytes(response.result);
     } catch (error) {
-      throw mapDropboxError(error);
+      throw mapDropboxError(error, `files/download ${this.path}`);
     }
   }
 
@@ -315,7 +339,7 @@ export class DropboxClient {
       });
       return toRemoteMetadata(response.result);
     } catch (error) {
-      throw mapDropboxError(error);
+      throw mapDropboxError(error, `files/upload ${this.path}`);
     }
   }
 
@@ -337,7 +361,7 @@ export class DropboxClient {
       }
       return backups.sort((a, b) => a.serverModified.localeCompare(b.serverModified));
     } catch (error) {
-      throw mapDropboxError(error);
+      throw mapDropboxError(error, `files/list_folder ${DROPBOX_BACKUP_DIR}`);
     }
   }
 
@@ -350,7 +374,7 @@ export class DropboxClient {
       const response = await this.sdk.filesDownload({ path: dropboxBackupPath(name) });
       return await extractDownloadBytes(response.result);
     } catch (error) {
-      throw mapDropboxError(error);
+      throw mapDropboxError(error, `files/download ${dropboxBackupPath(name)}`);
     }
   }
 }
