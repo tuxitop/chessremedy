@@ -21,6 +21,14 @@ import type { SyncDownloadFile } from '@/hooks/useSync';
 import { SyncSettingsPanel } from './SyncSettingsPanel';
 import { FakeSyncService } from './test-support';
 
+// The default (no `service` prop) path: `useSync` resolves the browser service
+// through a dynamic import. A hoisted holder lets a test provide the resolved
+// service after the first render, exercising the lazy-load ordering.
+const lazySync = vi.hoisted(() => ({ service: undefined as unknown }));
+vi.mock('@/infrastructure/sync', () => ({
+  getBrowserSyncService: () => lazySync.service,
+}));
+
 const FIXED_NOW = 1_700_000_000_000;
 
 /** A provider that is always configured + connected (for the real engine). */
@@ -214,6 +222,16 @@ describe('SyncSettingsPanel — OAuth return', () => {
     renderWithProviders(<SyncSettingsPanel service={service} />);
 
     expect(await screen.findByTestId('sync-oauth-error')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toBe(''));
+  });
+
+  it('completes the callback when the sync service resolves lazily (regression)', async () => {
+    // No `service` prop: the panel must wait for the dynamic import to resolve
+    // before consuming `?code=`, otherwise the one-shot ref drops the callback.
+    lazySync.service = new FakeSyncService({ configured: true, connected: false });
+    renderWithProviders(<SyncSettingsPanel />);
+
+    expect(await screen.findByTestId('sync-oauth-success')).toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toBe(''));
   });
 });

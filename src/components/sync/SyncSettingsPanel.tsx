@@ -54,6 +54,7 @@ export function SyncSettingsPanel({
   const {
     configured,
     connected,
+    isLoading,
     status,
     lastSyncedAt,
     error,
@@ -83,6 +84,12 @@ export function SyncSettingsPanel({
 
   // OAuth return: `?code=`/`?state=` is handled once, then removed from the URL.
   useEffect(() => {
+    // Wait for the lazily-imported sync service to resolve: the callback must
+    // not be consumed while `service` is still null, or the exchange would be
+    // skipped and the one-shot ref would prevent a retry.
+    if (isLoading) {
+      return;
+    }
     if (handledOAuthRef.current) {
       return;
     }
@@ -102,7 +109,7 @@ export function SyncSettingsPanel({
       }
       cleanOAuthUrl();
     })();
-  }, [completeConnect]);
+  }, [completeConnect, isLoading]);
 
   const onImportFile = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0];
@@ -143,6 +150,7 @@ export function SyncSettingsPanel({
       {oauthResult === 'failed' ? (
         <p role="alert" className={styles.error} data-testid="sync-oauth-error">
           Could not complete the Dropbox connection. Please try again.
+          {error !== null ? ` (${error})` : ''}
         </p>
       ) : null}
 
