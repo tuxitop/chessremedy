@@ -15,6 +15,7 @@ Synchronize local ChessRemedy data across devices.
 - offline queue
 - sync status
 - recovery
+- local export/import (provider-free backup)
 
 ## Constraint
 
@@ -35,10 +36,22 @@ import and on sync merge; they are never trusted from a remote payload, so
 a device on an older time-control category mapping cannot reintroduce a
 stale category (ADR-013, `domain/time-control.md`).
 
+## Local export/import
+
+The ADR-016 envelope is also a provider-free backup format. **Export backup**
+serializes and gzips the local collections to a downloadable file; **Import
+backup** parses and validates a previously exported file, merges it through the
+same ADR-017 path (tombstones respected, derived time-control fields recomputed),
+and reloads the app. Both work with no provider configured and never touch the
+engine cache or OAuth tokens.
+
 ## Acceptance Criteria
 
 Two devices can synchronize the same user's data without requiring a
 central ChessRemedy backend.
+
+A local export produces the gzip envelope and a local import merges it back
+(tombstones respected) with no provider configured.
 
 ---
 

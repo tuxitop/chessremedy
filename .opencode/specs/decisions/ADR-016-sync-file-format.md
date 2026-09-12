@@ -21,10 +21,16 @@ metadata envelope. The conceptual shape is:
     "trainingSets":   { ... },
     "trainingCycles": { ... },
     "puzzleAttempts": { ... },
-    "settings":       { ... }
+    "settings":       { ... },
+    "tombstones":     { ... }
   }
 }
 ```
+
+`tombstones` is an additive top-level collection carrying deletion records
+(`{ id, kind: 'game' | 'trainingSet', recordId, deletedAt, deviceId }`) so
+deletions propagate between devices. It extends, and does not break, the
+version-1 envelope.
 
 ## Reasons
 
@@ -53,6 +59,9 @@ Full evaluation: `specs/research/synchronization.md`.
 - The file is uploaded with `Content-Type: application/gzip`.
 - Domain records inside `collections` keep their existing Dexie shape;
   the envelope adds metadata only.
+- The same envelope is the local **export/import** format: exporting writes
+  the gzipped envelope to a file, and importing merges a parsed envelope
+  through the ADR-017 path; no provider is required.
 
 ## Migration
 

@@ -34,6 +34,13 @@ For each collection:
   with the newer `updatedAt` wins.
 - Ties on `updatedAt` are broken by `deviceId` (lexicographic order) so
   that the outcome is deterministic.
+- Immutable add-only rows that carry no `updatedAt` field (`analyses`,
+  `puzzles`, `puzzleAttempts`) use their canonical creation timestamp
+  (`analyzedAt` / `createdAt` / `endedAt`) as their effective `updatedAt`.
+  Mutable synced rows carry a real `updatedAt`.
+- A deletion tombstone wins over a record when
+  `tombstone.deletedAt >= record.updatedAt`; a record with a strictly newer
+  `updatedAt` is a recreation and discards the tombstone.
 
 ## Reasons
 
