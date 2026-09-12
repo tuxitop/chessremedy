@@ -27,7 +27,9 @@ export const fixtureScenarios = {
     'cc-bullet-blunder',
     'cc-blitz-clean',
     'cc-rapid-missed-tactic',
-    'cc-classical-endgame',
+    // `cc-classical-endgame` is Chess.com 30|0, which is rapid (Chess.com has
+    // no classical group); keep a real classical entry in the scenario.
+    'li-classical-clean-win',
     'li-correspondence',
   ),
   multipleWeeks: pick(

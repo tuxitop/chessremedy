@@ -66,7 +66,7 @@ describe('v6 → v7 schema migration', () => {
       // The real schema now lands on v9 (Feature-011 puzzles + Feature-012
       // puzzleAttempts); this test proves the v6→v7 additive tables survive
       // the later v8/v9 milestones untouched.
-      expect(migrated.verno).toBe(10);
+      expect(migrated.verno).toBe(11);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',

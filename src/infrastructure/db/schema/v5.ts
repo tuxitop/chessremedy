@@ -1,5 +1,6 @@
 import type Dexie from 'dexie';
-import { parseTimeControl } from '@/domain/chess/timeControl';
+import { parseTimeControl, timeControlProfileForSource } from '@/domain/chess/timeControl';
+import type { GameSource } from '@/domain/chess/gameSource';
 
 /**
  * Schema v5 — stores the structured time control on each game (Feature 008
@@ -20,11 +21,12 @@ export function applyV5Schema(db: Dexie): void {
     .upgrade(async (tx) => {
       const rows = await tx.table('games').toArray();
       for (const row of rows as Array<{
+        source: GameSource;
         timeControl: string;
         timeControlModel?: unknown;
         normalizedTimeControl: string;
       }>) {
-        const model = parseTimeControl(row.timeControl);
+        const model = parseTimeControl(row.timeControl, timeControlProfileForSource(row.source));
         row.timeControlModel = model;
         if (row.normalizedTimeControl === 'unknown' && model.category !== 'unknown') {
           row.normalizedTimeControl = model.category;

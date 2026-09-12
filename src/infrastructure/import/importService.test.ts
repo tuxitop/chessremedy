@@ -26,7 +26,7 @@ const chessGames: readonly Game[] = [
   fixtureGame('cc-bullet-blunder'), // 2026-05 bullet
   fixtureGame('cc-blitz-clean'), // 2026-05 blitz
   fixtureGame('cc-rapid-missed-tactic'), // 2026-06 rapid
-  fixtureGame('cc-classical-endgame'), // 2026-06 classical
+  fixtureGame('cc-classical-endgame'), // 2026-06 rapid (30|0; Chess.com has no classical)
 ];
 
 const lichessGames: readonly Game[] = [
@@ -166,8 +166,9 @@ describe('ImportService (chess.com)', () => {
     );
     expect(reswept.status).toBe('completed');
     expect(reswept.counters.inserted).toBe(0);
-    expect(reswept.counters.duplicates).toBe(1);
-    expect(reswept.counters.filtered).toBe(3);
+    // cc-rapid-missed-tactic and cc-classical-endgame (30|0) are both rapid.
+    expect(reswept.counters.duplicates).toBe(2);
+    expect(reswept.counters.filtered).toBe(2);
     expect(await db.games.count()).toBe(4);
   });
 

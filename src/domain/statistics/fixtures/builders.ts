@@ -10,6 +10,8 @@ import type { AnalysisJob } from '@/domain/analysis/job';
 import { ANALYSIS_VERSION, type EngineMetadata, type MoveAnalysis } from '@/domain/chess/analysis';
 import { CLASSIFICATION_VERSION } from '@/domain/chess/classification';
 import { GAME_PHASE_VERSION } from '@/domain/chess/gamePhase';
+import type { GameSource } from '@/domain/chess/gameSource';
+import { parseTimeControl, timeControlProfileForSource } from '@/domain/chess/timeControl';
 import { DETECTION_VERSION } from '@/domain/tactics/types';
 import type { PuzzleAttemptRow } from '@/domain/training/types';
 import type { StatisticsAnalysisSummary, StatisticsGameRow } from '../types';
@@ -34,6 +36,21 @@ export function game(overrides: Partial<StatisticsGameRow> = {}): StatisticsGame
     userRating: 1500,
     ...overrides,
   };
+}
+
+/**
+ * Build a deterministic game row whose category is derived from a raw clock
+ * and its source profile, so per-platform fixtures cannot drift from the
+ * canonical domain rule. `source` and `normalizedTimeControl` always win over
+ * `overrides`.
+ */
+export function gameFromClock(
+  source: GameSource,
+  raw: string,
+  overrides: Partial<StatisticsGameRow> = {},
+): StatisticsGameRow {
+  const normalizedTimeControl = parseTimeControl(raw, timeControlProfileForSource(source)).category;
+  return game({ ...overrides, source, normalizedTimeControl });
 }
 
 /** Build a deterministic analysis job. */

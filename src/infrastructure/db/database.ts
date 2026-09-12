@@ -10,6 +10,7 @@ import {
   applyV8Schema,
   applyV9Schema,
   applyV10Schema,
+  applyV11Schema,
 } from './schema';
 import type { GameRow } from './games-repository';
 import type { AnalysisJob } from '@/domain/analysis';
@@ -66,14 +67,15 @@ export class ChessRemedyDatabase extends Dexie {
     applyV8Schema(this);
     applyV9Schema(this);
     applyV10Schema(this);
+    applyV11Schema(this);
   }
 }
 
 export const db = new ChessRemedyDatabase();
 
-if (PERSISTENCE_SCHEMA_VERSION !== 10) {
+if (PERSISTENCE_SCHEMA_VERSION !== 11) {
   throw new Error(
-    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v10. ` +
+    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v11. ` +
       `Bump PERSISTENCE_SCHEMA_VERSION in app-config.ts and add a new schema module ` +
       `when extending the database.`,
   );

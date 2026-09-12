@@ -69,11 +69,15 @@ export const MIN_SAMPLE_SIZE = 5;
  * exclusivity**: a current-version verified missed-tactic ply is excluded from
  * the classification/error counts, per-game rates/shares and phase error
  * numerators (it is counted only in the missed-tactic metrics), while the
- * move-exposure denominators and the ADR-024 accuracy weight keep it. W5's
- * ADR-013 time-control re-normalization takes this to 3; both changes are
- * recorded in the version provenance.
+ * move-exposure denominators and the ADR-024 accuracy weight keep it.
+ *
+ * Version 3 (plan 013 W5, ADR-013 revision) makes the canonical time-control
+ * category **platform-specific**: a partition is `(platform, category)` and the
+ * same raw clock may fall into different categories per platform (`5|5` is
+ * Lichess `rapid`, Chess.com `blitz`; Chess.com has no `classical`). Both
+ * changes are recorded here as the version provenance.
  */
-export const STATISTICS_VERSION = 2;
+export const STATISTICS_VERSION = 3;
 
 /** Platform dimension; `fixture` is test-only and never a production result. */
 export type PlatformDimension = 'all' | GameSource;

@@ -7,12 +7,14 @@ export {
   TIME_CONTROL_PARSE_VERSION,
   normalizeTimeControl,
   parseTimeControl,
+  timeControlProfileForSource,
 } from './timeControl';
 export type {
   NormalizedTimeControl,
   TimeControl,
   TimeControlCategory,
   TimeControlKind,
+  TimeControlProfile,
 } from './timeControl';
 export { outcomeOf, makeGameId } from './game';
 export type { Game, GameId, GameOutcome, GameResult, Player } from './game';

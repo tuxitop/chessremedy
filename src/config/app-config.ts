@@ -6,8 +6,9 @@ export const APP_VERSION = '0.1.0';
 // v5 stores the structured time control on each game (Feature 008 revision);
 // v6 moveCount/termination backfill; v7 analysisSummaries/puzzleCandidates
 // (Feature 010); v8 puzzles (Feature 011); v9 puzzleAttempts (Feature 012);
-// v10 trainingSets/trainingCycles (Feature 013).
-export const PERSISTENCE_SCHEMA_VERSION = 10;
+// v10 trainingSets/trainingCycles (Feature 013); v11 re-normalizes the
+// platform-specific time control (ADR-013 revision).
+export const PERSISTENCE_SCHEMA_VERSION = 11;
 export const DEFAULT_THEME: 'light' | 'dark' = 'light';
 
 export const SETTINGS_KEYS = {

@@ -15,7 +15,7 @@ import type { AnalysisJob } from '@/domain/analysis/job';
 import type { StatisticsAnalysisSummary } from '../types';
 import { groupJobsByGame, groupSummariesByAnalysisId } from '../eligibility';
 import type { StatisticsScenario } from './builders';
-import { FIXTURE_ENGINE, analyzedGame, game, scenarioOf } from './builders';
+import { FIXTURE_ENGINE, analyzedGame, game, gameFromClock, scenarioOf } from './builders';
 
 /** Zero games. */
 export function emptyScenario(): StatisticsScenario {
@@ -94,6 +94,27 @@ export function platformsScenario(): StatisticsScenario {
       game: { source: 'chesscom', userRating: 1500, normalizedTimeControl: 'rapid' },
     }),
   ]);
+}
+
+/**
+ * Platform-correct `(platform, category)` partitions derived from raw clocks
+ * through the canonical profile rule. `5|5` is Chess.com `blitz` but Lichess
+ * `rapid`; Chess.com `30|0` is `rapid` (never `classical`); `local`/`fixture`
+ * use the generic (= lichess) profile.
+ */
+export function platformTimeControlsScenario(): StatisticsScenario {
+  return {
+    games: [
+      gameFromClock('chesscom', '300+5', { id: 'g-cc-five-five' }), // blitz
+      gameFromClock('lichess', '300+5', { id: 'g-li-five-five' }), // rapid
+      gameFromClock('chesscom', '1800', { id: 'g-cc-long' }), // rapid
+      gameFromClock('chesscom', '1/259200', { id: 'g-cc-daily' }), // correspondence
+      gameFromClock('local', '300+5', { id: 'g-local-five-five' }), // generic rapid
+      gameFromClock('fixture', '300+5', { id: 'g-fx-five-five' }), // generic rapid
+    ],
+    jobs: [],
+    summaries: [],
+  };
 }
 
 interface DetectionSpec {

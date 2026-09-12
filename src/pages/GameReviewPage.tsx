@@ -621,7 +621,7 @@ function GameReview({
     if (!gameMeta) {
       return null;
     }
-    const control = parseTimeControl(gameMeta.timeControl);
+    const control = parseTimeControl(gameMeta.timeControl, 'generic');
     return control.baseSeconds !== null ? control.baseSeconds * 1000 : null;
   }, [gameMeta]);
   const topSide = oppositeOf(orientation);

@@ -68,6 +68,31 @@ describe('gameFromPgn', () => {
     expect(game.normalizedTimeControl).toBe('bullet');
   });
 
+  it('classifies with the source profile (Chess.com 5|5 vs Lichess 5|5)', () => {
+    const chesscom = parseOk(CHESSCOM_PGN.replace('[TimeControl "60"]', '[TimeControl "300+5"]'), {
+      source: 'chesscom',
+      externalId: '1',
+      userColor: 'white',
+    });
+    expect(chesscom.normalizedTimeControl).toBe('blitz');
+
+    const lichess = parseOk(LICHESS_PGN.replace('[TimeControl "60"]', '[TimeControl "300+5"]'), {
+      source: 'lichess',
+      externalId: 'bX7kQ2mZ',
+      userColor: 'white',
+    });
+    expect(lichess.normalizedTimeControl).toBe('rapid');
+  });
+
+  it('maps a long Chess.com game to rapid (no classical group)', () => {
+    const game = parseOk(CHESSCOM_PGN.replace('[TimeControl "60"]', '[TimeControl "1800"]'), {
+      source: 'chesscom',
+      externalId: '1',
+      userColor: 'white',
+    });
+    expect(game.normalizedTimeControl).toBe('rapid');
+  });
+
   it('derives userColor from a matching username', () => {
     const game = parseOk(CHESSCOM_PGN, {
       source: 'chesscom',

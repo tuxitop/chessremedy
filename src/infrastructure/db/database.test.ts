@@ -11,7 +11,7 @@ describe('ChessRemedyDatabase', () => {
     expect(db.isOpen()).toBe(true);
   });
 
-  it('exposes the game-analysis tables at schema version 10', () => {
+  it('exposes the game-analysis tables at schema version 11', () => {
     expect(db.tables.map((t) => t.name)).toEqual([
       'settings',
       'games',
@@ -26,7 +26,7 @@ describe('ChessRemedyDatabase', () => {
       'trainingSets',
       'trainingCycles',
     ]);
-    expect(db.verno).toBe(10);
+    expect(db.verno).toBe(11);
   });
 
   it('round-trips a primitive setting', async () => {

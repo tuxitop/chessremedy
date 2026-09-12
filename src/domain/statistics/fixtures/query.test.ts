@@ -8,7 +8,11 @@ import {
   validateStatisticsQuery,
 } from '../query';
 import type { StatisticsQuery } from '../types';
-import { sixTimeControlsScenario, platformsScenario } from './scenarios';
+import {
+  platformTimeControlsScenario,
+  sixTimeControlsScenario,
+  platformsScenario,
+} from './scenarios';
 
 const DEFAULT_TZ = process.env.TZ;
 process.env.TZ = 'UTC';
@@ -135,6 +139,22 @@ describe('partitionGames — anti-combination', () => {
     const partitions = partitionGames(games, ALL_QUERY);
     expect(partitions).toHaveLength(2);
     expect(partitions.map((partition) => partition.platform)).toEqual(['lichess', 'chesscom']);
+  });
+
+  it('partitions each raw clock by its platform profile (no Chess.com classical)', () => {
+    const { games } = platformTimeControlsScenario();
+    const partitions = partitionGames(games, ALL_QUERY);
+    const pairs = partitions.map((partition) => `${partition.platform}:${partition.timeControl}`);
+    expect(pairs).toEqual([
+      'lichess:rapid', // Lichess 5|5 = rapid
+      'chesscom:blitz', // Chess.com 5|5 = blitz
+      'chesscom:rapid', // Chess.com 30|0 = rapid
+      'chesscom:correspondence',
+      'local:rapid', // generic profile
+      'fixture:rapid', // generic profile
+    ]);
+    expect(pairs).not.toContain('chesscom:classical');
+    expect(partitions.every((partition) => !partition.combined)).toBe(true);
   });
 
   it('returns a single concrete partition for a fully specified query', () => {

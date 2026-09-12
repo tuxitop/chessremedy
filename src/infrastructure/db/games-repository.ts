@@ -16,7 +16,11 @@ import {
   type GameResult,
   type Player,
 } from '@/domain/chess/game';
-import { parseTimeControl, type TimeControl } from '@/domain/chess/timeControl';
+import {
+  parseTimeControl,
+  timeControlProfileForSource,
+  type TimeControl,
+} from '@/domain/chess/timeControl';
 import { gameEndOf, type GameTermination } from '@/domain/chess/gameEnd';
 import type { GameSource } from '@/domain/chess/gameSource';
 import { puzzleIdOf } from '@/domain/puzzle/id';
@@ -334,7 +338,7 @@ function contentFieldsOf(game: Game): ContentFields {
     result: game.result,
     timeControl: game.timeControl,
     normalizedTimeControl: game.normalizedTimeControl,
-    timeControlModel: parseTimeControl(game.timeControl),
+    timeControlModel: parseTimeControl(game.timeControl, timeControlProfileForSource(game.source)),
     userColor: game.userColor,
     pgn: game.pgn,
     moveCount: end.moveCount,

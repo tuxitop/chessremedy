@@ -95,6 +95,32 @@ describe('providerGameToGame', () => {
     expect(outcome.game.normalizedTimeControl).toBe('correspondence');
   });
 
+  it('classifies record-only controls with the record provider profile', () => {
+    const sparsePgn = `[Event "x"]
+[White "chessremedy"]
+[Black "bob"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. O-O 1-0`;
+
+    const chesscom = providerGameToGame(record({ pgn: sparsePgn, timeControlRaw: '300+5' }));
+    expect(chesscom.kind).toBe('game');
+    if (chesscom.kind !== 'game') return;
+    expect(chesscom.game.normalizedTimeControl).toBe('blitz');
+
+    const chesscomLong = providerGameToGame(record({ pgn: sparsePgn, timeControlRaw: '1800' }));
+    expect(chesscomLong.kind).toBe('game');
+    if (chesscomLong.kind !== 'game') return;
+    expect(chesscomLong.game.normalizedTimeControl).toBe('rapid');
+
+    const lichess = providerGameToGame(
+      record({ source: 'lichess', pgn: sparsePgn, timeControlRaw: '300+5' }),
+    );
+    expect(lichess.kind).toBe('game');
+    if (lichess.kind !== 'game') return;
+    expect(lichess.game.normalizedTimeControl).toBe('rapid');
+  });
+
   it('skips a game when the importing user is not a player', () => {
     const outcome = providerGameToGame(record({ whiteName: 'somebody', blackName: 'else' }));
     expect(outcome.kind).toBe('skip');

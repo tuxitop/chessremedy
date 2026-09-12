@@ -8,6 +8,7 @@
  */
 
 import type { Game } from '@/domain/chess/game';
+import { parseTimeControl } from '@/domain/chess/timeControl';
 
 export interface LichessGameOverrides {
   readonly variant?: string;
@@ -19,15 +20,15 @@ export function lichessGameJson(
   overrides: LichessGameOverrides = {},
 ): Record<string, unknown> {
   const externalId = game.externalId ?? game.id;
+  // The provider label is derived with the Lichess profile (payload fidelity
+  // only; adapters read `clock`, never `speed`/`perf`).
+  const lichessCategory = parseTimeControl(game.timeControl, 'lichess').category;
   const line: Record<string, unknown> = {
     id: externalId,
     rated: true,
     variant: overrides.variant ?? 'standard',
-    speed:
-      game.normalizedTimeControl === 'correspondence'
-        ? 'correspondence'
-        : game.normalizedTimeControl,
-    perf: game.normalizedTimeControl,
+    speed: lichessCategory === 'correspondence' ? 'correspondence' : lichessCategory,
+    perf: lichessCategory,
     createdAt:
       overrides.createdAtMs ??
       (game.playedAt !== null ? Date.parse(game.playedAt) : 1_700_000_000_000),

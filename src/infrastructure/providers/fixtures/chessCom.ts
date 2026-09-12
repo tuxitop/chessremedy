@@ -7,6 +7,7 @@
  */
 
 import type { Game } from '@/domain/chess/game';
+import { parseTimeControl } from '@/domain/chess/timeControl';
 
 export function chessComProfileJson(username: string): string {
   return JSON.stringify({ username, player_id: 1, title: '', status: 'basic' });
@@ -42,7 +43,9 @@ export function chessComGameJson(
     url: overrides.url ?? `https://www.chess.com/game/live/${externalId}`,
     pgn: game.pgn,
     time_control: game.timeControl,
-    time_class: game.normalizedTimeControl,
+    // The provider label is derived with the Chess.com profile (payload
+    // fidelity only; adapters read `time_control`, never `time_class`).
+    time_class: parseTimeControl(game.timeControl, 'chesscom').category,
     end_time:
       overrides.endTimeSec ??
       Math.floor(Date.parse(`${game.playedAt?.slice(0, 10)}T00:00:00Z`) / 1000),

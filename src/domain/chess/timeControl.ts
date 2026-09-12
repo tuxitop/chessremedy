@@ -15,13 +15,20 @@
  *    (Lichess)
  *  - unknown / no clock: `-`, `?`, empty, unparseable
  *
- * Classification is platform-agnostic (estimated length `base + 40 ×
- * increment`): bullet ≤ 179 s, blitz 180–479 s, rapid 480–1499 s,
- * classical ≥ 1500 s; no clock ⇒ correspondence; unparseable ⇒ unknown.
+ * Classification is platform-specific (estimated length `base + 40 ×
+ * increment`), selected from the game's `source` via
+ * `timeControlProfileForSource`:
+ *  - `lichess`/`generic`: bullet ≤ 179 s, blitz 180–479 s, rapid 480–1499 s,
+ *    classical ≥ 1500 s;
+ *  - `chesscom`: bullet ≤ 179 s, blitz 180–599 s, rapid ≥ 600 s (Chess.com
+ *    has no classical group);
+ * no clock ⇒ correspondence; unparseable ⇒ unknown.
  *
- * Display is `M|I` house style (`5|5`, `10|0`, `3|2`); raw seconds are
- * never shown as if they were minutes.
+ * Display is `M|I` house style (`5|5`, `10|0`, `3|2`) and is
+ * profile-independent; raw seconds are never shown as if they were minutes.
  */
+
+import type { GameSource } from './gameSource';
 
 export const TIME_CONTROL_CATEGORIES = [
   'bullet',
@@ -36,13 +43,31 @@ export type TimeControlCategory = (typeof TIME_CONTROL_CATEGORIES)[number];
 
 export type TimeControlKind = 'clock' | 'correspondence' | 'unknown';
 
+/**
+ * Platform classification profile. The category boundaries differ per
+ * provider; `generic` is the neutral default (= Lichess) for `local`,
+ * `fixture` and any future/unknown source.
+ */
+export type TimeControlProfile = 'lichess' | 'chesscom' | 'generic';
+
 export const TIME_CONTROL_PARSE_VERSION = 1;
-export const TIME_CONTROL_CATEGORY_VERSION = 1;
+export const TIME_CONTROL_CATEGORY_VERSION = 2;
 /** Back-compat alias for the category mapping version. */
 export const TIME_CONTROL_NORMALIZATION_VERSION = TIME_CONTROL_CATEGORY_VERSION;
 
+/**
+ * Map a game origin to its classification profile. `GameSource` is closed
+ * today; the fallback is the documented neutral default for `local`,
+ * `fixture` and any future source.
+ */
+export function timeControlProfileForSource(source: GameSource): TimeControlProfile {
+  return source === 'chesscom' ? 'chesscom' : source === 'lichess' ? 'lichess' : 'generic';
+}
+
 export interface NormalizedTimeControl {
   readonly category: TimeControlCategory;
+  /** Profile whose boundaries produced `category`. */
+  readonly profile: TimeControlProfile;
   /** Version of the mapping table that produced `category`. */
   readonly version: number;
 }
@@ -60,7 +85,9 @@ export interface TimeControl {
   readonly daysPerTurn: number | null;
   /** Estimated length `base + 40 × increment` (seconds); `null` otherwise. */
   readonly estimatedSeconds: number | null;
-  /** Canonical platform-agnostic category. */
+  /** Profile whose boundaries produced `category`. */
+  readonly profile: TimeControlProfile;
+  /** Canonical platform-specific category. */
   readonly category: TimeControlCategory;
   readonly categoryVersion: number;
   readonly parseVersion: number;
@@ -106,10 +133,17 @@ function displayClock(baseSeconds: number, incrementSeconds: number): string {
 }
 
 /** Deterministic canonical category from a parsed clock (ADR-013). */
-function classifyClock(baseSeconds: number, incrementSeconds: number): TimeControlCategory {
+function classifyClock(
+  baseSeconds: number,
+  incrementSeconds: number,
+  profile: TimeControlProfile,
+): TimeControlCategory {
   const estimate = baseSeconds + 40 * incrementSeconds;
   if (estimate <= 179) {
     return 'bullet';
+  }
+  if (profile === 'chesscom') {
+    return estimate <= 599 ? 'blitz' : 'rapid';
   }
   if (estimate <= 479) {
     return 'blitz';
@@ -125,7 +159,7 @@ function classifyClock(baseSeconds: number, incrementSeconds: number): TimeContr
  * The original string is preserved verbatim and never interpreted as if its
  * units were minutes.
  */
-export function parseTimeControl(raw: string): TimeControl {
+export function parseTimeControl(raw: string, profile: TimeControlProfile): TimeControl {
   const input = raw.trim();
 
   if (isNoClock(input)) {
@@ -136,6 +170,7 @@ export function parseTimeControl(raw: string): TimeControl {
       incrementSeconds: null,
       daysPerTurn: null,
       estimatedSeconds: null,
+      profile,
       category: 'unknown',
       categoryVersion: TIME_CONTROL_CATEGORY_VERSION,
       parseVersion: TIME_CONTROL_PARSE_VERSION,
@@ -153,6 +188,7 @@ export function parseTimeControl(raw: string): TimeControl {
       incrementSeconds: null,
       daysPerTurn: days,
       estimatedSeconds: null,
+      profile,
       category: 'correspondence',
       categoryVersion: TIME_CONTROL_CATEGORY_VERSION,
       parseVersion: TIME_CONTROL_PARSE_VERSION,
@@ -175,6 +211,7 @@ export function parseTimeControl(raw: string): TimeControl {
         incrementSeconds: null,
         daysPerTurn: days,
         estimatedSeconds: null,
+        profile,
         category: 'correspondence',
         categoryVersion: TIME_CONTROL_CATEGORY_VERSION,
         parseVersion: TIME_CONTROL_PARSE_VERSION,
@@ -188,6 +225,7 @@ export function parseTimeControl(raw: string): TimeControl {
       incrementSeconds: null,
       daysPerTurn: null,
       estimatedSeconds: null,
+      profile,
       category: 'unknown',
       categoryVersion: TIME_CONTROL_CATEGORY_VERSION,
       parseVersion: TIME_CONTROL_PARSE_VERSION,
@@ -207,7 +245,8 @@ export function parseTimeControl(raw: string): TimeControl {
         incrementSeconds,
         daysPerTurn: null,
         estimatedSeconds: baseSeconds + 40 * incrementSeconds,
-        category: classifyClock(baseSeconds, incrementSeconds),
+        profile,
+        category: classifyClock(baseSeconds, incrementSeconds, profile),
         categoryVersion: TIME_CONTROL_CATEGORY_VERSION,
         parseVersion: TIME_CONTROL_PARSE_VERSION,
         display: displayClock(baseSeconds, incrementSeconds),
@@ -222,6 +261,7 @@ export function parseTimeControl(raw: string): TimeControl {
     incrementSeconds: null,
     daysPerTurn: null,
     estimatedSeconds: null,
+    profile,
     category: 'unknown',
     categoryVersion: TIME_CONTROL_CATEGORY_VERSION,
     parseVersion: TIME_CONTROL_PARSE_VERSION,
@@ -233,9 +273,13 @@ export function parseTimeControl(raw: string): TimeControl {
  * Compute the normalized category for a raw provider time-control string
  * (legacy API kept for back-compat; new code prefers `parseTimeControl`).
  */
-export function normalizeTimeControl(raw: string): NormalizedTimeControl {
+export function normalizeTimeControl(
+  raw: string,
+  profile: TimeControlProfile,
+): NormalizedTimeControl {
   return {
-    category: parseTimeControl(raw).category,
+    category: parseTimeControl(raw, profile).category,
+    profile,
     version: TIME_CONTROL_CATEGORY_VERSION,
   };
 }

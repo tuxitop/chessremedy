@@ -13,7 +13,7 @@ import { fenOf, resolveStartPosition } from './position';
 import { createMoveList, validateReplay } from './moveList';
 import { makeGameId, type Game, type GameResult, type Player } from './game';
 import { GAME_SOURCES, type GameSource } from './gameSource';
-import { normalizeTimeControl } from './timeControl';
+import { normalizeTimeControl, timeControlProfileForSource } from './timeControl';
 
 export interface ImportContext {
   readonly source: GameSource;
@@ -115,7 +115,10 @@ export function gameFromPgn(rawPgn: string, ctx: ImportContext): GameParseResult
     blackPlayer: playerOf(parsed.headers, 'Black', 'BlackElo'),
     result,
     timeControl: parsed.headers.get('TimeControl') ?? '',
-    normalizedTimeControl: normalizeTimeControl(parsed.headers.get('TimeControl') ?? '').category,
+    normalizedTimeControl: normalizeTimeControl(
+      parsed.headers.get('TimeControl') ?? '',
+      timeControlProfileForSource(ctx.source),
+    ).category,
     userColor: colorResult.color,
     pgn: rawPgn,
     moves,

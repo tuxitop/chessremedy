@@ -2,7 +2,7 @@ import type * as React from 'react';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
-import { parseTimeControl } from '@/domain/chess/timeControl';
+import { parseTimeControl, timeControlProfileForSource } from '@/domain/chess/timeControl';
 import {
   isCustomTimeFrame,
   validateTimeFrame,
@@ -992,7 +992,10 @@ function GameRowMeta({ row }: { row: LibraryGameRow }): React.JSX.Element | null
     parts.push({ key: 'date', testId: 'game-date', text: date });
   }
   parts.push({ key: 'source', testId: 'game-source', text: GAME_SOURCE_LABELS[row.source] });
-  const control = parseTimeControl(row.timeControl).display;
+  const control = parseTimeControl(
+    row.timeControl,
+    timeControlProfileForSource(row.source),
+  ).display;
   parts.push({
     key: 'time',
     testId: 'game-timecontrol',

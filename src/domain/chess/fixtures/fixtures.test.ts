@@ -103,6 +103,13 @@ describe('fixture integrity', () => {
     }
   });
 
+  it('classifies the 5|5 boundary fixtures with the platform profile', () => {
+    expect(fixtureGame('cc-blitz-five-five').normalizedTimeControl).toBe('blitz');
+    expect(fixtureGame('li-rapid-five-five').normalizedTimeControl).toBe('rapid');
+    // Chess.com 30|0 has no classical group: it is rapid.
+    expect(fixtureGame('cc-classical-endgame').normalizedTimeControl).toBe('rapid');
+  });
+
   it('covers user wins, losses and draws', () => {
     const outcomes = new Set(FIXTURE_GAMES.map(userOutcome));
     for (const outcome of ['win', 'loss', 'draw'] as const) {

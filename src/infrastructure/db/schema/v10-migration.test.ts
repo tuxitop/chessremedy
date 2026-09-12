@@ -25,12 +25,12 @@ function uniqueName(): string {
 }
 
 describe('v9 → v10 schema migration', () => {
-  it('creates the Feature-013 tables on a fresh empty database at v10', async () => {
+  it('creates the Feature-013 tables on a fresh empty database at v11', async () => {
     const name = uniqueName();
     const fresh = new ChessRemedyDatabase(name);
     try {
       await fresh.open();
-      expect(fresh.verno).toBe(10);
+      expect(fresh.verno).toBe(11);
       expect(fresh.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -162,7 +162,7 @@ describe('v9 → v10 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(10);
+      expect(migrated.verno).toBe(11);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',

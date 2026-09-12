@@ -20,7 +20,7 @@
 
 import { gameFromPgn, type GameParseErrorCode } from '@/domain/chess/parseGame';
 import type { Game } from '@/domain/chess/game';
-import { normalizeTimeControl } from '@/domain/chess/timeControl';
+import { normalizeTimeControl, timeControlProfileForSource } from '@/domain/chess/timeControl';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { Player } from '@/domain/chess/game';
 import type { Color } from 'chessops/types';
@@ -119,7 +119,10 @@ export function providerGameToGame(record: ProviderGameRecord): ProviderGameOutc
 function applyEnrichment(game: Game, record: ProviderGameRecord, userColor: Color): Game {
   const timeControlRaw = record.timeControlRaw ?? '';
   const timeControl = game.timeControl !== '' ? game.timeControl : timeControlRaw;
-  const normalizedTimeControl: TimeControlCategory = normalizeTimeControl(timeControl).category;
+  const normalizedTimeControl: TimeControlCategory = normalizeTimeControl(
+    timeControl,
+    timeControlProfileForSource(record.source),
+  ).category;
   return {
     ...game,
     userColor,

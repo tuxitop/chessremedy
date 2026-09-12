@@ -107,12 +107,12 @@ export const GAME_FIXTURE_DEFS: readonly GameFixtureDef[] = [
   },
   {
     id: 'cc-classical-endgame',
-    label: 'Chess.com classical: White punishes a queen blunder after a long build-up',
+    label: 'Chess.com long: White punishes a queen blunder after a long build-up',
     source: 'chesscom',
     externalId: '7123456704',
     userColor: 'white',
     tags: ['long', 'opponentBlunder'],
-    note: '12...Qa5?? drops the queen to 13.Nxa5; Black resigns. Long, classical-time game.',
+    note: '12...Qa5?? drops the queen to 13.Nxa5; Black resigns. 30|0 is Chess.com rapid (no classical group).',
     pgn: `[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2026.06.05"]
@@ -124,7 +124,28 @@ export const GAME_FIXTURE_DEFS: readonly GameFixtureDef[] = [
 [TimeControl "1800"]
 [Termination "resign"]
 
-1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. Nbd2 O-O 7. Bb3 h6 8. Nc4 a6 9. O-O Re8 10. h3 Ne7 11. Be3 c6 12. Qe2 Qa5?? 13. Nxa5 1-0`,
+ 1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. Nbd2 O-O 7. Bb3 h6 8. Nc4 a6 9. O-O Re8 10. h3 Ne7 11. Be3 c6 12. Qe2 Qa5?? 13. Nxa5 1-0`,
+  },
+  {
+    id: 'cc-blitz-five-five',
+    label: 'Chess.com blitz: 5|5 is a blitz control on Chess.com',
+    source: 'chesscom',
+    externalId: '7123456705',
+    userColor: 'white',
+    tags: ['clean', 'short'],
+    note: 'Boundary fixture: estimate 300 + 40\u00d75 = 500 s is blitz for the chesscom profile (rapid for lichess).',
+    pgn: `[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2026.06.02"]
+[White "chessremedy"]
+[Black "fivefivefrank"]
+[Result "1-0"]
+[WhiteElo "1600"]
+[BlackElo "1590"]
+[TimeControl "300+5"]
+[Termination "resign"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bxc6 dxc6 5. O-O 1-0`,
   },
   {
     id: 'li-bullet-missed-mate',
@@ -194,6 +215,29 @@ export const GAME_FIXTURE_DEFS: readonly GameFixtureDef[] = [
 [Termination "Normal"]
 
 1. e4 e5 2. Nf3 Nc6 3. Bb5 Nf6 4. O-O Nxe4 5. d4 Nd6 6. Bxc6 dxc6 7. dxe5 Nf5 8. Qxd8+ Kxd8 9. Nc3 Ke8 10. Bf4 Be7 11. Rad1 h6 12. h3 Be6 13. Rfe1 Rd8 1/2-1/2`,
+  },
+  {
+    id: 'li-rapid-five-five',
+    label: 'Lichess rapid: 5|5 is a rapid control on Lichess',
+    source: 'lichess',
+    externalId: 'fF5vV2xQ',
+    userColor: 'black',
+    tags: ['clean', 'short'],
+    note: 'Boundary fixture: estimate 300 + 40\u00d75 = 500 s is rapid for the lichess profile (blitz for chesscom).',
+    pgn: `[Event "Rated Rapid game"]
+[Site "https://lichess.org/fF5vV2xQ"]
+[Date "2026.06.03"]
+[White "fivefiverita"]
+[Black "chessremedy"]
+[Result "0-1"]
+[UTCDate "2026.06.03"]
+[UTCTime "11:11:11"]
+[WhiteElo "1700"]
+[BlackElo "1710"]
+[TimeControl "300+5"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 0-1`,
   },
   {
     id: 'li-classical-clean-win',
