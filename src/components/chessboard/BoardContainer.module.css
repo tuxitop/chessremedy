@@ -29,9 +29,12 @@
   z-index: 5;
 }
 
-/* Mobile: the board is fluid width (no fixed px sizing). */
+/* Mobile: the board is fluid width (no fixed px sizing), capped so it never
+   grows absurdly large on a wide-but-short tablet/landscape viewport. */
 .mobile {
   width: 100%;
+  max-width: 480px;
+  margin-inline: auto;
   height: auto;
 }
 

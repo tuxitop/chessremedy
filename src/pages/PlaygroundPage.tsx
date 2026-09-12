@@ -500,6 +500,7 @@ function PlaygroundContent(props: PlaygroundContentProps): React.JSX.Element {
               engineController.lines.length > 0 ? engineController.lines[0]!.evaluation : null
             }
             sideToMove={sideToMove}
+            orientation={boardSizeApi.isMobile ? 'horizontal' : 'vertical'}
           />
         </div>
 

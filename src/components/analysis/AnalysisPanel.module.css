@@ -151,3 +151,15 @@
 .placeholderLine {
   height: 1.35em;
 }
+
+@media (max-width: 640px) {
+  .headerRow {
+    flex-wrap: wrap;
+  }
+
+  /* The engine build string is non-essential and pushes the gear/toggle off a
+     phone-width panel; hide it there. */
+  .engineVersion {
+    display: none;
+  }
+}

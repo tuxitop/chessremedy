@@ -25,3 +25,11 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* Comfortable touch targets on phones. */
+@media (max-width: 768px) {
+  .iconButton {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+  }
+}

@@ -705,6 +705,7 @@ export function SolveScreen({
     <EvaluationBar
       evaluation={engineController.lines.length > 0 ? engineController.lines[0]!.evaluation : null}
       sideToMove={positionSide}
+      orientation={resolvedBoardSize.isMobile ? 'horizontal' : 'vertical'}
     />
   ) : (
     <div className={styles.reservedBar} aria-hidden="true" data-testid="solve-eval-reserved" />

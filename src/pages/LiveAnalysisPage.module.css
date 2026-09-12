@@ -104,6 +104,12 @@
   .sourceBar {
     grid-template-columns: 1fr;
   }
+
+  .sourceInput,
+  .sourceButton,
+  .actionButton {
+    height: var(--touch-target-min);
+  }
 }
 
 .resetRow {

@@ -129,3 +129,18 @@
   line-height: 1;
   cursor: help;
 }
+
+@media (max-width: 768px) {
+  .gear {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+  }
+
+  .popover {
+    width: min(340px, calc(100vw - 24px));
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -143,3 +143,28 @@
   color: var(--color-danger, #d1242f);
   font-size: var(--font-size-sm);
 }
+
+/* Stack each settings row (text above its control) on narrow screens so the
+   controls get the full width instead of overflowing beside the label. */
+@media (max-width: 720px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .engineDefaults,
+  .boardForm,
+  .hintForm {
+    width: 100%;
+  }
+
+  .engineDefaults,
+  .boardForm {
+    grid-template-columns: 1fr;
+  }
+
+  .rowField select,
+  .rowField input {
+    min-height: var(--touch-target-min);
+  }
+}

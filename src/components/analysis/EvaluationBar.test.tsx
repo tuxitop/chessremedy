@@ -38,4 +38,21 @@ describe('EvaluationBar', () => {
     );
     second.unmount();
   });
+
+  it('defaults to a vertical gauge that sizes its fill by height', () => {
+    render(<EvaluationBar evaluation={{ cp: 3000 }} sideToMove="white" />);
+    expect(screen.getByTestId('evaluation-bar')).toHaveAttribute('data-orientation', 'vertical');
+    const fill = screen.getByTestId('evaluation-bar-fill');
+    expect(fill.style.height).not.toBe('');
+    expect(fill.style.width).toBe('');
+  });
+
+  it('sizes the fill by width when horizontal (mobile strip)', () => {
+    render(<EvaluationBar evaluation={{ cp: 3000 }} sideToMove="white" orientation="horizontal" />);
+    expect(screen.getByTestId('evaluation-bar')).toHaveAttribute('data-orientation', 'horizontal');
+    const fill = screen.getByTestId('evaluation-bar-fill');
+    expect(fill.style.width).not.toBe('');
+    expect(fill.style.height).toBe('');
+    expect(Number.parseFloat(fill.style.width)).toBeGreaterThan(90);
+  });
 });

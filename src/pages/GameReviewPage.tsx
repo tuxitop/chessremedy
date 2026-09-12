@@ -1125,7 +1125,13 @@ function GameReview({
             />
           </>
         }
-        bar={<EvaluationBar evaluation={barEvaluation} sideToMove={barSideToMove} />}
+        bar={
+          <EvaluationBar
+            evaluation={barEvaluation}
+            sideToMove={barSideToMove}
+            orientation={boardSize.isMobile ? 'horizontal' : 'vertical'}
+          />
+        }
         sidePanel={
           <>
             <div className={styles.sidePanelBody} style={sidePanelBodyStyle}>

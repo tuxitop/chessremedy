@@ -344,6 +344,7 @@ export function LiveAnalysisPage(): React.JSX.Element {
           <EvaluationBar
             evaluation={controller.lines.length > 0 ? controller.lines[0]!.evaluation : null}
             sideToMove={sideToMove}
+            orientation={boardSizeApi.isMobile ? 'horizontal' : 'vertical'}
           />
         }
         sidePanel={

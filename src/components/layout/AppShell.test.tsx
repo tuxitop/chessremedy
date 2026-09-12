@@ -12,6 +12,7 @@ function renderWithOutlet(props: AppShellProps = {}) {
     <Routes>
       <Route path="/" element={<AppShell {...props} />}>
         <Route index element={<div data-testid="outlet">Home content</div>} />
+        <Route path="games" element={<div data-testid="games-outlet">Games</div>} />
       </Route>
     </Routes>,
     { initialEntries: ['/'] },
@@ -54,6 +55,30 @@ describe('AppShell', () => {
     const skip = screen.getByTestId('skip-to-content');
     expect(skip).toHaveAttribute('href', '#main-content');
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
+  });
+
+  it('toggles the mobile menu and closes it on Escape', () => {
+    renderWithOutlet();
+    const button = screen.getByTestId('nav-menu-toggle');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(button).toHaveAttribute('aria-controls', 'primary-nav');
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes the mobile menu after navigating', async () => {
+    renderWithOutlet();
+    const button = screen.getByTestId('nav-menu-toggle');
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByTestId('nav-games'));
+    await waitFor(() => expect(screen.getByTestId('games-outlet')).toBeInTheDocument());
+    expect(button).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('hides on scroll-down and reveals on scroll-up', async () => {

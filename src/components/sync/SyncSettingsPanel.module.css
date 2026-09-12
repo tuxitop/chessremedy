@@ -80,6 +80,9 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-fg-muted);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .fileLabelText {
@@ -90,6 +93,10 @@
   font-family: inherit;
   font-size: var(--font-size-sm);
   color: var(--color-fg);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .fileInput::file-selector-button {

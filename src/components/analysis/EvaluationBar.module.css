@@ -11,6 +11,16 @@
   background-color: var(--color-surface-evalbar, rgba(0, 0, 0, 0.35));
 }
 
+/* Horizontal strip used by the stacked mobile layout. */
+.barHorizontal {
+  /* `flex: 1 1 auto` (not `0 0 14px`) so the strip fills the row-flex
+     eval-bar column; a fixed basis would override `width: 100%`. */
+  flex: 1 1 auto;
+  width: 100%;
+  height: 14px;
+  min-height: 0;
+}
+
 /* Fill grows from the bottom of the bar upward. */
 .fill {
   position: absolute;
@@ -18,6 +28,16 @@
   right: 0;
   bottom: 0;
   background: linear-gradient(to top, #78992233, #789922cc 70%);
+}
+
+/* Horizontal fill grows from the left. */
+.fillHorizontal {
+  left: 0;
+  right: auto;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  background: linear-gradient(to right, #78992233, #789922cc 70%);
 }
 
 /* Fixed marker at the equal point (middle of the bar). */
@@ -31,4 +51,15 @@
   background: var(--color-text, #222);
   opacity: 0.85;
   z-index: 1;
+}
+
+.centerMarkHorizontal {
+  left: 50%;
+  right: auto;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  height: auto;
+  margin-top: 0;
+  margin-left: -1px;
 }

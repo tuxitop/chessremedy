@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import type * as React from 'react';
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { APP_NAME } from '@/config/app-config';
 import { SyncStatusIndicator } from '@/components/sync';
 import { useHeaderVisibility } from '@/hooks/useHeaderVisibility';
@@ -16,7 +17,30 @@ export interface AppShellProps {
 }
 
 export function AppShell({ headerSurfaceOpen = false }: AppShellProps = {}): React.JSX.Element {
-  const { hidden, headerRef } = useHeaderVisibility({ forceVisible: headerSurfaceOpen });
+  // The menu is "open" only while the current path is the one it was opened
+  // on. Deriving it from the pathname (instead of an effect) means any route
+  // change — link, back/forward, redirect — closes it without a cascading
+  // render, and it satisfies `react-hooks/set-state-in-effect`.
+  const [menuPath, setMenuPath] = useState<string | null>(null);
+  const location = useLocation();
+  const menuOpen = menuPath === location.pathname;
+  const { hidden, headerRef } = useHeaderVisibility({
+    forceVisible: headerSurfaceOpen || menuOpen,
+  });
+
+  // Escape closes the mobile menu.
+  useEffect(() => {
+    if (!menuOpen) {
+      return undefined;
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setMenuPath(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [menuOpen]);
 
   return (
     <div className={styles.shell} data-testid="app-shell">
@@ -32,10 +56,23 @@ export function AppShell({ headerSurfaceOpen = false }: AppShellProps = {}): Rea
           <span>{APP_NAME}</span>
           <span className={styles.brandTagline}>v0.1.0</span>
         </Link>
-        <Navigation />
+        <Navigation id="primary-nav" open={menuOpen} onNavigate={() => setMenuPath(null)} />
         <span className={styles.spacer} />
         <SyncStatusIndicator />
         <ThemeToggle />
+        <button
+          type="button"
+          className={styles.menuButton}
+          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={menuOpen}
+          aria-controls="primary-nav"
+          onClick={() => setMenuPath(menuOpen ? null : location.pathname)}
+          data-testid="nav-menu-toggle"
+        >
+          <span aria-hidden="true" className={styles.menuIcon}>
+            {menuOpen ? '✕' : '☰'}
+          </span>
+        </button>
       </header>
       <main className={styles.main} id="main-content">
         <Outlet />

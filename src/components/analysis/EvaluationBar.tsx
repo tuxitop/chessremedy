@@ -3,29 +3,44 @@ import type { PlayerColor } from './evaluation';
 import { bottomAdvantageFraction } from './evaluation';
 import styles from './EvaluationBar.module.css';
 
+/** Orientation of the gauge. Mobile stacks use a horizontal strip. */
+export type EvaluationBarOrientation = 'vertical' | 'horizontal';
+
 export interface EvaluationBarProps {
   /** Best evaluation of the current position (side-to-move perspective). */
   readonly evaluation: EngineEvaluation | null;
   /** Side to move in the current position. */
   readonly sideToMove: PlayerColor;
+  /**
+   * `vertical` (default) sits in its own column beside the board; `horizontal`
+   * is a strip under the board for the stacked mobile layout.
+   */
+  readonly orientation?: EvaluationBarOrientation;
 }
 
 /**
- * Vertical evaluation gauge shown between the board and the move list. The
- * gauge always encodes **White's** advantage (White-positive, like every
- * numeric evaluation): it fills upward from the bottom with White's share, so
- * `+` (good for White) grows the fill and the fixed centre line marks the
- * equal position. It does not track the board orientation (D1 parity).
+ * Evaluation gauge shown between the board and the move list. The gauge always
+ * encodes **White's** advantage (White-positive, like every numeric
+ * evaluation): the fill grows from the "White" end — bottom when vertical, left
+ * when horizontal — so `+` (good for White) grows the fill and the fixed centre
+ * line marks the equal position. It does not track board orientation (D1
+ * parity).
  */
-export function EvaluationBar({ evaluation, sideToMove }: EvaluationBarProps): React.JSX.Element {
+export function EvaluationBar({
+  evaluation,
+  sideToMove,
+  orientation = 'vertical',
+}: EvaluationBarProps): React.JSX.Element {
   const fill =
     evaluation === null ? null : bottomAdvantageFraction(evaluation, 'white', sideToMove);
-  const fillHeight = fill === null ? null : `${Math.round(fill * 100)}%`;
+  const fillPercent = fill === null ? null : `${Math.round(fill * 100)}%`;
+  const horizontal = orientation === 'horizontal';
 
   return (
     <div
-      className={styles.bar}
+      className={[styles.bar, horizontal ? styles.barHorizontal : ''].filter(Boolean).join(' ')}
       data-testid="evaluation-bar"
+      data-orientation={orientation}
       role="img"
       aria-label={
         evaluation === null
@@ -34,11 +49,22 @@ export function EvaluationBar({ evaluation, sideToMove }: EvaluationBarProps): R
       }
     >
       <div
-        className={styles.fill}
+        className={[styles.fill, horizontal ? styles.fillHorizontal : ''].filter(Boolean).join(' ')}
         data-testid="evaluation-bar-fill"
-        style={fillHeight !== null ? { height: fillHeight } : undefined}
+        style={
+          fillPercent !== null
+            ? horizontal
+              ? { width: fillPercent }
+              : { height: fillPercent }
+            : undefined
+        }
       />
-      <div className={styles.centerMark} data-testid="evaluation-bar-center" />
+      <div
+        className={[styles.centerMark, horizontal ? styles.centerMarkHorizontal : '']
+          .filter(Boolean)
+          .join(' ')}
+        data-testid="evaluation-bar-center"
+      />
     </div>
   );
 }

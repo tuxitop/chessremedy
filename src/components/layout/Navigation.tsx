@@ -3,14 +3,32 @@ import { NavLink } from 'react-router-dom';
 import { NAV_ITEMS } from '@/app/routes';
 import styles from './Navigation.module.css';
 
-export function Navigation(): React.JSX.Element {
+export interface NavigationProps {
+  /** DOM id so a menu button can reference it via `aria-controls`. */
+  readonly id?: string;
+  /** Invoked after a link is activated (used to close the mobile menu). */
+  readonly onNavigate?: () => void;
+  /** Whether the mobile dropdown panel is open (no effect on desktop). */
+  readonly open?: boolean;
+}
+
+export function Navigation({
+  id,
+  onNavigate,
+  open = false,
+}: NavigationProps = {}): React.JSX.Element {
   return (
-    <nav className={styles.nav} aria-label="Primary">
+    <nav
+      id={id}
+      className={[styles.nav, open ? styles.navOpen : ''].filter(Boolean).join(' ')}
+      aria-label="Primary"
+    >
       {NAV_ITEMS.map((item) => (
         <NavLink
           key={item.path}
           to={item.path}
           end={item.path === '/'}
+          onClick={onNavigate}
           className={({ isActive }) =>
             [styles.link, isActive ? styles.active : ''].filter(Boolean).join(' ')
           }

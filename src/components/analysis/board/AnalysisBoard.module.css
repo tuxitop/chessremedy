@@ -45,18 +45,22 @@
 @media (max-width: 900px) {
   .layout {
     flex-direction: column;
-    align-items: center;
+    /* Stretch (not center) so the board column gets a definite width; with
+       `center` the board's `width: 100%` resolves against a shrink-to-fit
+       parent and collapses to its min-content size. */
+    align-items: stretch;
   }
 
   .boardColumn {
     width: 100%;
-    align-items: center;
+    align-items: stretch;
   }
 
   .evalBarColumn {
     height: 14px;
     width: 100%;
-    max-width: 360px;
+    max-width: 480px;
+    margin-inline: auto;
     flex: 0 0 auto;
     justify-content: center;
   }

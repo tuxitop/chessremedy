@@ -45,6 +45,13 @@
   color: var(--color-fg);
 }
 
+@media (max-width: 768px) {
+  .field select,
+  .searchField input {
+    min-height: var(--touch-target-min);
+  }
+}
+
 .customRange {
   display: flex;
   align-items: center;
