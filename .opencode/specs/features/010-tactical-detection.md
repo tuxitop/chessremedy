@@ -203,15 +203,23 @@ depth.
   shallower result.
 - The effective depth is persisted on every verified candidate's
   `verificationMetadata.verificationDepth` and recorded on the per-analysis
-  summary (an additive, non-indexed field — no schema/version bump).
+  summary (an additive, non-indexed field — no schema/version bump). On the
+  summary it is **provenance only**: the recorded depth is explicitly **not**
+  a freshness input.
 - The ADR-018 cache key includes the effective verification depth, so
-  changing it never serves a cached result produced at another depth.
-- The **freshness gate** includes the effective depth: a completed pass whose
-  `verificationDepth` differs from the current setting is outdated (refresh
-  scan offered), so old-depth verdicts are never silently reused.
-- Changing the setting never auto-runs a scan; it marks completed results
-  outdated for the on-demand scan, consistent with the game-analysis
-  `outdated` model.
+  changing it never serves a cached result produced at another depth. This is
+  the reason depth is in the key (not freshness): an explicit re-scan at a new
+  depth cannot reuse a stale result at another depth.
+- Depth is **not** part of the automatic **freshness gate**. A completed
+  detection stays current while its `detectionVersion` matches the current
+  `DETECTION_VERSION`, regardless of the depth it was produced at; changing
+  the setting never marks completed results outdated and never auto-runs a
+  scan.
+- The setting applies to **new** verifications and to an **explicitly
+  requested** re-scan. Applying a changed depth to an existing analysis is the
+  user-triggered path: the existing Review/Library scan actions (Resume /
+  Retry / Run tactics scan) and any refresh/re-scan-tactics control re-run the
+  pass at the current depth.
 
 ## Relationship to Move Classification
 
@@ -579,9 +587,11 @@ existing scan-state surfacing is unchanged.
 - **Two-engine contention:** the engines are independent; the Library engine
   activity banner reflects both queues, and a scan's numeric progress is
   unaffected by analysis work.
-- **Old-depth completed result:** rendered as outdated, never mixed with the
-  current-depth result; the refresh scan re-derives it (cache-cheap when
-  positions were already searched).
+- **Completed result at another depth:** stays current (its `detectionVersion`
+  matches) and is never mixed with results from other depths. Applying the
+  current depth is user-triggered — the existing refresh/re-scan-tactics
+  action re-derives it (cache-cheap when positions were already searched at
+  the same depth).
 
 **Accessibility.** The verification-depth control is a labelled number input
 with `min`/`max`, an accessible description of the default and bounds, and
@@ -638,9 +648,10 @@ Feature 011 can consume the verified candidate and transform it into a training 
 - The effective verification depth is recorded on verified candidates and on
   the per-analysis summary, and is part of the ADR-018 cache key, so results
   from different depths are never mixed.
-- A completed pass whose recorded depth differs from the current setting is
-  outdated and is re-derived on the next scan; changing the setting never
-  auto-runs a scan.
+- A completed pass stays current while its `detectionVersion` matches the
+  current `DETECTION_VERSION` regardless of its recorded depth; a changed
+  depth applies to new verifications and to an explicitly requested re-scan,
+  and never marks completed results outdated or auto-runs a scan.
 - The 45 s `VERIFY_MOVETIME_MS` backstop still bounds every verification.
 
 ### Game Library statistics & filters — acceptance criteria
@@ -705,8 +716,11 @@ Feature 011 can consume the verified candidate and transform it into a training 
   read/write round-trip with fallback.
 * Unit: the detection cache key changes when the verification depth or the
   verification threads change, and is stable otherwise.
-* Unit: the freshness gate treats a summary with a different
-  `verificationDepth` as outdated.
+* Unit: a completed summary stays current when its `detectionVersion`
+  matches regardless of its recorded `verificationDepth`, and the depth is
+  not consulted by the freshness gate.
+* Unit: an explicitly requested re-scan at a changed depth uses the new depth
+  and does not reuse a cached result produced at the old depth.
 * Integration: two engine services (fake transports) — a verification job
   does not queue behind or block an analysis job, and cancelling a scan does
   not cancel analysis jobs.

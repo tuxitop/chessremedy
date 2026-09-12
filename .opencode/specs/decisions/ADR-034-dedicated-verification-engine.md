@@ -92,8 +92,12 @@ detection is actually running.
 - The browser assembly constructs two engine services and hands the
   verification one to `TacticalDetectionService`; both read/write the same
   ADR-018 cache, so a position verified by either engine is reusable by the
-  other. The cache scope includes the effective depth and threads, so the two
-  instances never share entries by accident (ADR-018).
+  other. The cache scope includes the effective depth, the verification
+  threads and `VERIFY_MOVETIME_MS`, so the two instances never share entries
+  by accident (ADR-018). Depth is in the key so that an explicitly requested
+  re-scan at a changed depth cannot reuse a stale cached result; it is **not**
+  a freshness input — a completed detection stays current on its
+  `detectionVersion` regardless of depth (ADR-026).
 - Each engine service keeps its own queue watchdog (`queuedTimeoutMs`) and
   stall watchdog; a wedged verification worker can never hold the analysis
   queue open, and vice versa.

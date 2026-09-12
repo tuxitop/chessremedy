@@ -107,20 +107,29 @@ and the defensive objectives still surface from lost positions; only the
 material objective is floored. Genuine recall forks from slightly-lost
 positions (≈ −200cp) still verify.
 
-## Verification depth & freshness (W2)
+## Verification depth (W2)
 
 The Stage-2 verification depth is a user setting: default `22` (the ADR-012
 `tactical` profile depth), bounds `10..40`, stored under
-`analysis.tacticalDetection`. It is:
+`analysis.tacticalDetection`. It applies to **new** verifications and to an
+**explicitly requested** re-scan. It is:
 
 - recorded as `verificationMetadata.verificationDepth` on every verified
   candidate, and as an additive (non-indexed) field on the per-analysis
-  summary for the pass;
-- part of the ADR-018 cache scope, so a result produced at one depth is never
-  served to a search at another depth;
-- part of the **freshness gate** alongside `detectionVersion`: a completed
-  pass whose recorded depth differs from the current setting is **outdated**
-  and is re-derived on the next scan, never silently reused.
+  summary for the pass. On the summary it is **provenance only** and is
+  explicitly **not** a freshness input;
+- part of the ADR-018 cache scope (with the verification threads and
+  `VERIFY_MOVETIME_MS`), so a result produced at one depth is never served to
+  a search at another depth. This is the reason depth is in the key: when the
+  user does request a re-scan at a changed depth, it cannot reuse a stale
+  cached result at the old depth;
+- **not** part of the **freshness gate**. A completed pass stays current while
+  its `detectionVersion` equals the current `DETECTION_VERSION`, regardless of
+  the depth it was produced at. Changing the depth never invalidates or
+  automatically re-scans completed detection; re-scanning many games is
+  expensive, so applying a changed depth is **user-triggered** through the
+  existing Review/Library scan actions and any refresh/re-scan-tactics
+  control.
 
 The default depth is the profile depth, so a pass under default settings is
 unchanged. The 45 s `VERIFY_MOVETIME_MS` backstop is unchanged and bounds

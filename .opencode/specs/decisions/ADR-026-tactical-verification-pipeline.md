@@ -136,19 +136,25 @@ after the run.
 - **Movetime backstop.** `VERIFY_MOVETIME_MS` (45 s) is unchanged and still
   bounds every verification search; the engine stops at whichever limit it
   reaches first, so a deeper setting can still return a shallower result.
-- **Cache scope.** The ADR-018 key includes the effective verification depth
-  and the verification engine's thread count (ADR-018 §"Tactical-detection
-  verification scope"), so results produced at different depths are never
-  mixed.
-- **Freshness.** The per-analysis summary records the effective
-  `verificationDepth` of its pass. The freshness gate (already keyed on
-  `detectionVersion`) additionally treats a summary whose
-  `verificationDepth` differs from the current setting as **outdated**, so a
-  depth change re-derives on the next scan instead of silently reusing
-  old-depth verdicts. This is an additive, non-indexed summary property — no
-  schema/version bump. Changing the setting never auto-runs a scan; it marks
-  completed results outdated for the on-demand scan, consistent with the
-  game-analysis `outdated` model.
+- **Cache scope.** The ADR-018 key includes the effective verification depth,
+  the verification engine's thread count and the `VERIFY_MOVETIME_MS`
+  backstop (ADR-018 §"Tactical-detection verification scope"), so results
+  produced at different depths are never mixed. This is now the reason depth
+  is in the key: when the user explicitly requests a re-scan at a different
+  depth, it cannot reuse a stale result produced at another depth. Depth is
+  **not** a freshness input.
+- **Freshness.** A completed detection result stays **current** while its
+  persisted `detectionVersion` equals the current `DETECTION_VERSION`,
+  regardless of the effective depth it was produced at. The verification
+  depth is not part of the automatic freshness gate, so changing the setting
+  never invalidates or automatically re-scans a completed pass (re-scanning
+  many games is expensive). The per-analysis summary records the pass's
+  effective `verificationDepth` as **provenance only** — an additive,
+  non-indexed property, explicitly not a freshness input — and no
+  schema/version bump is required. Applying a changed depth to an existing
+  analysis is the **user-triggered** path: the existing Review/Library scan
+  actions (Resume / Retry / Run tactics scan) and any refresh/re-scan-tactics
+  control re-run the pass at the current setting.
 
 ### Output
 
@@ -277,13 +283,18 @@ Full evaluation: `specs/research/tactical-detection.md`.
    so existing summaries and markers re-derive through the freshness gate; it
   changes no candidate-generation or verification guard, so the verified set
   is unchanged and the re-scan is cheap (settled rows and the ADR-018 cache
-  are reused). **W2** extends the freshness gate with the effective
-  **verification depth** (recorded on the per-analysis summary): a completed
-  pass whose depth differs from the current setting is outdated and is
-  re-derived on the next scan, so old-depth verdicts are never silently
-  reused. No `DETECTION_VERSION` bump is required: no candidate rule, guard or
-  threshold changed, the default depth is unchanged, and the depth mismatch
-  itself is the freshness key (the re-derivation is cache-cheap).
+  are reused). **W2** adds the user-tunable verification depth but keeps it
+  **out of the automatic freshness gate**: a completed pass stays current
+  while its `detectionVersion` matches the current `DETECTION_VERSION`,
+  whatever depth it was produced at. A changed depth applies only to **new**
+  verifications and to an **explicitly requested** re-scan (the existing
+  Review/Library scan and refresh/re-scan-tactics affordances), because
+  re-scanning many games is expensive; the recorded depth on the per-analysis
+  summary is provenance only. Depth remains in the ADR-018 detection cache
+  key (with the verification threads and `VERIFY_MOVETIME_MS`) so that an
+  explicit re-scan at a new depth cannot reuse a stale result at another
+  depth. No `DETECTION_VERSION` bump is required: no candidate rule, guard or
+  threshold changed, and the default depth is unchanged.
 
 ## Sources
 
