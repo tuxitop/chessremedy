@@ -102,12 +102,15 @@ export function SyncSettingsPanel({
       return;
     }
     handledOAuthRef.current = true;
+    // Strip `?code` synchronously before the async exchange so a remount can
+    // never pick the same authorization code up a second time (codes are
+    // single-use; a repeat exchange is rejected by Dropbox with HTTP 400).
+    cleanOAuthUrl();
     void (async () => {
       const ok = await completeConnect(params);
       if (mountedRef.current) {
         setOauthResult(ok ? 'connected' : 'failed');
       }
-      cleanOAuthUrl();
     })();
   }, [completeConnect, isLoading]);
 

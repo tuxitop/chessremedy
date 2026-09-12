@@ -142,6 +142,26 @@ describe('Dropbox PKCE (ADR-015)', () => {
     });
   });
 
+  it('surfaces the Dropbox error description when the token request is rejected', async () => {
+    server.use(
+      http.post(DROPBOX_TOKEN_URL, () =>
+        HttpResponse.json(
+          { error: 'invalid_grant', error_description: 'code has already been used' },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    await expect(
+      exchangeCode({
+        appKey: 'app-key',
+        code: 'auth-code',
+        codeVerifier: 'verifier-1',
+        fetchImpl,
+      }),
+    ).rejects.toThrow('Dropbox token request failed with HTTP 400: code has already been used');
+  });
+
   it('refreshes a token and keeps the existing refresh token when omitted', async () => {
     server.use(
       http.post(DROPBOX_TOKEN_URL, async ({ request }) => {

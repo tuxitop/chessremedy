@@ -208,10 +208,27 @@ async function postToken(body: URLSearchParams, options: TokenEndpointOptions): 
   if (!response.ok) {
     throw new SyncProviderError(
       response.status === 401 || response.status === 403 ? 'auth' : 'http',
-      `Dropbox token request failed with HTTP ${response.status}.`,
+      `Dropbox token request failed with HTTP ${response.status}${describeTokenError(parsed)}.`,
     );
   }
   return parsed;
+}
+
+/** Render Dropbox's `error`/`error_description` for a failed token response. */
+function describeTokenError(parsed: unknown): string {
+  if (parsed === null || typeof parsed !== 'object') {
+    return '';
+  }
+  const record = parsed as Record<string, unknown>;
+  const description = record.error_description;
+  if (typeof description === 'string' && description.length > 0) {
+    return `: ${description}`;
+  }
+  const code = record.error;
+  if (typeof code === 'string' && code.length > 0) {
+    return ` (${code})`;
+  }
+  return '';
 }
 
 /** Exchange an authorization code for an offline (refreshable) token set. */
