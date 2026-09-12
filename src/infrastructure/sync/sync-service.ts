@@ -513,7 +513,11 @@ export class SyncService {
       typeof location !== 'undefined' && location.origin.length > 0
         ? location.origin
         : 'http://localhost';
-    return `${origin}/settings`;
+    // Keep the redirect inside the app's base path (GitHub Pages project sites
+    // are served from a sub-path); `BASE_URL` is `/` for local dev.
+    const base = import.meta.env.BASE_URL ?? '/';
+    const prefix = base.endsWith('/') ? base : `${base}/`;
+    return `${origin}${prefix}settings`;
   }
 }
 

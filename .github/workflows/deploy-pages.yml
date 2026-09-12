@@ -1,0 +1,72 @@
+name: Deploy to GitHub Pages
+
+# Deploys the built app to GitHub Pages on every push to `main`, so the live
+# site updates automatically whenever code is pushed. Can also be run manually
+# from the Actions tab.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow the workflow to publish to Pages via OIDC.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deploy at a time; a newer push cancels an in-flight run.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `postinstall` normally generates these, but npm's install-script policy
+      # can block it; run them explicitly so the engine WASM + piece art exist.
+      - name: Generate engine + piece assets
+        run: |
+          npm run copy-stockfish-assets
+          npm run fetch-piece-assets
+
+      - name: Build
+        env:
+          # Project Pages URL is https://<owner>.github.io/<repo>/. Change this
+          # if the repository (and therefore the sub-path) is renamed.
+          BASE_PATH: /chessremedy/
+          # Public Dropbox app key (safe to embed; never a client secret).
+          # Configured as a repository Actions *variable* — see README.
+          VITE_DROPBOX_APP_KEY: ${{ vars.VITE_DROPBOX_APP_KEY }}
+        run: npm run build
+
+      # GitHub Pages returns 404.html for unknown paths. Serving the SPA shell
+      # there lets deep links / refreshes resolve through the client router.
+      - name: Add SPA fallback
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

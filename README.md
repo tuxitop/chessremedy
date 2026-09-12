@@ -101,6 +101,38 @@ Dropbox account. Sync is **optional** — the app is fully usable without it.
 The same panel also offers provider-free **Export backup** / **Import backup**
 using the gzipped sync envelope (ADR-016).
 
+## Hosting on GitHub Pages
+
+The app is a static SPA and deploys to GitHub Pages automatically. The workflow
+`.github/workflows/deploy-pages.yml` builds and publishes on every push to
+`main` (and can be run manually from the Actions tab).
+
+One-time setup in the GitHub repository:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+2. **Settings → Secrets and variables → Actions → Variables → New repository
+   variable**: name `VITE_DROPBOX_APP_KEY`, value your Dropbox app key. (It is
+   public and safe to embed; never add a client secret.)
+3. In the Dropbox app console, register the redirect URI for the deployed site:
+   `https://<owner>.github.io/<repo>/settings`
+   (for this repository: `https://tuxitop.github.io/chessremedy/settings`).
+   Keep the local `http://localhost:5173/settings` URI as well.
+
+The site is published at `https://<owner>.github.io/<repo>/`. If the repository
+is renamed, update `BASE_PATH` in the workflow (and the redirect URI).
+
+Notes:
+
+- Project Pages are served from a sub-path, so the build uses Vite's `base`
+  (`BASE_PATH`). Local `npm run dev` / `npm run preview` keep `base = '/'`.
+- `BASE_PATH` is baked in at build time; routing, the PWA manifest/scope, the
+  service worker, and the Dropbox redirect all follow it.
+- GitHub Pages does not send COOP/COEP headers, so `crossOriginIsolated` is
+  `false` and the app uses the single-threaded Stockfish build. Everything works;
+  multi-threaded search is only available when those headers are present.
+- SPA deep links/refreshes work because the workflow publishes `index.html` as
+  `404.html` and the service worker uses an `index.html` navigation fallback.
+
 ## Forbidden dependencies
 
 Foundation must not install `chess.js`, `@lichess-org/chessground`,

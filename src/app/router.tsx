@@ -125,4 +125,10 @@ export const appRoutes: RouteObject[] = [
   },
 ];
 
-export const router = createBrowserRouter(appRoutes);
+// GitHub Pages serves project sites from a sub-path (Vite `base`). React
+// Router needs that same prefix as its `basename` so route matching and links
+// resolve correctly; locally `BASE_URL` is `/`.
+const baseUrl = import.meta.env.BASE_URL;
+const basename = baseUrl.endsWith('/') && baseUrl.length > 1 ? baseUrl.slice(0, -1) : baseUrl;
+
+export const router = createBrowserRouter(appRoutes, { basename });
