@@ -49,3 +49,18 @@ export function clearMissedTacticAnnotations(
     return record;
   });
 }
+
+/**
+ * Clear **every** missed-tactic annotation on the records, regardless of the
+ * detection version that wrote it. Used when a pass starts a full
+ * re-derivation at a changed verification depth: the persisted records carry
+ * no depth, so an annotation produced by the same `detectionVersion` but a
+ * different depth cannot be distinguished from one this pass would re-derive —
+ * it must be dropped and re-applied from the freshly verified set. Unflagged
+ * records are returned by reference.
+ */
+export function clearAllMissedTacticAnnotations(records: readonly MoveAnalysis[]): MoveAnalysis[] {
+  return records.map((record) =>
+    record.missedTactic ? { ...record, missedTactic: false, detectionVersion: null } : record,
+  );
+}

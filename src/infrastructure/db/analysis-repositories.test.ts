@@ -228,6 +228,19 @@ describe('analysis summaries repository', () => {
     expect(await summariesRepository.getForAnalysis(ANALYSIS_A)).toBeUndefined();
   });
 
+  it('carries the additive verificationDepth provenance (no schema bump)', async () => {
+    const row = summaryRowFor(GAME, ANALYSIS_A, 'white', makeRecords(GAME, ANALYSIS_A, 6), {
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: DETECTION_VERSION,
+      verificationDepth: 30,
+    });
+    await summariesRepository.putForAnalysis(row);
+
+    const stored = await summariesRepository.getForAnalysis(ANALYSIS_A);
+    expect(stored?.verificationDepth).toBe(30);
+  });
+
   it('patchForAnalysis merges only the given fields and never clobbers the other fields', async () => {
     const row = summaryRowFor(GAME, ANALYSIS_A, 'white', makeRecords(GAME, ANALYSIS_A, 6), {
       detectionState: 'completed',

@@ -7,13 +7,20 @@
  * constructed engine service (it resolves from the shipped manifest at build
  * time), so no Stockfish version is hard-coded here.
  *
- * The same engine service and cache instance are shared with the Feature-010
- * `TacticalDetectionService` (constructed here rather than by the standalone
- * tactics assembly) so detection never spins up a second engine worker and
- * reads/writes the same ADR-018 position cache.
+ * ADR-034: the analysis engine is the **shared memoised** browser engine
+ * (`getBrowserEngineService`), so Live Analysis (Feature 006) and full-game
+ * analysis (Feature 008) run on one worker/queue. The Feature-010
+ * `TacticalDetectionService` is given the dedicated lazy **verification**
+ * engine instead, so detection never blocks the analysis FIFO and both read
+ * and write the same ADR-018 position cache. This is a small behaviour change
+ * for the live board (it now shares the analysis worker with game analysis);
+ * see ADR-034.
  */
 
-import { createBrowserEngineService } from '@/infrastructure/engine/browser';
+import {
+  getBrowserEngineService,
+  getBrowserVerificationEngineService,
+} from '@/infrastructure/engine/browser';
 import type { EngineServiceImpl } from '@/infrastructure/engine/engineService';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
@@ -22,6 +29,7 @@ import { engineAnalysisCacheRepository } from '@/infrastructure/db/engine-cache-
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { puzzleCandidatesRepository } from '@/infrastructure/db/candidates-repository';
 import { TacticalDetectionService } from '@/infrastructure/tactics/tacticalDetectionService';
+import { resolveStoredVerificationDepth } from '@/infrastructure/tactics/browser';
 import { getBrowserPuzzleGenerationService } from '@/infrastructure/puzzles';
 import type { EngineMetadata, AnalysisProfile } from '@/domain/chess';
 import { AnalysisService } from './analysisService';
@@ -34,9 +42,13 @@ function engineMetadataResolver(
 }
 
 export async function createBrowserAnalysisService(): Promise<AnalysisService> {
-  const engine = await createBrowserEngineService();
+  const [engine, verificationEngine] = await Promise.all([
+    getBrowserEngineService(),
+    getBrowserVerificationEngineService(),
+  ]);
   const detection = new TacticalDetectionService({
-    engine,
+    engine: verificationEngine,
+    resolveVerificationDepth: resolveStoredVerificationDepth,
     engineCache: engineAnalysisCacheRepository,
     analyses: analysesRepository,
     candidates: puzzleCandidatesRepository,

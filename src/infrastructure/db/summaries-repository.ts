@@ -57,6 +57,13 @@ export interface AnalysisSummaryRow {
    */
   readonly scanProgress?: ScanProgress | null;
   /**
+   * Effective Stage-2 verification depth of the pass (Feature 010 W2,
+   * ADR-026/ADR-034). Additive and non-indexed — no schema bump; older rows
+   * read `undefined`/`null`. **Provenance only**: the freshness gate reads
+   * `detectionVersion` alone and never consults this field.
+   */
+  readonly verificationDepth?: number | null;
+  /**
    * Puzzle-generation state for the analysis (Feature 011, Stage B); absent on
    * older rows (the field is additive — no schema bump). `undefined` means "no
    * generation pass exists" — absent ≠ zero (the `puzzles` table row count of

@@ -24,7 +24,7 @@ const DESKTOP_MULTI: EngineCapabilities = {
   hardwareConcurrency: 8,
   isMobile: false,
   build: 'lite',
-  threads: 2,
+  threads: 7,
   hashCapMb: 256,
 };
 
@@ -80,7 +80,7 @@ describe('engine profiles (ADR-012 table)', () => {
     const single = resolveProfileConfig('normal', DESKTOP_SINGLE);
     expect(single.options.some((o) => o.name === 'Threads')).toBe(false);
     const multi = resolveProfileConfig('normal', DESKTOP_MULTI);
-    expect(multi.options.find((o) => o.name === 'Threads')?.value).toBe('2');
+    expect(multi.options.find((o) => o.name === 'Threads')?.value).toBe('7');
   });
 
   it('always sets MultiPV and UCI_ShowWDL explicitly', () => {
@@ -135,7 +135,31 @@ describe('capabilities', () => {
       coarsePointer: false,
     });
     expect(caps.build).toBe('lite');
-    expect(caps.threads).toBe(2);
+    expect(caps.threads).toBe(7);
+  });
+
+  it('reserves one thread for verification on a 2-core isolated device', () => {
+    const caps = resolveEngineCapabilities({
+      sharedArrayBuffer: true,
+      crossOriginIsolated: true,
+      hardwareConcurrency: 2,
+      touchPoints: 0,
+      coarsePointer: false,
+    });
+    expect(caps.build).toBe('lite');
+    expect(caps.threads).toBe(1);
+  });
+
+  it('caps the analysis engine at MAX_THREADS_CAP - 1 on many-core devices', () => {
+    const caps = resolveEngineCapabilities({
+      sharedArrayBuffer: true,
+      crossOriginIsolated: true,
+      hardwareConcurrency: 16,
+      touchPoints: 0,
+      coarsePointer: false,
+    });
+    expect(caps.build).toBe('lite');
+    expect(caps.threads).toBe(7);
   });
 
   it('does not upgrade with a single core even when isolated', () => {

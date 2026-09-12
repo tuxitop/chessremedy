@@ -13,7 +13,15 @@ export {
 export type { EngineAnalysisCache } from './cache';
 export { createStockfishWorkerTransport } from './workerTransport';
 export type { StockfishWorkerTransportOptions } from './workerTransport';
-export { createBrowserEngineService } from './browser';
+export {
+  createBrowserEngineService,
+  createBrowserVerificationEngineService,
+  getBrowserEngineService,
+  getBrowserVerificationEngineService,
+  getCachedBrowserEngineService,
+} from './browser';
+export { VERIFICATION_ENGINE_IDLE_MS, createLazyEngineService } from './lazyEngineService';
+export type { LazyEngineServiceOptions } from './lazyEngineService';
 export {
   ENGINE_NAME,
   EngineAssetsError,
@@ -25,8 +33,15 @@ export {
 } from './engineBuild';
 export type { EngineAssetBuild, EngineAssets } from './engineBuild';
 export {
+  MAX_THREADS_CAP,
+  VERIFICATION_THREADS,
+  analysisThreadCap,
+  canMultiThread,
+  globalThreadBudget,
   readBrowserCapabilities,
   resolveEngineCapabilities,
+  verificationCapabilities,
+  verificationThreadCap,
   isMobileEnvironment,
 } from './capabilities';
 export type { CapabilityEnvironment, EngineCapabilities } from './capabilities';

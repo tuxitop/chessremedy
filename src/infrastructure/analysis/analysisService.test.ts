@@ -893,6 +893,41 @@ describe('AnalysisService — resumable scans & orphan reconciliation (plan 012,
     expect(await service.activeDetectionGames()).toEqual([]);
   });
 
+  it('scanGame force bypasses the completed/current no-op (explicit re-scan path)', async () => {
+    const gameId = await seedFixture(MISSED_MATE_ID);
+    const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));
+    if (!plan.ok) throw new Error(plan.message);
+    const mateFen = plan.plan.moves[MISSED_PLY]!.positionFen;
+
+    const rig = createFakeEngine({ results: new Map([[mateFen, mateResult(mateFen)]]) });
+    const completed = serviceWithDetectionOf(rig);
+    const jobs = await completed.analyzeGames([gameId]);
+    await waitFor(async () => {
+      const summary = await summariesRepository.getForAnalysis(jobs[0]!.id);
+      return summary?.detectionState === 'completed';
+    });
+
+    // With a spy detection, a forced scan must invoke the pass (rather than the
+    // `already-completed` no-op) and thread `{ force: true }` through.
+    const scanOptions: Array<{ force?: boolean } | undefined> = [];
+    const spyDetection = {
+      runPassForCompletedJob: async (
+        _job: unknown,
+        _game: unknown,
+        _records: unknown,
+        _signal: unknown,
+        options?: { force?: boolean },
+      ): Promise<void> => {
+        scanOptions.push(options);
+      },
+    } as unknown as TacticalDetectionService;
+    const service = serviceWithDetectionOf(rig, spyDetection);
+
+    expect(await service.scanGame(gameId, { force: true })).toBe('started');
+    await waitFor(() => scanOptions.length === 1);
+    expect(scanOptions[0]).toEqual({ force: true });
+  });
+
   it('scanGame re-runs the detection pass when the completed result is from an older version (plan 015)', async () => {
     const gameId = await seedFixture(MISSED_MATE_ID);
     const plan = planGameAnalysis(fixtureGame(MISSED_MATE_ID));

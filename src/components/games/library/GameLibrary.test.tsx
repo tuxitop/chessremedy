@@ -5,6 +5,8 @@ import { db } from '@/infrastructure/db/database';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
 import { summariesRepository } from '@/infrastructure/db/summaries-repository';
+import { settingsRepository } from '@/infrastructure/db/settings-repository';
+import { SETTINGS_KEYS } from '@/config/app-config';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
 import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
@@ -395,14 +397,17 @@ function optionLabels(select: Element): readonly string[] {
 /** Scriptable fake with the WP-A on-demand scan surface + live detection set. */
 function serviceWithScan(): AnalysisServiceLike & {
   scanCalls: string[];
+  scanOptions: Array<{ readonly force?: boolean } | undefined>;
   scanCancels: string[];
   scanning: Set<string>;
 } {
   const scanCalls: string[] = [];
+  const scanOptions: Array<{ readonly force?: boolean } | undefined> = [];
   const scanCancels: string[] = [];
   const scanning = new Set<string>();
   return {
     scanCalls,
+    scanOptions,
     scanCancels,
     scanning,
     async statusesOf(gameIds): Promise<Readonly<Record<string, GameAnalysisStatus>>> {
@@ -440,8 +445,9 @@ function serviceWithScan(): AnalysisServiceLike & {
     async liveAnalysisGames() {
       return [];
     },
-    async scanGame(gameId) {
+    async scanGame(gameId, options) {
       scanCalls.push(gameId);
+      scanOptions.push(options);
       scanning.add(gameId);
       return 'started';
     },
@@ -707,6 +713,67 @@ describe('GameLibrary resumable scans + persistent engine activity (plan 012, WP
       () => expect(screen.queryByTestId('library-engine-busy')).not.toBeInTheDocument(),
       { timeout: 5000 },
     );
+  });
+});
+
+describe('GameLibrary verification-depth re-scan (Feature 010 W2)', () => {
+  beforeEach(async () => {
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.settings.clear();
+  });
+
+  it('offers a forced Re-scan tactics when the completed pass recorded another depth', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.analysisTacticalDetection, {
+      verificationDepth: 30,
+    });
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      verificationDepth: 22,
+    });
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    // The pass is current (freshness ignores depth): the real count still shows,
+    // and the explicit re-scan affordance applies the current depth.
+    const strip = await screen.findByTestId(`row-insights-${game.id}`);
+    expect(within(strip).getByTestId('row-insights-missed-tactics')).toHaveTextContent(
+      'Missed tactics 1',
+    );
+    const rescan = await screen.findByTestId(`row-scan-rescan-${game.id}`);
+    expect(rescan).toHaveTextContent('Re-scan tactics');
+    fireEvent.click(rescan);
+    await waitFor(() => expect(service.scanCalls).toEqual([game.id]));
+    expect(service.scanOptions).toEqual([{ force: true }]);
+  });
+
+  it('offers no re-scan when the recorded depth matches the current setting', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.analysisTacticalDetection, {
+      verificationDepth: 30,
+    });
+    const game = await seedAnalyzedGame('cc-bullet-blunder', {
+      classificationCounts: { best: 3, good: 0, inaccuracy: 0, mistake: 0, blunder: 1 },
+      accuracy: 70,
+      detectionState: 'completed',
+      missedTacticCount: 1,
+      detectionVersion: DETECTION_VERSION,
+      verificationDepth: 30,
+    });
+    const service = serviceWithScan();
+    renderWithProviders(<GameLibrary refreshKey={0} analysisService={service} />, {
+      initialEntries: ['/games'],
+    });
+
+    await screen.findByTestId(`row-insights-${game.id}`);
+    expect(screen.queryByTestId(`row-scan-rescan-${game.id}`)).not.toBeInTheDocument();
   });
 });
 

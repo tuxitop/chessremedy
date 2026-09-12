@@ -7,7 +7,11 @@ import { describe, expect, it } from 'vitest';
 import type { Color } from 'chessops/types';
 import type { MoveAnalysis } from '@/domain/chess';
 import { makeMove } from '../analysis/test-support';
-import { annotateVerifiedMisses, clearMissedTacticAnnotations } from './annotate';
+import {
+  annotateVerifiedMisses,
+  clearAllMissedTacticAnnotations,
+  clearMissedTacticAnnotations,
+} from './annotate';
 import { generateCandidates } from './stage1';
 import { DETECTION_VERSION } from './types';
 import type { VerifiedTacticalCandidate } from './types';
@@ -180,5 +184,28 @@ describe('clearMissedTacticAnnotations', () => {
     expect(result[0]).not.toBe(nullAnnotated);
     expect(result[0]!.missedTactic).toBe(false);
     expect(result[0]!.detectionVersion).toBeNull();
+  });
+});
+
+describe('clearAllMissedTacticAnnotations', () => {
+  it('clears every flagged record, including a current-version one (depth re-scan)', () => {
+    const annotatedCurrent = {
+      ...missRecord(4, 'white'),
+      missedTactic: true,
+      detectionVersion: DETECTION_VERSION,
+    };
+    const annotatedStale = { ...missRecord(6, 'white'), missedTactic: true, detectionVersion: 1 };
+    const clean = missRecord(8, 'white');
+
+    const result = clearAllMissedTacticAnnotations([annotatedCurrent, annotatedStale, clean]);
+
+    expect(result[0]).not.toBe(annotatedCurrent);
+    expect(result[0]!.missedTactic).toBe(false);
+    expect(result[0]!.detectionVersion).toBeNull();
+    expect(result[1]).not.toBe(annotatedStale);
+    expect(result[1]!.missedTactic).toBe(false);
+    expect(result[2]).toBe(clean);
+    // The input records are never mutated.
+    expect(annotatedCurrent.missedTactic).toBe(true);
   });
 });

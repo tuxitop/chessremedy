@@ -198,6 +198,58 @@ describe('Settings page — Puzzle hints default (Feature 017 §7)', () => {
   });
 });
 
+describe('Settings page — Tactical detection (Feature 010 W2)', () => {
+  beforeEach(async () => {
+    await db.settings.clear();
+  });
+
+  it('renders the verification-depth control with the default and bounds', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+
+    const row = await screen.findByTestId('settings-row-tactical-detection');
+    const depth = (await within(row).findByTestId(
+      'setting-verification-depth',
+    )) as HTMLInputElement;
+    expect(depth.value).toBe('22');
+    expect(depth.min).toBe('10');
+    expect(depth.max).toBe('40');
+    expect(within(row).getByTestId('setting-verification-depth-help')).toHaveTextContent(
+      'Default 22',
+    );
+  });
+
+  it('persists a changed depth immediately', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    await screen.findByTestId('settings-row-tactical-detection');
+
+    const depth = await screen.findByTestId('setting-verification-depth');
+    fireEvent.change(depth, { target: { value: '30' } });
+
+    await waitFor(async () => {
+      const stored = await settingsRepository.get<{ verificationDepth: number }>(
+        SETTINGS_KEYS.analysisTacticalDetection,
+      );
+      expect(stored).toEqual({ verificationDepth: 30 });
+    });
+  });
+
+  it('clamps an out-of-bounds depth before persisting', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    await screen.findByTestId('settings-row-tactical-detection');
+
+    const depth = await screen.findByTestId('setting-verification-depth');
+    fireEvent.change(depth, { target: { value: '999' } });
+
+    await waitFor(async () => {
+      const stored = await settingsRepository.get<{ verificationDepth: number }>(
+        SETTINGS_KEYS.analysisTacticalDetection,
+      );
+      expect(stored).toEqual({ verificationDepth: 40 });
+    });
+    expect(screen.getByTestId('setting-verification-depth')).toHaveValue(40);
+  });
+});
+
 describe('Settings page — Analysis maintenance (orphan-job cleanup)', () => {
   beforeEach(async () => {
     await db.settings.clear();

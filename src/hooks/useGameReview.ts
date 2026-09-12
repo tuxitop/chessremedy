@@ -39,6 +39,14 @@ export interface ReviewData {
    */
   readonly detectionVersion: number | null;
   /**
+   * Effective Stage-2 verification depth the shown analysis's completed
+   * detection pass was produced at (Feature 010 W2), or `null` when the pass
+   * predates the field. Provenance only — never a freshness input; it lets
+   * Review offer the explicit "Re-scan tactics" path when it differs from the
+   * current Settings value.
+   */
+  readonly verificationDepth: number | null;
+  /**
    * Live Stage-2 scan progress (`done`/`total` settled candidates) of the shown
    * analysis's detection pass (plan 013 W3); `null` when the pass has not
    * recorded progress. Rendered as a progress bar only while the pass is live.
@@ -62,6 +70,7 @@ export function useGameReview(gameId: string): ReviewData {
     progress: null,
     detectionState: null,
     detectionVersion: null,
+    verificationDepth: null,
     scanProgress: null,
   });
 
@@ -75,6 +84,7 @@ export function useGameReview(gameId: string): ReviewData {
       let records: readonly MoveAnalysis[] = [];
       let detectionState: SummaryDetectionState | null = null;
       let detectionVersion: number | null = null;
+      let verificationDepth: number | null = null;
       let scanProgress: { readonly done: number; readonly total: number } | null = null;
       if (game && completed) {
         records = await analysesRepository.listForGameAndAnalysis(gameId, completed.id);
@@ -84,6 +94,7 @@ export function useGameReview(gameId: string): ReviewData {
         // silent about missed tactics.
         detectionState = summary ? summary.detectionState : 'absent';
         detectionVersion = summary?.detectionVersion ?? null;
+        verificationDepth = summary?.verificationDepth ?? null;
         scanProgress = summary?.scanProgress ?? null;
       }
       if (cancelled) {
@@ -104,6 +115,7 @@ export function useGameReview(gameId: string): ReviewData {
             : null,
         detectionState,
         detectionVersion,
+        verificationDepth,
         scanProgress,
       });
     })().catch(() => {

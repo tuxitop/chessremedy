@@ -126,6 +126,9 @@ export function analysisInsightsForGame(
   // outdated — its count is suppressed and the row offers a refresh scan.
   const detectionCompleted =
     summary.detectionState === 'completed' && summary.detectionVersion === DETECTION_VERSION;
+  // The recorded verification depth is provenance only (never a freshness
+  // input): exposed verbatim so the row can offer an explicit re-scan when it
+  // differs from the current Settings value. Older rows read `null`.
   const puzzleState = summary.puzzleState ?? 'absent';
   const puzzleProgress = summary.puzzleProgress ?? null;
   // Absent ≠ zero: a puzzle count is only ever the live row count of a
@@ -142,6 +145,7 @@ export function analysisInsightsForGame(
     classificationCounts: summary.classificationCounts,
     detectionState: summary.detectionState,
     detectionVersion: summary.detectionVersion,
+    verificationDepth: summary.verificationDepth ?? null,
     hasCompletedDetection: detectionCompleted,
     missedTactics: detectionCompleted ? summary.missedTacticCount : null,
     scanProgress: summary.scanProgress ?? null,

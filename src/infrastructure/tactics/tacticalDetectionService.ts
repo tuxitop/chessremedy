@@ -76,7 +76,7 @@ import type {
 } from '@/domain/analysis/summaryDerivation';
 import {
   annotateVerifiedMisses,
-  clearMissedTacticAnnotations,
+  clearAllMissedTacticAnnotations,
   DETECTION_VERSION,
   fastPathVerifiedCandidate,
   generateCandidates,
@@ -103,9 +103,10 @@ import type {
 } from '@/infrastructure/db/summaries-repository';
 import { analysisCacheKey } from '@/infrastructure/engine/cache';
 import type { EngineAnalysisCache } from '@/infrastructure/engine/cache';
-import { profileConfig } from '@/infrastructure/engine/engineProfiles';
+import { VERIFICATION_THREADS } from '@/infrastructure/engine/capabilities';
 import type { EngineLine } from '@/infrastructure/engine/types';
 import type { EngineAnalysisResult, EngineService } from '@/infrastructure/engine/types';
+import { DEFAULT_VERIFICATION_DEPTH, clampVerificationDepth } from './verificationDepth';
 
 /**
  * Bounded search time for one candidate's tactical verification (plan-013
@@ -127,6 +128,18 @@ export const MAX_ENGINE_ATTEMPTS_PER_CANDIDATE = 2;
 
 export interface TacticalDetectionServiceOptions {
   readonly engine: EngineService;
+  /**
+   * Fixed effective verification depth (tests / back-compat). Ignored when
+   * `resolveVerificationDepth` is supplied; clamped per pass. Defaults to
+   * `DEFAULT_VERIFICATION_DEPTH` (22) when neither is given.
+   */
+  readonly verificationDepth?: number;
+  /**
+   * Live verification-depth provider (Settings `analysis.tacticalDetection`).
+   * Resolved and clamped **once per pass**, so every Stage-2 search of one
+   * pass uses the same effective depth.
+   */
+  readonly resolveVerificationDepth?: () => number | Promise<number>;
   /** ADR-018 position-keyed cache; when absent positions are always searched. */
   readonly engineCache?: EngineAnalysisCache | null;
   readonly analyses: AnalysisRepository;
@@ -165,7 +178,8 @@ export class TacticalDetectionService {
   private readonly jobs: AnalysisJobsRepository | null;
   private readonly games: GamesRepository | null;
   private readonly now: () => number;
-  private readonly tacticalDepth: number;
+  private readonly fixedVerificationDepth: number | null;
+  private readonly resolveVerificationDepth: (() => number | Promise<number>) | null;
 
   constructor(options: TacticalDetectionServiceOptions) {
     this.engine = options.engine;
@@ -176,7 +190,24 @@ export class TacticalDetectionService {
     this.jobs = options.jobs ?? null;
     this.games = options.games ?? null;
     this.now = options.now ?? (() => Date.now());
-    this.tacticalDepth = profileConfig('tactical').depth;
+    this.fixedVerificationDepth =
+      options.verificationDepth !== undefined
+        ? clampVerificationDepth(options.verificationDepth)
+        : null;
+    this.resolveVerificationDepth = options.resolveVerificationDepth ?? null;
+  }
+
+  /**
+   * Resolve the effective verification depth for one pass (ADR-026/ADR-034):
+   * the live provider when supplied, else the fixed option, else the default
+   * 22 — always clamped. Called once per pass so every Stage-2 search in the
+   * pass shares the same depth (and cache scope).
+   */
+  private async effectiveVerificationDepth(): Promise<number> {
+    if (this.resolveVerificationDepth) {
+      return clampVerificationDepth(await this.resolveVerificationDepth());
+    }
+    return this.fixedVerificationDepth ?? DEFAULT_VERIFICATION_DEPTH;
   }
 
   /**
@@ -199,6 +230,7 @@ export class TacticalDetectionService {
     game: { readonly id: string; readonly userColor: Color },
     records: readonly MoveAnalysis[],
     signal?: AbortSignal,
+    options: { readonly force?: boolean } = {},
   ): Promise<void> {
     if (signal?.aborted) {
       return;
@@ -209,12 +241,26 @@ export class TacticalDetectionService {
     // summary written by an older DETECTION_VERSION is NOT trusted: its verdicts
     // were produced under rules that no longer apply, so the pass re-runs and
     // wipes its artifacts (plan 015 freshness gate).
+    //
+    // Depth is deliberately **not** consulted here (ADR-026/ADR-034): a
+    // completed pass stays current while its `detectionVersion` matches the
+    // current constant, whatever depth it was produced at, so changing the
+    // verification-depth setting never marks a result outdated and never
+    // auto-runs a scan. Applying a changed depth is the explicit `force` path.
     if (
+      options.force !== true &&
       existing?.detectionState === 'completed' &&
       existing.detectionVersion === DETECTION_VERSION
     ) {
       return;
     }
+    if (signal?.aborted) {
+      return;
+    }
+
+    // Resolve the effective depth once per pass; every Stage-2 search (and the
+    // cache scope) uses this value for the whole pass.
+    const verificationDepth = await this.effectiveVerificationDepth();
     if (signal?.aborted) {
       return;
     }
@@ -226,20 +272,30 @@ export class TacticalDetectionService {
     // its old `verified` row and `missedTactic` annotation instead of surviving
     // forever (plan 015). The wipe also runs for an empty pass: a game that
     // re-detects to zero candidates can still carry a stale marker that has to
-    // go.
+    // go. It fires on a depth mismatch too: a re-scan at a changed depth must
+    // not reuse verdicts produced at another depth.
     const storedRows = await this.candidates.listForGameAndAnalysis(game.id, job.id);
     let stored: readonly PuzzleCandidateRow[] = storedRows;
     const hasStaleRows = storedRows.some(
-      (row) => row.verificationStatus === 'verified' && row.detectionVersion !== DETECTION_VERSION,
+      (row) =>
+        row.verificationStatus === 'verified' &&
+        (row.detectionVersion !== DETECTION_VERSION ||
+          row.verificationMetadata.verificationDepth !== verificationDepth),
     );
     const hasStaleCompleted =
-      existing?.detectionState === 'completed' && existing.detectionVersion !== DETECTION_VERSION;
+      existing?.detectionState === 'completed' &&
+      (existing.detectionVersion !== DETECTION_VERSION ||
+        (existing.verificationDepth ?? null) !== verificationDepth);
     const hasStaleAnnotations = records.some(
       (record) => record.missedTactic && record.detectionVersion !== DETECTION_VERSION,
     );
     if (hasStaleCompleted || hasStaleRows || hasStaleAnnotations) {
       await this.candidates.deleteForAnalysis(job.id);
-      const cleared = clearMissedTacticAnnotations(records, DETECTION_VERSION);
+      // A wipe is a full re-derivation, so clear **every** missed-tactic
+      // annotation (a record written at another depth carries no depth, so it
+      // cannot be distinguished from one this pass will re-derive) and re-apply
+      // from the freshly verified set below.
+      const cleared = clearAllMissedTacticAnnotations(records);
       if (cleared !== records) {
         // Persist the de-annotated records so the MoveAnalysis table no longer
         // carries flags this pass will not re-derive.
@@ -272,6 +328,7 @@ export class TacticalDetectionService {
           missedTacticCount: 0,
           detectionVersion: DETECTION_VERSION,
           scanProgress: { done: 0, total: 0 },
+          verificationDepth,
         },
         // This write STARTS a fresh (re)derivation: reset any puzzle fields.
         { carryPuzzleFields: false },
@@ -283,14 +340,18 @@ export class TacticalDetectionService {
     }
 
     // Resumability: candidates that already carry a `verified` row written by
-    // the **current** detection version (an earlier, interrupted or failed pass)
-    // are reused without an engine run; every other candidate is (re)persisted
-    // as `raw` BEFORE Stage 2 so an interruption never loses the candidate set.
-    // Rows from older versions are wiped above and filtered here as a defensive
-    // backstop.
+    // the **current** detection version **at the effective depth** (an earlier,
+    // interrupted or failed pass) are reused without an engine run; every other
+    // candidate is (re)persisted as `raw` BEFORE Stage 2 so an interruption
+    // never loses the candidate set. Rows from older versions or another depth
+    // are wiped above and filtered here as a defensive backstop.
     const verifiedByPly = new Map<number, VerifiedTacticalCandidate>();
     for (const row of stored) {
-      if (row.verificationStatus === 'verified' && row.detectionVersion === DETECTION_VERSION) {
+      if (
+        row.verificationStatus === 'verified' &&
+        row.detectionVersion === DETECTION_VERSION &&
+        row.verificationMetadata.verificationDepth === verificationDepth
+      ) {
         verifiedByPly.set(row.sourcePly, row);
       }
     }
@@ -309,17 +370,16 @@ export class TacticalDetectionService {
       game,
       records,
       'inProgress',
-      { scanProgress: { done: settledCount, total } },
+      { scanProgress: { done: settledCount, total }, verificationDepth },
       // This write STARTS a fresh (re)derivation: reset any puzzle fields.
       { carryPuzzleFields: false },
     );
 
     const engineIdentity = this.resolveEngineIdentity(job);
-    // A completed run's Game-analysis settings (job.config) may carry a threads
-    // override; the scan's tactical searches belong to that run's identity, so
-    // they apply the same override (and cache scope). Dropped when 1 (default).
-    const threads =
-      job.config?.threads !== undefined && job.config.threads > 1 ? job.config.threads : undefined;
+    // The detection pass uses the dedicated verification engine's own thread
+    // count (ADR-034) and never inherits the Game-analysis run's `threads`
+    // override (Feature 008 §3 superseded): the verification engine is fixed at
+    // VERIFICATION_THREADS (1). The depth is the pass's effective setting.
     const verified: VerifiedTacticalCandidate[] = [];
     let deferredFailures = 0;
     const recordsByPly = new Map<number, MoveAnalysis>();
@@ -331,6 +391,7 @@ export class TacticalDetectionService {
       if (signal?.aborted) {
         await this.writeSummary(job, game, records, 'queued', {
           scanProgress: { done: settledCount, total },
+          verificationDepth,
         });
         return;
       }
@@ -351,7 +412,14 @@ export class TacticalDetectionService {
           await this.candidates.bulkPutForAnalysis([fast]);
           verified.push(fast);
           settledCount += 1;
-          await this.persistScanProgress(job, game, records, settledCount, total);
+          await this.persistScanProgress(
+            job,
+            game,
+            records,
+            settledCount,
+            total,
+            verificationDepth,
+          );
           await this.persistAnnotatedRecords(records, verified);
           continue;
         }
@@ -360,12 +428,13 @@ export class TacticalDetectionService {
       const outcome = await this.verifyCandidateWithEngine(
         candidate,
         engineIdentity,
+        verificationDepth,
         signal,
-        threads,
       );
       if (outcome.kind === 'aborted') {
         await this.writeSummary(job, game, records, 'queued', {
           scanProgress: { done: settledCount, total },
+          verificationDepth,
         });
         return;
       }
@@ -383,18 +452,20 @@ export class TacticalDetectionService {
           if (signal?.aborted) {
             await this.writeSummary(job, game, records, 'queued', {
               scanProgress: { done: settledCount, total },
+              verificationDepth,
             });
             return;
           }
           settled = await this.verifyCandidateWithEngine(
             candidate,
             engineIdentity,
+            verificationDepth,
             signal,
-            threads,
           );
           if (settled.kind === 'aborted') {
             await this.writeSummary(job, game, records, 'queued', {
               scanProgress: { done: settledCount, total },
+              verificationDepth,
             });
             return;
           }
@@ -411,7 +482,14 @@ export class TacticalDetectionService {
           await this.candidates.bulkPutForAnalysis([settled.candidate]);
           verified.push(settled.candidate);
           settledCount += 1;
-          await this.persistScanProgress(job, game, records, settledCount, total);
+          await this.persistScanProgress(
+            job,
+            game,
+            records,
+            settledCount,
+            total,
+            verificationDepth,
+          );
           await this.persistAnnotatedRecords(records, verified);
           continue;
         }
@@ -423,7 +501,7 @@ export class TacticalDetectionService {
           settled.reason,
           settled.line,
         );
-        await this.persistScanProgress(job, game, records, settledCount, total);
+        await this.persistScanProgress(job, game, records, settledCount, total, verificationDepth);
         continue;
       }
       if (outcome.kind === 'rejected') {
@@ -437,19 +515,20 @@ export class TacticalDetectionService {
           outcome.reason,
           outcome.line,
         );
-        await this.persistScanProgress(job, game, records, settledCount, total);
+        await this.persistScanProgress(job, game, records, settledCount, total, verificationDepth);
         continue;
       }
       await this.candidates.bulkPutForAnalysis([outcome.candidate]);
       verified.push(outcome.candidate);
       settledCount += 1;
-      await this.persistScanProgress(job, game, records, settledCount, total);
+      await this.persistScanProgress(job, game, records, settledCount, total, verificationDepth);
       await this.persistAnnotatedRecords(records, verified);
     }
 
     if (signal?.aborted) {
       await this.writeSummary(job, game, records, 'queued', {
         scanProgress: { done: settledCount, total },
+        verificationDepth,
       });
       return;
     }
@@ -461,6 +540,7 @@ export class TacticalDetectionService {
       // actually run the engine again.
       await this.writeSummary(job, game, records, 'failed', {
         scanProgress: { done: settledCount, total },
+        verificationDepth,
       });
       return;
     }
@@ -468,6 +548,7 @@ export class TacticalDetectionService {
       missedTacticCount: verified.length,
       detectionVersion: DETECTION_VERSION,
       scanProgress: { done: total, total },
+      verificationDepth,
     });
   }
 
@@ -522,6 +603,16 @@ export class TacticalDetectionService {
     return created;
   }
 
+  /**
+   * Explicit teardown: dispose the injected engine service (the dedicated
+   * verification engine, ADR-034). Used by the analysis-service teardown; the
+   * idle-disposing lazy wrapper also calls its inner service's `dispose`.
+   * Idempotent because `EngineService.dispose` is.
+   */
+  async dispose(): Promise<void> {
+    await this.engine.dispose();
+  }
+
   // --- internals --------------------------------------------------------------
 
   /** Persist the run's records with the verified-miss annotations applied. */
@@ -546,6 +637,7 @@ export class TacticalDetectionService {
       readonly missedTacticCount?: number | null;
       readonly detectionVersion?: number | null;
       readonly scanProgress?: ScanProgress | null;
+      readonly verificationDepth?: number | null;
     } = {},
     options: { readonly carryPuzzleFields?: boolean } = {},
   ): Promise<void> {
@@ -553,6 +645,9 @@ export class TacticalDetectionService {
       state === 'completed'
         ? {
             detectionState: state,
+            ...(extras.verificationDepth !== undefined
+              ? { verificationDepth: extras.verificationDepth }
+              : {}),
             ...(extras.missedTacticCount !== undefined
               ? { missedTacticCount: extras.missedTacticCount }
               : {}),
@@ -563,6 +658,9 @@ export class TacticalDetectionService {
           }
         : {
             detectionState: state,
+            ...(extras.verificationDepth !== undefined
+              ? { verificationDepth: extras.verificationDepth }
+              : {}),
             ...(extras.scanProgress !== undefined ? { scanProgress: extras.scanProgress } : {}),
           };
     const built = buildAnalysisSummary(records, game.userColor, summaryOptions);
@@ -607,9 +705,11 @@ export class TacticalDetectionService {
     records: readonly MoveAnalysis[],
     done: number,
     total: number,
+    verificationDepth: number,
   ): Promise<void> {
     await this.writeSummary(job, game, records, 'inProgress', {
       scanProgress: { done, total },
+      verificationDepth,
     });
   }
 
@@ -677,27 +777,33 @@ export class TacticalDetectionService {
    * `tactical`-profile engine run (off the UI thread), then the pure
    * `verifyCandidate` verdict. An aborted signal during the engine search
    * cancels the job and reports `aborted`; a failed/cancelled/throw engine job
-   * reports `engine-failed` (retried/deferred by the caller). `threads` is the
-   * run's optional threads override (dropped when undefined/1). The tactical
-   * search is bounded by `VERIFY_MOVETIME_MS` (plan-013 fix C), which is part
-   * of the ADR-018 cache scope so time-capped results stay distinguishable.
+   * reports `engine-failed` (retried/deferred by the caller).
+   *
+   * The cache scope is the ADR-018 tactical scope plus the effective
+   * verification depth, the fixed verification thread count (`1`, ADR-034) and
+   * the `VERIFY_MOVETIME_MS` backstop (ADR-018 §"Tactical-detection
+   * verification scope"), so a result produced at one depth is never served to
+   * a search at another. The Game-analysis run's `threads` override is
+   * deliberately **not** inherited: the dedicated verification engine uses its
+   * own conservative count.
    */
   private async verifyCandidateWithEngine(
     candidate: RawCandidate,
     engineIdentity: EngineIdentity,
+    verificationDepth: number,
     signal?: AbortSignal,
-    threads?: number,
   ): Promise<VerificationOutcome> {
     const scope = {
       profile: 'tactical' as const,
+      maxDepth: verificationDepth,
       movetimeMs: VERIFY_MOVETIME_MS,
-      ...(threads !== undefined && threads > 1 ? { threads } : {}),
+      threads: VERIFICATION_THREADS,
     };
     const key = analysisCacheKey(candidate.startingFen, scope, engineIdentity);
     if (this.engineCache) {
       const cached = await this.engineCache.get(key);
       if (cached) {
-        return this.toVerdict(cached, candidate, engineIdentity);
+        return this.toVerdict(cached, candidate, engineIdentity, verificationDepth);
       }
     }
     if (signal?.aborted) {
@@ -708,13 +814,13 @@ export class TacticalDetectionService {
     try {
       const handle = this.engine.analyze(candidate.startingFen, {
         profile: 'tactical',
-        // Depth stays the ADR-012 tactical depth; VERIFY_MOVETIME_MS backstops
-        // it so a pathological position can never hold the search open past
-        // the bound (plan-013 fix C). The depth is also passed explicitly so
-        // the engine stops at whichever limit it reaches first.
-        maxDepth: this.tacticalDepth,
+        // The user's effective verification depth; VERIFY_MOVETIME_MS
+        // backstops it so a pathological position can never hold the search
+        // open past the bound (plan-013 fix C). The engine stops at whichever
+        // limit it reaches first.
+        maxDepth: verificationDepth,
         movetimeMs: VERIFY_MOVETIME_MS,
-        ...(threads !== undefined && threads > 1 ? { threads } : {}),
+        threads: VERIFICATION_THREADS,
       });
       const settled = await Promise.race([handle.outcome, abortSignal(signal)]);
       if (settled === 'aborted') {
@@ -740,8 +846,9 @@ export class TacticalDetectionService {
         candidate.startingFen,
         {
           profile: result.profile,
+          maxDepth: verificationDepth,
           movetimeMs: VERIFY_MOVETIME_MS,
-          ...(threads !== undefined && threads > 1 ? { threads } : {}),
+          threads: VERIFICATION_THREADS,
         },
         result.engine,
       );
@@ -751,13 +858,14 @@ export class TacticalDetectionService {
         // A cache write failure never fails the pass; the result is still used.
       }
     }
-    return this.toVerdict(result, candidate, engineIdentity);
+    return this.toVerdict(result, candidate, engineIdentity, verificationDepth);
   }
 
   private toVerdict(
     result: EngineAnalysisResult,
     candidate: RawCandidate,
     engineIdentity: EngineIdentity,
+    verificationDepth: number,
   ): VerificationOutcome {
     const lines: readonly TacticalCandidateLine[] = result.lines.map((line) =>
       toTacticalCandidateLine(line),
@@ -765,7 +873,7 @@ export class TacticalDetectionService {
     const verdict = verifyCandidate({
       candidate,
       now: this.now(),
-      verificationDepth: this.tacticalDepth,
+      verificationDepth,
       engine: engineIdentity,
       lines,
     });

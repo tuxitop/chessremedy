@@ -51,9 +51,11 @@ export interface AnalysisServiceLike {
   liveAnalysisGames?(): Promise<readonly string[]>;
   /**
    * Run only the Feature-010 tactics scan for a game's latest completed
-   * analysis (no re-analysis). Optional — tests/fakes may omit it.
+   * analysis (no re-analysis). `options.force` is the explicit re-scan path
+   * (e.g. the verification depth changed) and bypasses the completed/current
+   * no-op. Optional — tests/fakes may omit it.
    */
-  scanGame?(gameId: string): Promise<ScanGameOutcome>;
+  scanGame?(gameId: string, options?: { readonly force?: boolean }): Promise<ScanGameOutcome>;
   /** Cancel a game's live tactics scan. Optional — fakes may omit it. */
   cancelScan?(gameId: string): Promise<void>;
   /**

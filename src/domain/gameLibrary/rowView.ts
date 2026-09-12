@@ -73,6 +73,16 @@ export interface GameRowInsights {
    * the row should offer a refresh scan.
    */
   readonly detectionVersion?: number | null;
+  /**
+   * Effective Stage-2 verification depth the latest completed analysis's pass
+   * was produced at (Feature 010 W2, ADR-026/ADR-034), or `null` when the pass
+   * predates the field. **Provenance only**: the freshness gate reads
+   * `detectionVersion` alone, so a completed pass stays current whatever depth
+   * it recorded. When this differs from the current Settings
+   * `analysis.tacticalDetection` value, the row offers the explicit
+   * "Re-scan tactics" affordance (a forced scan); it never auto-runs.
+   */
+  readonly verificationDepth?: number | null;
   /** True once a Feature-010 detection pass completed for the analysis. */
   readonly hasCompletedDetection?: boolean;
   /**

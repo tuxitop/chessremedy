@@ -157,6 +157,7 @@ describe('analysisInsightsForGame', () => {
       classificationCounts: { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
       detectionState: 'absent',
       detectionVersion: null,
+      verificationDepth: null,
       hasCompletedDetection: false,
       missedTactics: null,
       scanProgress: null,
@@ -164,6 +165,24 @@ describe('analysisInsightsForGame', () => {
       puzzleGeneratorVersion: null,
       puzzleProgress: null,
     });
+  });
+
+  it('carries the recorded verification depth as provenance (Feature 010 W2)', () => {
+    const job = completedJob(G_MISSED, 10);
+    const insights = analysisInsightsForGame(
+      [job],
+      [
+        summaryFor(job.id, G_MISSED, {
+          detectionState: 'completed',
+          missedTacticCount: 1,
+          detectionVersion: DETECTION_VERSION,
+          verificationDepth: 30,
+        }),
+      ],
+    );
+    expect(insights.verificationDepth).toBe(30);
+    // Depth is provenance only: it never changes the freshness gate.
+    expect(insights.hasCompletedDetection).toBe(true);
   });
 
   it('reports the detection state verbatim while a pass is still running', () => {

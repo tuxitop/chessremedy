@@ -13,6 +13,7 @@ import { dateIsoOf } from '@/domain/gameLibrary/timeframe';
 import { terminationLabel, fallbackTermination } from '@/domain/chess/gameEnd';
 import { useGameLibrary } from '@/hooks/useGameLibrary';
 import { useCloseInterruptGuard } from '@/hooks/useCloseInterruptGuard';
+import { useTacticalDetectionSettings } from '@/hooks/useTacticalDetectionSettings';
 import {
   useLibraryAnalysis,
   type AnalysisQueuePositions,
@@ -67,6 +68,11 @@ export function GameLibrary({
     analysisService ?? null,
     library.rows.map((row) => row.id),
   );
+  // The current Stage-2 verification-depth setting (Feature 010 W2). A
+  // completed/current detection pass recorded at a different depth offers the
+  // explicit "Re-scan tactics" action; changing the setting never auto-runs.
+  const tacticalSettings = useTacticalDetectionSettings();
+  const currentVerificationDepth = tacticalSettings.settings?.verificationDepth ?? null;
   const { filters } = library;
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
@@ -378,16 +384,18 @@ export function GameLibrary({
     void analysisService.reconcileOrphans!();
   }, [analysisService]);
 
-  /** Run/resume/retry the tactics scan of one game (WP-A on-demand scan). */
+  /** Run/resume/retry the tactics scan of one game (WP-A on-demand scan). When
+   *  `force` is true it is the explicit re-scan path (e.g. the verification
+   *  depth changed), bypassing the completed/current no-op. */
   const runScan = useCallback(
-    (gameId: string) => {
+    (gameId: string, force = false) => {
       const service = analysisService;
       if (!service || typeof service.scanGame !== 'function') {
         return;
       }
       void (async () => {
         try {
-          const outcome = await service.scanGame!(gameId);
+          const outcome = await service.scanGame!(gameId, force ? { force: true } : undefined);
           if (outcome === 'started') {
             setActiveDetectionIds((previous) => {
               if (previous.has(gameId)) {
@@ -731,6 +739,7 @@ export function GameLibrary({
             liveAnalysisIds={liveAnalysisIds}
             scanEnabled={canScan && analysis.enabled}
             onScan={runScan}
+            currentVerificationDepth={currentVerificationDepth}
             generationEnabled={canGenerate && analysis.enabled}
             onGeneratePuzzles={runGeneration}
           />
@@ -774,6 +783,7 @@ function GameRows({
   liveAnalysisIds,
   scanEnabled,
   onScan,
+  currentVerificationDepth,
   generationEnabled,
   onGeneratePuzzles,
   onDeleteGame,
@@ -791,7 +801,9 @@ function GameRows({
   liveAnalysisIds: ReadonlySet<string>;
   /** Whether the shared service exposes the on-demand scan entry point. */
   scanEnabled: boolean;
-  onScan: (gameId: string) => void;
+  onScan: (gameId: string, force?: boolean) => void;
+  /** Current Settings verification depth; `null` until the setting is read. */
+  currentVerificationDepth: number | null;
   /** Whether the shared service exposes the on-demand generation entry point. */
   generationEnabled: boolean;
   onGeneratePuzzles: (gameId: string) => void;
@@ -885,6 +897,7 @@ function GameRows({
             row={row}
             live={activeDetectionIds.has(row.id)}
             enabled={scanEnabled}
+            currentVerificationDepth={currentVerificationDepth}
             onScan={onScan}
           />
           <PuzzleGenerationAction
@@ -1311,18 +1324,21 @@ function DetectionScanAction({
   row,
   live,
   enabled,
+  currentVerificationDepth,
   onScan,
 }: {
   row: LibraryGameRow;
   live: boolean;
   enabled: boolean;
-  onScan: (gameId: string) => void;
+  /** Current Settings verification depth; `null` until the setting is read. */
+  currentVerificationDepth: number | null;
+  onScan: (gameId: string, force?: boolean) => void;
 }): React.JSX.Element | null {
   if (row.analysisStatus !== 'completed' && row.analysisStatus !== 'outdated') {
     return null;
   }
   const detection = row.detectionState;
-  let kind: 'resume' | 'retry' | 'run' | 'refresh' | null = null;
+  let kind: 'resume' | 'retry' | 'run' | 'refresh' | 'rescan' | null = null;
   let label = '';
   if (detection === 'queued' || detection === 'inProgress') {
     if (live) {
@@ -1341,6 +1357,22 @@ function DetectionScanAction({
     // refresh scan that re-runs detection without re-analyzing the game.
     kind = 'refresh';
     label = 'Refresh tactics scan';
+  } else if (
+    detection === 'completed' &&
+    row.detectionVersion === DETECTION_VERSION &&
+    currentVerificationDepth !== null &&
+    row.verificationDepth != null &&
+    row.verificationDepth !== currentVerificationDepth
+  ) {
+    // The completed pass is current (freshness ignores depth) but was produced
+    // at a different verification depth: offer the explicit re-scan that
+    // applies the current setting (ADR-026/ADR-034). Changing the setting never
+    // auto-runs a scan.
+    if (live) {
+      return null;
+    }
+    kind = 'rescan';
+    label = 'Re-scan tactics';
   } else {
     return null;
   }
@@ -1353,7 +1385,7 @@ function DetectionScanAction({
         type="button"
         className={styles.detectionScanButton}
         data-testid={`row-scan-${kind}-${row.id}`}
-        onClick={() => onScan(row.id)}
+        onClick={() => onScan(row.id, kind === 'rescan')}
       >
         {label}
       </button>

@@ -5,7 +5,13 @@ import { Button } from '@/components/ui/Button';
 import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
+import { useTacticalDetectionSettings } from '@/hooks/useTacticalDetectionSettings';
 import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
+import {
+  MAX_VERIFICATION_DEPTH,
+  MIN_VERIFICATION_DEPTH,
+  clampVerificationDepth,
+} from '@/infrastructure/tactics/verificationDepth';
 import { useDefaultHintConfig } from '@/hooks/useDefaultHintConfig';
 import { HINT_LEVELS } from '@/components/puzzles/cycles';
 import type { HintConfig, HintLevel } from '@/domain/training';
@@ -322,6 +328,11 @@ export function SettingsPage({
     save: savePuzzleTimer,
   } = usePuzzleTimerSetting();
   const {
+    settings: detectionSettings,
+    isReady: detectionReady,
+    save: saveDetection,
+  } = useTacticalDetectionSettings();
+  const {
     hints: defaultHints,
     isReady: hintsReady,
     error: hintsError,
@@ -418,6 +429,48 @@ export function SettingsPage({
             />
           ) : (
             <p className={styles.engineLoading}>Loading game-analysis settings…</p>
+          )}
+        </li>
+
+        <li className={styles.row} data-testid="settings-row-tactical-detection">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Tactical detection</h2>
+            <p className={styles.rowDescription}>
+              Depth used by the tactical verification pass that finds missed tactics after a game is
+              analyzed. A deeper setting searches harder and costs more; the 45-second per-candidate
+              backstop still applies. Applies to new scans and explicit re-scans — existing results
+              stay current.
+            </p>
+          </div>
+          {detectionReady && detectionSettings ? (
+            <div className={styles.engineDefaults}>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Verification depth</span>
+                <input
+                  type="number"
+                  min={MIN_VERIFICATION_DEPTH}
+                  max={MAX_VERIFICATION_DEPTH}
+                  value={detectionSettings.verificationDepth}
+                  aria-describedby="setting-verification-depth-help"
+                  onChange={(e) =>
+                    void saveDetection({
+                      verificationDepth: clampVerificationDepth(Number(e.target.value)),
+                    })
+                  }
+                  data-testid="setting-verification-depth"
+                />
+              </label>
+              <p
+                id="setting-verification-depth-help"
+                className={styles.helpText}
+                data-testid="setting-verification-depth-help"
+              >
+                Default 22, bounds {MIN_VERIFICATION_DEPTH}–{MAX_VERIFICATION_DEPTH}. Applies to new
+                scans and explicit re-scans; completed results stay current.
+              </p>
+            </div>
+          ) : (
+            <p className={styles.engineLoading}>Loading tactical detection settings…</p>
           )}
         </li>
 

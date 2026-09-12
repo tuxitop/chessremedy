@@ -17,7 +17,11 @@ export type {
 } from './types';
 export { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from './types';
 export { generateCandidates } from './stage1';
-export { annotateVerifiedMisses, clearMissedTacticAnnotations } from './annotate';
+export {
+  annotateVerifiedMisses,
+  clearAllMissedTacticAnnotations,
+  clearMissedTacticAnnotations,
+} from './annotate';
 export { walkLine, forcingness, materialDelta, lineTermination, isTerminalDraw } from './line';
 export type {
   LineEnd,

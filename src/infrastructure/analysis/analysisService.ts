@@ -380,10 +380,16 @@ export class AnalysisService {
    * (standalone "Resume / Run tactics scan"). The scan-only entry point is
    * on-demand: it runs only the detection pass for the latest completed job
    * (ADR-018-cache aware, resumable, idempotent per analysis identity) and
-   * never re-analyzes positions. The pass runs detached through the shared
-   * engine FIFO and is registered as live so the UI can cancel it / show it.
+   * never re-analyzes positions. The pass runs detached through the dedicated
+   * verification engine (ADR-034) and is registered as live so the UI can
+   * cancel it / show it. `force` is the explicit re-scan path (e.g. the user
+   * changed the verification-depth setting): it bypasses the completed/current
+   * no-op and re-derives at the current depth.
    */
-  async scanGame(gameId: GameId): Promise<ScanGameOutcome> {
+  async scanGame(
+    gameId: GameId,
+    options: { readonly force?: boolean } = {},
+  ): Promise<ScanGameOutcome> {
     if (!this.detection) {
       return 'unavailable';
     }
@@ -409,7 +415,13 @@ export class AnalysisService {
       // current pipeline version. A completed summary from an older version is
       // outdated (plan 015 freshness gate): fall through so the pass re-runs
       // and wipes the stale result.
+      //
+      // `force` is the explicit re-scan path (e.g. the user changed the
+      // verification depth): it bypasses the completed/current no-op and
+      // re-derives at the current depth. Depth is never consulted for the
+      // non-forced no-op, so changing the setting never auto-runs a scan.
       if (
+        options.force !== true &&
         existing?.detectionState === 'completed' &&
         existing.detectionVersion === DETECTION_VERSION
       ) {
@@ -420,7 +432,7 @@ export class AnalysisService {
     if (records.length === 0) {
       return 'no-records';
     }
-    this.startScan(latest, game, records);
+    this.startScan(latest, game, records, options);
     return 'started';
   }
 
@@ -664,6 +676,17 @@ export class AnalysisService {
       }
     }
     return cleared;
+  }
+
+  /**
+   * Explicit teardown: dispose the dedicated Feature-010 verification engine
+   * (via the detection service) and the analysis engine. Idempotent because
+   * each `EngineService.dispose` is. Used by the browser assembly on teardown
+   * (ADR-034).
+   */
+  async dispose(): Promise<void> {
+    await this.detection?.dispose();
+    await this.engine.dispose();
   }
 
   /**
@@ -990,6 +1013,7 @@ export class AnalysisService {
     job: AnalysisJob,
     game: Game,
     records: readonly MoveAnalysis[],
+    options: { readonly force?: boolean } = {},
   ): ScanEntry | null {
     if (!this.detection) {
       return null;
@@ -1006,6 +1030,7 @@ export class AnalysisService {
           { id: game.id, userColor: game.userColor },
           records,
           controller.signal,
+          options,
         );
         // Feature-011 Stage C: when the settled detection verdict is
         // `completed` at the current DETECTION_VERSION, schedule the

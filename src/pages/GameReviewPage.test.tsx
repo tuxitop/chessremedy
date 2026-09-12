@@ -942,3 +942,81 @@ describe('Game Review scan activity bar (plan 012, WP-B)', () => {
     });
   });
 });
+
+describe('Game Review verification-depth re-scan (Feature 010 W2)', () => {
+  beforeEach(async () => {
+    chessboardProps.length = 0;
+    await db.games.clear();
+    await db.analyses.clear();
+    await db.analysisJobs.clear();
+    await db.analysisSummaries.clear();
+    await db.positionAnalysisCache.clear();
+    await db.settings.clear();
+  });
+
+  async function seedCompletedDetection(depth: number): Promise<string> {
+    const jobId = await seedCompleted();
+    const records = await analysesRepository.listForGameAndAnalysis(GAME.id, jobId);
+    const built = buildAnalysisSummary(records, 'white', {
+      detectionState: 'completed',
+      missedTacticCount: 0,
+      detectionVersion: DETECTION_VERSION,
+      verificationDepth: depth,
+    });
+    await summariesRepository.putForAnalysis({
+      analysisId: jobId,
+      gameId: GAME.id,
+      userColor: 'white',
+      updatedAt: Date.now(),
+      ...built,
+    });
+    return jobId;
+  }
+
+  function serviceWithScanCapture(): {
+    service: AnalysisServiceLike;
+    scanCalls: Array<{ id: string; options?: { readonly force?: boolean } }>;
+  } {
+    const base = createFakeAnalysisService().service;
+    const scanCalls: Array<{ id: string; options?: { readonly force?: boolean } }> = [];
+    const service: AnalysisServiceLike = {
+      analyzeGames: (ids, profile, run) => base.analyzeGames(ids, profile, run),
+      statusesOf: (ids, expected) => base.statusesOf(ids, expected),
+      listActiveJobs: () => base.listActiveJobs(),
+      cancelGame: (id) => base.cancelGame(id),
+      scanGame: async (id, options) => {
+        scanCalls.push({ id, ...(options !== undefined ? { options } : {}) });
+        return 'started';
+      },
+    };
+    return { service, scanCalls };
+  }
+
+  it('offers a forced Re-scan tactics when the pass recorded a different depth', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.analysisTacticalDetection, {
+      verificationDepth: 30,
+    });
+    await seedCompletedDetection(22);
+    const { service, scanCalls } = serviceWithScanCapture();
+    renderReview(service);
+    await screen.findByTestId('review-layout');
+
+    const bar = await screen.findByTestId('review-scan-bar');
+    const rescan = within(bar).getByTestId('review-scan-rescan');
+    expect(rescan).toHaveTextContent('Re-scan tactics');
+    fireEvent.click(rescan);
+    await waitFor(() => expect(scanCalls).toEqual([{ id: GAME.id, options: { force: true } }]));
+  });
+
+  it('offers no re-scan when the recorded depth matches the current setting', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.analysisTacticalDetection, {
+      verificationDepth: 30,
+    });
+    await seedCompletedDetection(30);
+    const { service } = serviceWithScanCapture();
+    renderReview(service);
+    await screen.findByTestId('review-layout');
+
+    expect(screen.queryByTestId('review-scan-bar')).not.toBeInTheDocument();
+  });
+});

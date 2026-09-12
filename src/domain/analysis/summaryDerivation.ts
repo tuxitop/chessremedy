@@ -78,6 +78,15 @@ export interface BuildAnalysisSummaryOptions {
    */
   readonly scanProgress?: ScanProgress | null;
   /**
+   * Effective Stage-2 verification depth of the pass (Feature 010 W2,
+   * ADR-026/ADR-034), recorded as **provenance only**. It is an additive,
+   * non-indexed summary field and is explicitly **not** a freshness input: a
+   * completed pass stays current while its `detectionVersion` matches the
+   * current constant, whatever depth it was produced at. Absent/`null` on rows
+   * written before the field existed.
+   */
+  readonly verificationDepth?: number | null;
+  /**
    * Puzzle-generation state of the analysis (Feature 011). Defaults to
    * `'absent'` (no generation pass has been scheduled or run for this
    * analysis). The generation service passes `'queued'` when its pass starts
@@ -135,6 +144,12 @@ export interface PerAnalysisSummary {
    * reports the game as live.
    */
   readonly scanProgress: ScanProgress | null;
+  /**
+   * Effective Stage-2 verification depth of the pass, or `null` when the row
+   * predates the field or the pass recorded none. Provenance only — never a
+   * freshness input (a completed pass is current on `detectionVersion` alone).
+   */
+  readonly verificationDepth: number | null;
   /** Puzzle-generation state for this analysis; `'absent'` until a pass is scheduled. */
   readonly puzzleState: SummaryPuzzleState;
   /**
@@ -217,6 +232,7 @@ export function buildAnalysisSummary(
     missedTacticCount: holder.missedTacticCount,
     detectionVersion: holder.detectionVersion,
     scanProgress: options.scanProgress ?? null,
+    verificationDepth: options.verificationDepth ?? null,
     puzzleState,
     puzzleProgress: options.puzzleProgress ?? null,
     puzzleGeneratorVersion: puzzleHolder.puzzleGeneratorVersion,

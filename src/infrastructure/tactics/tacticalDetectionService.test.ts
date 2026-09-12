@@ -17,7 +17,7 @@
  * Milestone-B lazy backfill creates `absent`-detection summaries.
  */
 
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { db } from '@/infrastructure/db/database';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
 import { analysisJobsRepository } from '@/infrastructure/db/analysis-jobs-repository';
@@ -26,6 +26,7 @@ import { summariesRepository } from '@/infrastructure/db/summaries-repository';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { SessionAnalysisCache, analysisCacheKey } from '@/infrastructure/engine/cache';
 import { AnalysisJobHandle } from '@/infrastructure/engine/engineService';
+import { VERIFICATION_THREADS } from '@/infrastructure/engine/capabilities';
 import { profileConfig } from '@/infrastructure/engine/engineProfiles';
 import type {
   EngineAnalysisResult,
@@ -48,6 +49,7 @@ import {
   FAKE_ENGINE_META,
 } from '@/infrastructure/analysis/test-support/fakeAnalysisEngine';
 import { TacticalDetectionService, VERIFY_MOVETIME_MS } from './tacticalDetectionService';
+import { DEFAULT_VERIFICATION_DEPTH } from './verificationDepth';
 
 const NOW = 1_700_000_000_000;
 const BULLET_ID = 'li-bullet-missed-mate';
@@ -722,7 +724,12 @@ describe('TacticalDetectionService — pass orchestration', () => {
     await cache.put(
       analysisCacheKey(
         startingFen,
-        { profile: 'tactical', movetimeMs: VERIFY_MOVETIME_MS },
+        {
+          profile: 'tactical',
+          maxDepth: DEFAULT_VERIFICATION_DEPTH,
+          movetimeMs: VERIFY_MOVETIME_MS,
+          threads: VERIFICATION_THREADS,
+        },
         engineIdentity,
       ),
       mateResult(startingFen),
@@ -740,6 +747,212 @@ describe('TacticalDetectionService — pass orchestration', () => {
     const summary = await summariesRepository.getForAnalysis(job.id);
     expect(summary?.detectionState).toBe('completed');
     expect(summary?.missedTacticCount).toBe(1);
+  });
+
+  it('records the effective verification depth as provenance on the summary and candidate', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    const service = serviceOf(rig.service);
+
+    await service.runPassForCompletedJob(job, game, records);
+
+    const summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.verificationDepth).toBe(DEFAULT_VERIFICATION_DEPTH);
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
+    expect((rows[0] as VerifiedTacticalCandidate).verificationMetadata.verificationDepth).toBe(
+      DEFAULT_VERIFICATION_DEPTH,
+    );
+  });
+
+  it('resolves the live verification depth once per pass and uses it for the search and cache scope', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    let calls = 0;
+    const service = serviceOf(rig.service, {
+      resolveVerificationDepth: () => {
+        calls += 1;
+        return 30;
+      },
+    });
+
+    await service.runPassForCompletedJob(job, game, records);
+
+    // Resolved once for the whole pass; the engine search carries the depth and
+    // the verification engine's own 1-thread count.
+    expect(calls).toBe(1);
+    expect(rig.activeJobs[0]?.options.maxDepth).toBe(30);
+    expect(rig.activeJobs[0]?.options.threads).toBe(VERIFICATION_THREADS);
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
+    expect((rows[0] as VerifiedTacticalCandidate).verificationMetadata.verificationDepth).toBe(30);
+    expect((await summariesRepository.getForAnalysis(job.id))?.verificationDepth).toBe(30);
+  });
+
+  it('does not serve a cached verification produced at a different depth', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+
+    const cache = new SessionAnalysisCache();
+    const engineIdentity = {
+      engineName: FAKE_ENGINE_META.engineName,
+      engineVersion: FAKE_ENGINE_META.engineVersion,
+      engineBuild: FAKE_ENGINE_META.engineBuild,
+    };
+    // Seed at the default depth; a depth-30 pass must not reuse it.
+    await cache.put(
+      analysisCacheKey(
+        startingFen,
+        {
+          profile: 'tactical',
+          maxDepth: DEFAULT_VERIFICATION_DEPTH,
+          movetimeMs: VERIFY_MOVETIME_MS,
+          threads: VERIFICATION_THREADS,
+        },
+        engineIdentity,
+      ),
+      mateResult(startingFen),
+    );
+
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    const service = serviceOf(rig.service, { engineCache: cache, verificationDepth: 30 });
+
+    await service.runPassForCompletedJob(job, game, records);
+
+    // A fresh search ran at depth 30 (the depth-22 entry was not served).
+    expect(rig.requests).toEqual([startingFen]);
+    expect(rig.activeJobs[0]?.options.maxDepth).toBe(30);
+    expect((await summariesRepository.getForAnalysis(job.id))?.verificationDepth).toBe(30);
+  });
+
+  it('treats depth as provenance, not freshness: a completed pass stays current at another depth', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    await serviceOf(rig.service).runPassForCompletedJob(job, game, records);
+    expect((await summariesRepository.getForAnalysis(job.id))?.verificationDepth).toBe(
+      DEFAULT_VERIFICATION_DEPTH,
+    );
+
+    // A non-forced invocation at a different depth is a no-op: the completed
+    // pass is current on its detectionVersion alone. Changing the depth never
+    // marks it outdated and never auto-runs a scan.
+    const rig2 = createFakeEngine();
+    await serviceOf(rig2.service, { verificationDepth: 30 }).runPassForCompletedJob(
+      job,
+      game,
+      records,
+    );
+
+    expect(rig2.requests).toEqual([]);
+    expect((await summariesRepository.getForAnalysis(job.id))?.verificationDepth).toBe(
+      DEFAULT_VERIFICATION_DEPTH,
+    );
+  });
+
+  it('force re-scans at a changed depth without reusing the old-depth verified row', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+
+    // First pass at the default depth verifies the mate and annotates the ply.
+    const rig1 = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    await serviceOf(rig1.service).runPassForCompletedJob(job, game, records);
+    expect(
+      (await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id)).some(
+        (row) => row.verificationStatus === 'verified',
+      ),
+    ).toBe(true);
+
+    // A forced re-scan at depth 30 must not reuse the depth-22 verdict: the
+    // stale row is wiped, the annotation cleared, and a fresh search runs.
+    const annotated = await analysesRepository.listForGameAndAnalysis(game.id, job.id);
+    const rig2 = createFakeEngine({ results: new Map([[startingFen, quietResult(startingFen)]]) });
+    await serviceOf(rig2.service, { verificationDepth: 30 }).runPassForCompletedJob(
+      job,
+      game,
+      annotated,
+      undefined,
+      { force: true },
+    );
+
+    expect(rig2.requests).toEqual([startingFen]);
+    const rows = await puzzleCandidatesRepository.listForGameAndAnalysis(game.id, job.id);
+    expect(rows.some((row) => row.verificationStatus === 'verified')).toBe(false);
+    const owning = (await analysesRepository.listForGameAndAnalysis(game.id, job.id)).find(
+      (record) => record.ply === missedPly,
+    );
+    expect(owning?.missedTactic).toBe(false);
+    const summary = await summariesRepository.getForAnalysis(job.id);
+    expect(summary?.detectionState).toBe('completed');
+    expect(summary?.missedTacticCount).toBe(0);
+    expect(summary?.verificationDepth).toBe(30);
+  });
+
+  it('never inherits the analysis run threads override', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const baseJob = completedJobFor(game);
+    const job: AnalysisJob = { ...baseJob, config: { threads: 4 } };
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    const service = serviceOf(rig.service);
+
+    await service.runPassForCompletedJob(job, game, records);
+
+    // The dedicated verification engine uses its own 1-thread count, not the
+    // Game-analysis run's `threads: 4` override.
+    expect(rig.activeJobs[0]?.options.threads).toBe(VERIFICATION_THREADS);
+  });
+
+  it('dispose() delegates to the injected verification engine', async () => {
+    const rig = createFakeEngine();
+    const disposed = vi.fn(async () => undefined);
+    const service = serviceOf({ ...rig.service, dispose: disposed });
+
+    await service.dispose();
+
+    expect(disposed).toHaveBeenCalledTimes(1);
   });
 
   it('backfills `absent`-detection summaries for completed analyses without a pass', async () => {

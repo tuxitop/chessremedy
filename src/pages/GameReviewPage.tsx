@@ -69,6 +69,7 @@ import { useGameReview } from '@/hooks/useGameReview';
 import { useCloseInterruptGuard } from '@/hooks/useCloseInterruptGuard';
 import { useGameAnalysis, type AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
+import { useTacticalDetectionSettings } from '@/hooks/useTacticalDetectionSettings';
 import {
   defaultGameAnalysisSettings,
   expectedGameAnalysisConfig,
@@ -121,6 +122,11 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
   // Review (re-)analysis honours them exactly like Library bulk/per-row runs,
   // so a run started here is indistinguishable from one started there.
   const analysisSettings = useGameAnalysisSettings();
+  // Current Stage-2 verification-depth setting (Feature 010 W2). A completed
+  // current-version pass recorded at a different depth offers the explicit
+  // "Re-scan tactics" action; changing the setting never auto-runs a scan.
+  const tacticalSettings = useTacticalDetectionSettings();
+  const currentVerificationDepth = tacticalSettings.settings?.verificationDepth ?? null;
   const runOptions = useMemo(() => {
     const settings = analysisSettings.settings ?? defaultGameAnalysisSettings();
     return gameAnalysisRunOf(settings);
@@ -272,6 +278,15 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
     // (plan 015 freshness gate): it is suppressed until a fresh scan re-runs.
     const detectionOutdated =
       data.detectionState === 'completed' && data.detectionVersion !== DETECTION_VERSION;
+    // The completed pass is current (freshness reads `detectionVersion` alone)
+    // but was produced at a different verification depth: the explicit
+    // "Re-scan tactics" path applies the current setting (ADR-026/ADR-034).
+    const depthStale =
+      data.detectionState === 'completed' &&
+      data.detectionVersion === DETECTION_VERSION &&
+      currentVerificationDepth !== null &&
+      data.verificationDepth !== null &&
+      data.verificationDepth !== currentVerificationDepth;
     const scanActionKind =
       data.detectionState === 'queued' || data.detectionState === 'inProgress'
         ? detectionLive
@@ -296,12 +311,15 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         detectionRunning={detectionRunning}
         scanProgress={data.scanProgress}
         scanActionKind={scanActionKind}
+        depthStale={depthStale}
         scanAvailable={Boolean(effectiveService?.scanGame)}
         onScanAction={() => {
           if (!effectiveService?.scanGame || !id) {
             return;
           }
-          void effectiveService.scanGame(id).then(() => data.reload());
+          void effectiveService
+            .scanGame(id, depthStale ? { force: true } : undefined)
+            .then(() => data.reload());
         }}
         onCancelScan={() => {
           if (!effectiveService?.cancelScan || !id) {
@@ -390,6 +408,7 @@ function GameReview({
   detectionRunning,
   scanProgress,
   scanActionKind,
+  depthStale,
   scanAvailable,
   onScanAction,
   onCancelScan,
@@ -413,6 +432,12 @@ function GameReview({
   scanProgress: { readonly done: number; readonly total: number } | null;
   /** Which scan affordance applies for a non-live pass (`null` = none). */
   scanActionKind: 'resume' | 'retry' | 'run' | null;
+  /**
+   * True when a completed/current detection pass was produced at a verification
+   * depth different from the current setting (Feature 010 W2): the explicit
+   * "Re-scan tactics" affordance applies the current depth.
+   */
+  depthStale: boolean;
   /** Whether the shared service exposes the on-demand scan entry point. */
   scanAvailable: boolean;
   onScanAction: () => void;
@@ -948,16 +973,20 @@ function GameReview({
 
   // A scan banner under the Review header (WP-B): a running scan is visible and
   // cancellable; an interrupted/failed/never-scanned analysis offers its
-  // on-demand scan action. Absent once a detection pass completed.
+  // on-demand scan action. A completed/current pass offers nothing unless its
+  // recorded verification depth differs from the current setting (W2), in
+  // which case the explicit "Re-scan tactics" path applies the new depth.
   const scanScanning =
     (detectionState === 'queued' || detectionState === 'inProgress') && detectionRunning;
-  const scanBar = detectionCompleted
-    ? null
-    : scanScanning
-      ? ({ kind: 'scanning' } as const)
-      : scanActionKind !== null && scanAvailable
-        ? ({ kind: detectionOutdated ? 'refresh' : scanActionKind } as const)
-        : null;
+  const scanBar = scanScanning
+    ? ({ kind: 'scanning' } as const)
+    : depthStale && scanAvailable
+      ? ({ kind: 'rescan' } as const)
+      : detectionCompleted
+        ? null
+        : scanActionKind !== null && scanAvailable
+          ? ({ kind: detectionOutdated ? 'refresh' : scanActionKind } as const)
+          : null;
   const SCAN_BAR_COPY: Readonly<Record<string, { text: string; label: string }>> = {
     scanning: {
       text: 'Tactics scan in progress — analysing missed opportunities in this game.',
@@ -978,6 +1007,10 @@ function GameReview({
     refresh: {
       text: 'The missed-tactic scan used an older version. Run the scan to refresh it.',
       label: 'Refresh tactics scan',
+    },
+    rescan: {
+      text: 'This scan used a different verification depth. Re-scan to apply the current setting.',
+      label: 'Re-scan tactics',
     },
   };
 

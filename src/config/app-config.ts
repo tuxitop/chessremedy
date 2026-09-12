@@ -15,6 +15,7 @@ export const SETTINGS_KEYS = {
   engineDefaults: 'engine.defaults',
   boardAppearance: 'board.appearance',
   analysisGame: 'analysis.game',
+  analysisTacticalDetection: 'analysis.tacticalDetection',
   chessComUsername: 'import.chesscom.username',
   lichessUsername: 'import.lichess.username',
   chessComFilters: 'import.chesscom.filters',

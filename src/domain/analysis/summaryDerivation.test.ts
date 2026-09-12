@@ -317,6 +317,31 @@ describe('buildAnalysisSummary (scan progress, plan 013 W3)', () => {
   });
 });
 
+describe('buildAnalysisSummary (verification-depth provenance, Feature 010 W2)', () => {
+  it('defaults verificationDepth to null', () => {
+    expect(buildAnalysisSummary([], 'white').verificationDepth).toBeNull();
+  });
+
+  it('records an explicit verificationDepth as provenance, not freshness', () => {
+    const built = buildAnalysisSummary(missedTacticRecords(), 'white', {
+      detectionState: 'completed',
+      detectionVersion: DETECTION_VERSION,
+      verificationDepth: 30,
+    });
+    expect(built.verificationDepth).toBe(30);
+    expect(built.detectionVersion).toBe(DETECTION_VERSION);
+  });
+
+  it('retains the depth on a non-completed pass without exposing a count', () => {
+    const built = buildAnalysisSummary([], 'white', {
+      detectionState: 'inProgress',
+      verificationDepth: 22,
+    });
+    expect(built.verificationDepth).toBe(22);
+    expect(built.missedTacticCount).toBeNull();
+  });
+});
+
 describe('buildAnalysisSummary (puzzle-generation holder, Feature 011)', () => {
   it('defaults to an absent puzzle holder (absent state, null version and progress)', () => {
     const built = buildAnalysisSummary(missedTacticRecords(), 'white');

@@ -15,4 +15,14 @@ export {
 export {
   createBrowserTacticalDetectionService,
   getBrowserTacticalDetectionService,
+  resolveStoredVerificationDepth,
 } from './browser';
+export {
+  DEFAULT_VERIFICATION_DEPTH,
+  MAX_VERIFICATION_DEPTH,
+  MIN_VERIFICATION_DEPTH,
+  clampTacticalDetectionSettings,
+  clampVerificationDepth,
+  defaultTacticalDetectionSettings,
+} from './verificationDepth';
+export type { TacticalDetectionSettings } from './verificationDepth';
