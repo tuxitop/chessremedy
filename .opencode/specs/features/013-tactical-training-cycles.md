@@ -302,7 +302,9 @@ without an explicit user action**.
 - **Quick train.** A one-tap session over the pool for a brand-new user (or
   any time) who wants to practise before committing a block. It creates no
   `trainingSets` row; it snapshots the pool into an ad-hoc `trainingCycles`
-  row (see Domain behavior §3c) and writes normal immutable attempts.
+  row (see Domain behavior §3c) and writes normal immutable attempts. Tapping
+  it again **resumes** the open session instead of starting a new one, and its
+  solves **do not** count toward mastery (casual practice).
 
 **Guidance copy shown to the user** (training home and block detail):
 
@@ -612,8 +614,14 @@ set.
   `cycleId`/sentinel `trainingSetId`.
 - The sentinel keeps the attempt model intact (every attempt has a real
   `cycleId` and a `trainingSetId`) without inventing a second write path.
-  Quick-train attempts are legitimate in-cycle solves and therefore count
-  toward mastery like any other real cycle.
+  Quick-train attempts are recorded but **do not count toward mastery** (owner
+  decision): the canonical mastery derivation ignores cycles whose
+  `trainingSetId` is `QUICK_TRAIN_SET_ID`.
+- Quick train **resumes** the open session: starting it again reuses the latest
+  `inProgress` sentinel cycle (abandoning any other in-progress sentinel cycles)
+  rather than creating a new numbered cycle; a fresh sentinel cycle is created
+  only when none is in progress. Its session header shows **Quick train**, not
+  a cycle number.
 - **Conflict to flag:** the ownership/cascade model assumes every cycle
   belongs to a `trainingSets` row. The sentinel has none, so set-deletion
   cascade does not apply to it; Quick-train cycles/attempts are removed only
@@ -1331,9 +1339,11 @@ The feature must never crash a consumer and must never fabricate data:
     the interim practice host and its `practice:*` ids are gone.
 21. The mastered-puzzles list under `/puzzles` is read-only and shows mastered
     puzzles with their qualifying cycles; there is no un-master action in V1.
-22. **Quick train** starts an ad-hoc session over the whole pool, creates no
-    `trainingSets` row, and writes ordinary immutable attempts under a real
-    ad-hoc `trainingCycles` row (sentinel `trainingSetId`); the sentinel is
+22. **Quick train** starts or resumes an ad-hoc session over the whole pool,
+    creates no `trainingSets` row, and writes ordinary immutable attempts under
+    a real ad-hoc `trainingCycles` row (sentinel `trainingSetId`). Re-starting
+    it resumes the open sentinel cycle (no new cycle number, no restart at
+    puzzle 1) and its attempts do **not** count toward mastery; the sentinel is
     excluded from set-scoped reads and set deletion.
 23. The extension adds no persisted table, column or index and no stored
     mastery state (schema stays v10); the block recipe lives in `source`, the

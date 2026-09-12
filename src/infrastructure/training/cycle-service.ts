@@ -10,8 +10,9 @@
  *   re-derived per cycle; this supersedes the former virtual/auto-refresh
  *   rule);
  * - `startQuickTrain` — an ad-hoc session over the whole derived pool under the
- *   reserved `QUICK_TRAIN_SET_ID` sentinel, with **no** `trainingSets` row
- *   (spec §3c);
+ *   reserved `QUICK_TRAIN_SET_ID` sentinel, with **no** `trainingSets` row; it
+ *   **resumes** the latest in-progress sentinel cycle instead of starting a new
+ *   one, and its attempts do not count toward mastery (spec §3c);
  * - `resume` — reconstruct the pending queue from persisted attempt rows (no
  *   stored cursor) and mark the cycle `completed` when nothing is pending;
  * - `abandon` — terminal user action that keeps the attempts;
@@ -230,15 +231,36 @@ export class CycleService {
   }
 
   /**
-   * Start a **Quick train** ad-hoc session over the whole derived pool (spec
-   * §3c): the unmastered puzzles not in the currently-open block, in
-   * `difficultyAsc` order. It creates **no** `trainingSets` row; it writes a
-   * real `trainingCycles` row under the reserved `QUICK_TRAIN_SET_ID` sentinel
-   * so every attempt keeps a real `cycleId`/`trainingSetId` and counts toward
-   * mastery like any other cycle. Refused with `empty-pool` when the pool is
-   * empty (no cycle row is created).
+   * Start or **resume** the **Quick train** ad-hoc session over the whole
+   * derived pool (spec §3c): the unmastered puzzles not in the currently-open
+   * block, in `difficultyAsc` order. It creates **no** `trainingSets` row; it
+   * writes a real `trainingCycles` row under the reserved `QUICK_TRAIN_SET_ID`
+   * sentinel so every attempt keeps a real `cycleId`/`trainingSetId`. Its
+   * attempts do **not** count toward mastery (owner decision; see `mastery.ts`).
+   *
+   * Re-starting resumes the latest `inProgress` sentinel cycle (abandoning any
+   * other in-progress sentinel cycles) without creating a new cycle or
+   * recomputing the pool; a fresh sentinel cycle is created only when none is in
+   * progress. Refused with `empty-pool` when a fresh cycle would be created over
+   * an empty pool (no cycle row is created).
    */
   async startQuickTrain(): Promise<CycleQuickTrainResult> {
+    const existing = await this.cycles.listForSet(QUICK_TRAIN_SET_ID);
+    const inProgress = existing.filter((cycle) => cycle.status === 'inProgress');
+    if (inProgress.length > 0) {
+      // `listForSet` is cycleNumber-ascending, so the last entry is the latest.
+      const latest = inProgress[inProgress.length - 1]!;
+      for (const cycle of inProgress) {
+        if (cycle.id !== latest.id) {
+          await this.cycles.updateStatus(cycle.id, {
+            status: 'abandoned',
+            abandonedAt: this.now(),
+          });
+        }
+      }
+      return { ok: true, cycle: latest, missingPuzzleIds: [] };
+    }
+
     const check = validateCycleConfig(DEFAULT_CYCLE_CONFIG);
     if (!check.ok) {
       return { ok: false, reason: 'invalid-config', message: check.message };
@@ -259,7 +281,6 @@ export class CycleService {
     if (puzzleIds.length === 0) {
       return { ok: false, reason: 'empty-pool' };
     }
-    const existing = await this.cycles.listForSet(QUICK_TRAIN_SET_ID);
     const cycleNumber = nextCycleNumber(existing.map((cycle) => cycle.cycleNumber));
     const cycle: TrainingCycleRow = {
       id: this.newId(),

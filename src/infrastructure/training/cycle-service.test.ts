@@ -507,15 +507,67 @@ describe('CycleService', () => {
     expect(result.cycle.puzzleIds).toEqual([idOf(pool[2]!)]);
   });
 
-  it('startQuickTrain assigns the next sentinel cycle number', async () => {
+  it('startQuickTrain resumes the latest in-progress sentinel cycle without creating a row', async () => {
     await puzzlesRepository.addIfAbsent([autoPoolRowFixture(1, 10)]);
     const service = makeService();
     const first = await service.startQuickTrain();
     const second = await service.startQuickTrain();
     if (!first.ok || !second.ok) throw new Error('expected quick trains to succeed');
-    expect(first.cycle.cycleNumber).toBe(1);
-    expect(second.cycle.cycleNumber).toBe(2);
-    expect(second.cycle.id).not.toBe(first.cycle.id);
+    expect(second.cycle.id).toBe(first.cycle.id);
+    expect(second.cycle.cycleNumber).toBe(1);
+    expect(await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID)).toHaveLength(1);
+  });
+
+  it.each(['completed', 'abandoned'] as const)(
+    'startQuickTrain creates a new sentinel cycle once the previous one is %s',
+    async (status) => {
+      await puzzlesRepository.addIfAbsent([autoPoolRowFixture(1, 10)]);
+      const service = makeService();
+      const first = await service.startQuickTrain();
+      if (!first.ok) throw new Error('expected quick train to succeed');
+      await trainingCyclesRepository.updateStatus(first.cycle.id, {
+        status,
+        ...(status === 'completed' ? { completedAt: NOW } : { abandonedAt: NOW }),
+      });
+
+      const second = await service.startQuickTrain();
+
+      if (!second.ok) throw new Error('expected quick train to succeed');
+      expect(second.cycle.id).not.toBe(first.cycle.id);
+      expect(second.cycle.cycleNumber).toBe(2);
+      expect(await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID)).toHaveLength(2);
+    },
+  );
+
+  it('startQuickTrain abandons stray extra in-progress sentinel cycles when resuming', async () => {
+    await puzzlesRepository.addIfAbsent([autoPoolRowFixture(1, 10)]);
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'qt:1', trainingSetId: QUICK_TRAIN_SET_ID, cycleNumber: 1 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'qt:2', trainingSetId: QUICK_TRAIN_SET_ID, cycleNumber: 2 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'qt:done',
+        trainingSetId: QUICK_TRAIN_SET_ID,
+        cycleNumber: 3,
+        status: 'completed',
+        completedAt: NOW,
+      }),
+    );
+
+    const result = await makeService().startQuickTrain();
+
+    if (!result.ok) throw new Error('expected quick train to succeed');
+    expect(result.cycle.id).toBe('qt:2');
+    const rows = await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(rows).toHaveLength(3);
+    expect(byId.get('qt:1')?.status).toBe('abandoned');
+    expect(byId.get('qt:1')?.abandonedAt).toBe(NOW);
+    expect(byId.get('qt:2')?.status).toBe('inProgress');
+    expect(byId.get('qt:done')?.status).toBe('completed');
   });
 
   it('startQuickTrain rejects an empty pool and creates no cycle', async () => {
@@ -523,10 +575,11 @@ describe('CycleService', () => {
     expect(await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID)).toEqual([]);
   });
 
-  it('Quick-train attempts are ordinary and count toward mastery', async () => {
+  it('Quick-train attempts are ordinary but do not count toward mastery', async () => {
     await puzzlesRepository.addIfAbsent([autoPoolRowFixture(1, 10)]);
     const service = makeService();
     const puzzleId = 'fixture:auto-1:1';
+    // Three distinct sentinel cycles (each completed before the next starts).
     for (let index = 0; index < 3; index += 1) {
       const started = await service.startQuickTrain();
       if (!started.ok) throw new Error('expected quick train to succeed');
@@ -539,14 +592,14 @@ describe('CycleService', () => {
           result: 'solvedFirstTry',
         }),
       );
+      await trainingCyclesRepository.updateStatus(started.cycle.id, {
+        status: 'completed',
+        completedAt: NOW,
+      });
     }
-    expect(
-      masteryOf(
-        puzzleId,
-        await attemptsRepository.listAll(),
-        await trainingCyclesRepository.listAll(),
-      ),
-    ).toBe(true);
+    const cycles = await trainingCyclesRepository.listAll();
+    expect(cycles).toHaveLength(3);
+    expect(masteryOf(puzzleId, await attemptsRepository.listAll(), cycles)).toBe(false);
   });
 });
 

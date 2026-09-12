@@ -351,6 +351,7 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     await waitForChrome();
 
     expect(screen.getByTestId('cycle-session-set-name')).toHaveTextContent('Quick train');
+    expect(screen.getByTestId('cycle-session-cycle-number')).toHaveTextContent('Quick train');
     expect(screen.getByTestId('cycle-session-progress')).toHaveTextContent('Puzzle 1 of 2');
 
     fireEvent.click(screen.getByTestId('solve-stub-solve'));

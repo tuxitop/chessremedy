@@ -579,13 +579,14 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     ]);
   });
 
-  test('Quick train runs over the pool under the sentinel and writes a real mastery-eligible attempt', async ({
+  test('Quick train resumes the open sentinel session and its attempts never count toward mastery', async ({
     page,
   }) => {
     await page.goto('/training');
     await expect(page.getByTestId('training-home-empty')).toBeVisible();
 
-    // Two clean credits, not three: `mate-one` is still in the pool.
+    // Two real clean credits, not three: `mate-one` is still in the pool. The
+    // Quick-train sentinel solve below must not supply the third.
     const seededCycleIds = ['e2e:qt-seed-1', 'e2e:qt-seed-2'];
     await seedIndexedDb(page, {
       puzzles: [MATE_ONE, EXCHANGE_WIN, MATERIAL_COMBINATION],
@@ -598,7 +599,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     // Quick train creates no set row; it opens an ad-hoc session over the pool.
     await page.getByTestId('training-quick-train').click();
     await expect(page.getByTestId('cycle-session-set-name')).toHaveText('Quick train');
-    await expect(page.getByTestId('cycle-session-cycle-number')).toHaveText('Cycle 1');
+    await expect(page.getByTestId('cycle-session-cycle-number')).toHaveText('Quick train');
     await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 1 of 3');
 
     await solveAndAdvance(page, MATE_ONE_PUZZLE_ID);
@@ -635,12 +636,25 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     // No practice pseudo-ids remain: every attempt belongs to a real cycle row.
     expect(attempts.some((attempt) => String(attempt.cycleId).startsWith('practice:'))).toBe(false);
 
-    // The real sentinel attempt is the third clean credit → the puzzle is mastered.
-    await page.goto('/training/mastered');
-    await expect(page.getByTestId(`mastered-puzzle-${MATE_ONE_PUZZLE_ID}`)).toBeVisible();
-    await expect(page.getByTestId(`mastered-puzzle-cycles-${MATE_ONE_PUZZLE_ID}`)).toHaveText(
-      '3 distinct cycles',
+    // Leaving and tapping Quick train again RESUMES the open sentinel cycle: the
+    // same cycle row continues at the next unanswered puzzle (no new cycle).
+    await page.goto('/training');
+    await expect(page.getByTestId('training-quick-train')).toBeEnabled();
+    await page.getByTestId('training-quick-train').click();
+    await expect(page.getByTestId('cycle-session-cycle-number')).toHaveText('Quick train');
+    await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 2 of 3');
+
+    const resumedCycles = (await readStore(page, 'trainingCycles')).filter(
+      (cycle) => cycle.trainingSetId === QUICK_TRAIN_SET_ID,
     );
+    expect(resumedCycles).toHaveLength(1);
+    expect(resumedCycles[0]!.id).toBe(quick.id);
+    expect(resumedCycles[0]!.status).toBe('inProgress');
+
+    // Quick-train attempts do not count toward mastery: despite the legitimate
+    // first-try row, the puzzle stays off the mastered list.
+    await page.goto('/training/mastered');
+    await expect(page.getByTestId(`mastered-puzzle-${MATE_ONE_PUZZLE_ID}`)).toHaveCount(0);
   });
 
   test('deletes an open block from its detail page and frees the slot', async ({ page }) => {

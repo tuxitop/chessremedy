@@ -14,8 +14,15 @@
  * a missing/blank `cycleId` are ignored. A row whose `cycleId` has no matching
  * `trainingCycles` row is **orphaned** and never credits: the caller passes the
  * known cycles, so a stale attempt cannot earn mastery after its cycle is gone.
+ *
+ * **Quick-train sentinel cycles never credit** (owner decision): a cycle whose
+ * `trainingSetId` is `QUICK_TRAIN_SET_ID` is casual practice, so it is excluded
+ * from the known cycles and its attempts can never earn mastery. The exclusion
+ * keeps `masteryOf`/`masteredPuzzleIds` the single canonical derivation without
+ * a signature change.
  */
 
+import { QUICK_TRAIN_SET_ID } from './autoSet';
 import type { TrainingCycleRow } from './cycleTypes';
 import type { PuzzleAttemptRow } from './types';
 
@@ -83,16 +90,23 @@ function legitimateCycleIdsByPuzzle(
   return byPuzzle;
 }
 
-/** The set of persisted cycle ids `attempts` may legitimately credit. */
+/**
+ * The set of persisted cycle ids `attempts` may legitimately credit. Orphaned
+ * cycles are absent (never passed in); Quick-train sentinel cycles are excluded
+ * here so their attempts never count toward mastery (owner decision).
+ */
 function knownCycleIdsOf(cycles: readonly TrainingCycleRow[]): ReadonlySet<string> {
-  return new Set(cycles.map((cycle) => cycle.id));
+  return new Set(
+    cycles.filter((cycle) => cycle.trainingSetId !== QUICK_TRAIN_SET_ID).map((cycle) => cycle.id),
+  );
 }
 
 /**
  * Whether `puzzleId` is mastered: at least `MASTERY_REQUIRED_CYCLES` distinct
  * cycles hold a legitimate first-try solve. Multiple rows in one cycle count
- * once. Orphaned rows (a `cycleId` with no matching `cycles` row) never credit.
- * Monotonic — adding rows can only add credits, never remove them.
+ * once. Orphaned rows (a `cycleId` with no matching `cycles` row) and Quick-train
+ * sentinel cycles never credit. Monotonic — adding rows can only add credits,
+ * never remove them.
  */
 export function masteryOf(
   puzzleId: string,

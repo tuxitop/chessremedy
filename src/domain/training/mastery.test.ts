@@ -14,6 +14,7 @@ import {
   legitimateFirstTryRows,
   masteryAttemptFixture,
 } from './test-support';
+import { QUICK_TRAIN_SET_ID } from './autoSet';
 
 const PUZZLE = 'fixture:puzzle:1';
 const OTHER = 'fixture:puzzle:2';
@@ -26,6 +27,20 @@ function credits(...cycleIds: string[]): PuzzleAttemptRow[] {
 /** The persisted cycle rows for a list of cycle ids. */
 function cycles(...cycleIds: string[]): TrainingCycleRow[] {
   return cycleIds.map((id) => cycleFixture({ id }));
+}
+
+/** Quick-train sentinel cycle rows for a list of cycle ids. */
+function quickTrainCycles(...cycleIds: string[]): TrainingCycleRow[] {
+  return cycleIds.map((id) => cycleFixture({ id, trainingSetId: QUICK_TRAIN_SET_ID }));
+}
+
+/** A clean first-try row for `PUZZLE` under a Quick-train sentinel cycle. */
+function quickTrainCredit(cycleId: string): PuzzleAttemptRow {
+  return masteryAttemptFixture({
+    puzzleId: PUZZLE,
+    cycleId,
+    trainingSetId: QUICK_TRAIN_SET_ID,
+  });
 }
 
 /** A row without the optional `restartCount` field (a legacy persisted row). */
@@ -207,6 +222,24 @@ describe('masteryOf', () => {
     const rows = credits('c1', 'c2', 'c3');
     expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2'))).toBe(false);
     expect(masteryOf(PUZZLE, rows, cycles('c1', 'c2', 'c3'))).toBe(true);
+  });
+});
+
+describe('masteryOf — Quick-train exclusion', () => {
+  it('never masters from three Quick-train sentinel cycles', () => {
+    const rows = [quickTrainCredit('qt-1'), quickTrainCredit('qt-2'), quickTrainCredit('qt-3')];
+    expect(masteryOf(PUZZLE, rows, quickTrainCycles('qt-1', 'qt-2', 'qt-3'))).toBe(false);
+    expect(masteredPuzzleIds(rows, quickTrainCycles('qt-1', 'qt-2', 'qt-3'))).toEqual(new Set());
+  });
+
+  it('counts only real cycles when sentinel and real cycles are mixed', () => {
+    const twoRealPlusSentinel = [...credits('c1', 'c2'), quickTrainCredit('qt-1')];
+    expect(
+      masteryOf(PUZZLE, twoRealPlusSentinel, [...cycles('c1', 'c2'), ...quickTrainCycles('qt-1')]),
+    ).toBe(false);
+
+    const threeReal = credits('c1', 'c2', 'c3');
+    expect(masteryOf(PUZZLE, threeReal, cycles('c1', 'c2', 'c3'))).toBe(true);
   });
 });
 

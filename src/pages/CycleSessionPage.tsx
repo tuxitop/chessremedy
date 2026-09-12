@@ -289,7 +289,7 @@ function CycleSessionView({
             {set.name}
           </p>
           <h1 className={styles.heading} data-testid="cycle-session-cycle-number">
-            Cycle {cycle.cycleNumber}
+            {isQuickTrain ? 'Quick train' : `Cycle ${cycle.cycleNumber}`}
           </h1>
           <p
             className={styles.progress}
