@@ -27,11 +27,15 @@ import {
   type SyncProviderUploadOptions,
 } from '../types';
 
-/** The single synced file (ADR-015). */
-export const DROPBOX_SYNC_PATH = '/Apps/ChessRemedy/sync.json.gz';
+/**
+ * The single synced file (ADR-015). Paths are relative to the app's root: for
+ * an "App folder" scoped app the API root *is* the app folder, so the file
+ * lives at `/sync.json.gz` (not `/Apps/<name>/…`, which is a Full-Dropbox path).
+ */
+export const DROPBOX_SYNC_PATH = '/sync.json.gz';
 
-/** Directory holding the timestamped recovery backups (ADR-017 step 4e). */
-export const DROPBOX_BACKUP_DIR = '/Apps/ChessRemedy';
+/** App root; recovery backups live alongside the sync file (ADR-017 step 4e). */
+export const DROPBOX_BACKUP_DIR = '';
 
 /** Backup filename prefix/suffix; the full name is `sync.backup-<ISO>.json.gz`. */
 export const DROPBOX_BACKUP_PREFIX = 'sync.backup-';
@@ -146,22 +150,30 @@ export function mapDropboxError(error: unknown): SyncProviderError {
   }
   const status = dropboxStatus(error);
   if (status !== null) {
+    const summary = dropboxErrorSummary(error);
+    const detail = summary !== null ? `: ${summary}` : '';
     if (status === 401) {
-      return new SyncProviderError('auth', 'Dropbox rejected the access token (401).');
+      return new SyncProviderError('auth', `Dropbox rejected the access token (401)${detail}.`);
     }
     if (status === 403) {
-      return new SyncProviderError('forbidden', 'Dropbox refused the request (403).');
+      return new SyncProviderError('forbidden', `Dropbox refused the request (403)${detail}.`);
     }
     if (status === 409) {
-      return new SyncProviderError('conflict', 'Dropbox reported a conflict (409).');
+      return new SyncProviderError('conflict', `Dropbox reported a conflict (409)${detail}.`);
     }
     if (status === 429) {
-      return new SyncProviderError('rate-limited', 'Dropbox rate-limited the request (429).');
+      return new SyncProviderError(
+        'rate-limited',
+        `Dropbox rate-limited the request (429)${detail}.`,
+      );
     }
     if (status === 404) {
-      return new SyncProviderError('http', 'Dropbox could not find the requested path (404).');
+      return new SyncProviderError(
+        'http',
+        `Dropbox could not find the requested path (404)${detail}.`,
+      );
     }
-    return new SyncProviderError('http', `Dropbox returned HTTP ${status}.`);
+    return new SyncProviderError('http', `Dropbox returned HTTP ${status}${detail}.`);
   }
   if (error instanceof Error && error.name === 'AbortError') {
     return new SyncProviderError('aborted', 'The Dropbox request was aborted.');
@@ -170,6 +182,25 @@ export function mapDropboxError(error: unknown): SyncProviderError {
     'network',
     error instanceof Error ? error.message : 'The Dropbox request failed.',
   );
+}
+
+/** Extract Dropbox's human-readable `error_summary` from an SDK error body. */
+function dropboxErrorSummary(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) {
+    return null;
+  }
+  const record = error as { error?: unknown; error_summary?: unknown };
+  const body = record.error;
+  if (typeof body === 'object' && body !== null) {
+    const summary = (body as { error_summary?: unknown }).error_summary;
+    if (typeof summary === 'string' && summary.length > 0) {
+      return summary;
+    }
+  }
+  if (typeof record.error_summary === 'string' && record.error_summary.length > 0) {
+    return record.error_summary;
+  }
+  return null;
 }
 
 function toRemoteMetadata(metadata: files.FileMetadata): RemoteFileMetadata {

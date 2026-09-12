@@ -141,7 +141,7 @@ describe('DropboxProvider (MSW, ADR-015/ADR-017)', () => {
     const metadata = await makeProvider().upload(new Uint8Array([1, 2, 3]), { rev: 'rev-1' });
 
     expect(captured[0]?.mode).toEqual({ '.tag': 'update', update: 'rev-1' });
-    expect(captured[0]?.path).toBe('/Apps/ChessRemedy/sync.json.gz');
+    expect(captured[0]?.path).toBe('/sync.json.gz');
     expect(metadata.rev).toBe('rev-2');
   });
 
