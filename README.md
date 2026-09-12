@@ -92,11 +92,19 @@ Feature 016 can back up and sync your data across devices through your own
 Dropbox account. Sync is **optional** — the app is fully usable without it.
 
 1. Create a Dropbox app (Scoped access, **App folder** access).
-2. Copy the app's **App key** into `.env.local` as `VITE_DROPBOX_APP_KEY`
+2. On the app's **Permissions** tab, enable the scopes the sync uses:
+   - `files.metadata.read` — read metadata / list the app folder
+   - `files.content.read` — download the sync file
+   - `files.content.write` — upload the sync file
+3. Copy the app's **App key** into `.env.local` as `VITE_DROPBOX_APP_KEY`
    (see `.env.example`). The app key is public; PKCE means no client secret is
    ever needed or stored.
-3. Register the OAuth redirect URI as `<your-origin>/settings`.
-4. In the app, open **Settings → Synchronization** and connect Dropbox.
+4. Register the OAuth redirect URI as `<your-origin>/settings`.
+5. In the app, open **Settings → Synchronization** and connect Dropbox.
+
+Scopes are baked into the access token at authorization time. After changing
+the Permissions tab, **Disconnect** and **Connect** again so the new token
+carries the added scopes.
 
 The same panel also offers provider-free **Export backup** / **Import backup**
 using the gzipped sync envelope (ADR-016).
