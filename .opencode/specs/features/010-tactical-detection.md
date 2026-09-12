@@ -191,7 +191,7 @@ depth.
 | Item                  | Value                                                                   |
 | --------------------- | ----------------------------------------------------------------------- |
 | `SETTINGS_KEYS` entry | `analysis.tacticalDetection`, value `{ verificationDepth }`             |
-| Default               | `22` (the ADR-012 `tactical` profile depth)                             |
+| Default               | `18`                                                                    |
 | Bounds                | `10..40` (`TACTICAL_VERIFICATION_DEPTH_MIN/MAX`), clamped on read/write |
 | Applies to            | fresh Stage-2 tactical searches                                         |
 | Does not apply to     | the stored-analysis fast path; the analysis/live engine                 |
@@ -570,7 +570,7 @@ existing scan-state surfacing is unchanged.
 - A verification job failure/cancel affects only the verification engine's
   queue; the analysis engine and its persisted jobs are untouched.
 - An invalid/out-of-bounds stored depth is clamped to `10..40`; an absent
-  stored value falls back to `22`.
+  stored value falls back to `18`.
 
 **Edge cases.**
 
@@ -643,8 +643,8 @@ Feature 011 can consume the verified candidate and transform it into a training 
   never run at maximum together.
 - The verification worker is created lazily and disposed on idle.
 - The verification depth is a Settings value (`analysis.tacticalDetection`)
-  with default 22 and bounds 10..40; an out-of-bounds value is clamped and
-  an absent value falls back to 22.
+  with default 18 and bounds 10..40; an out-of-bounds value is clamped and
+  an absent value falls back to 18.
 - The effective verification depth is recorded on verified candidates and on
   the per-analysis summary, and is part of the ADR-018 cache key, so results
   from different depths are never mixed.

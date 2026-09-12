@@ -49,8 +49,8 @@ For each raw candidate:
    engineBuild)` entry exists, reuse it.
 2. Otherwise, run the **tactical profile** (ADR-012: MultiPV 5,
    128 MB hash, WDL on) from the starting position at the user's
-   **verification depth** setting (default 22 — the profile's own
-   depth; see "Verification engine and depth" below). The search runs
+   **verification depth** setting (default 18; see "Verification engine and
+   depth" below). The search runs
    on the dedicated verification engine worker (ADR-034), so it does
    not interleave with game analysis on the shared FIFO.
 3. For each candidate move in the MultiPV result, walk the
@@ -127,9 +127,10 @@ after the run.
   overlap instead of serializing. The verification engine is created lazily
   on the first Stage-2 job and disposed on idle; both engines share the
   ADR-018 position cache.
-- **Verification depth setting.** The tactical profile's depth is the
-  *default* (`22`); the user sets `verificationDepth` in Settings
-  (`analysis.tacticalDetection`, default 22, bounds 10..40, clamped). The
+- **Verification depth setting.** The verification depth is an
+  independent user setting (default `18`); the user sets
+  `verificationDepth` in Settings
+  (`analysis.tacticalDetection`, default 18, bounds 10..40, clamped). The
   setting is the user-facing quality/cost lever for detection. The profile
   still fixes MultiPV 5, hash 128 MB and WDL on. The Stage-2 stored-analysis
   fast path is unaffected — it records the stored analysis's own depth.

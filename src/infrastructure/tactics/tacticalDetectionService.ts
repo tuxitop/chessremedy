@@ -110,7 +110,7 @@ import { DEFAULT_VERIFICATION_DEPTH, clampVerificationDepth } from './verificati
 
 /**
  * Bounded search time for one candidate's tactical verification (plan-013
- * fix C). The tactical profile stays depth-bounded (ADR-012 depth 22); this
+ * fix C). The verification depth is a user setting (default 18, ADR-026); this
  * movetime cap backstops it so a pathological position can never hold a search
  * (and therefore the whole game's scan) for an unbounded time. The engine
  * stops at whichever limit it reaches first.
@@ -131,7 +131,7 @@ export interface TacticalDetectionServiceOptions {
   /**
    * Fixed effective verification depth (tests / back-compat). Ignored when
    * `resolveVerificationDepth` is supplied; clamped per pass. Defaults to
-   * `DEFAULT_VERIFICATION_DEPTH` (22) when neither is given.
+   * `DEFAULT_VERIFICATION_DEPTH` (18) when neither is given.
    */
   readonly verificationDepth?: number;
   /**
@@ -200,7 +200,7 @@ export class TacticalDetectionService {
   /**
    * Resolve the effective verification depth for one pass (ADR-026/ADR-034):
    * the live provider when supplied, else the fixed option, else the default
-   * 22 — always clamped. Called once per pass so every Stage-2 search in the
+   * 18 — always clamped. Called once per pass so every Stage-2 search in the
    * pass shares the same depth (and cache scope).
    */
   private async effectiveVerificationDepth(): Promise<number> {

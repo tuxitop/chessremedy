@@ -26,7 +26,7 @@ import {
 
 /**
  * Read the persisted Stage-2 verification depth from Settings
- * (`analysis.tacticalDetection`), clamped to `[10, 40]` with a `22` fallback
+ * (`analysis.tacticalDetection`), clamped to `[10, 40]` with a `18` fallback
  * (ADR-026/ADR-034). The detection service resolves this **once per pass**, so
  * every Stage-2 search of one pass shares the effective depth. Shared by the
  * standalone tactics assembly and the analysis-service assembly.

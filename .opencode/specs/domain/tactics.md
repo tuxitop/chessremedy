@@ -109,10 +109,9 @@ positions (≈ −200cp) still verify.
 
 ## Verification depth (W2)
 
-The Stage-2 verification depth is a user setting: default `22` (the ADR-012
-`tactical` profile depth), bounds `10..40`, stored under
-`analysis.tacticalDetection`. It applies to **new** verifications and to an
-**explicitly requested** re-scan. It is:
+The Stage-2 verification depth is a user setting: default `18`, bounds
+`10..40`, stored under `analysis.tacticalDetection`. It applies to **new**
+verifications and to an **explicitly requested** re-scan. It is:
 
 - recorded as `verificationMetadata.verificationDepth` on every verified
   candidate, and as an additive (non-indexed) field on the per-analysis

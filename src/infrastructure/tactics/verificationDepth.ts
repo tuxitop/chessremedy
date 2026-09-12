@@ -2,9 +2,11 @@
  * Verification-depth setting (Feature 010 W2, ADR-026/ADR-034).
  *
  * The Stage-2 tactical verification depth is a user-facing quality/cost lever.
- * It defaults to the ADR-012 `tactical` profile depth (22) and is clamped to
- * `[10, 40]` on every read and write, so an absent or invalid stored value can
- * never produce an out-of-bounds engine search. The setting is persisted under
+ * It is tuned independently of the ADR-012 `tactical` profile depth (22) and
+ * defaults to 18 — deep enough to resolve the 8-ply objectives the pipeline
+ * checks while keeping scans faster. It is clamped to `[10, 40]` on every read
+ * and write, so an absent or invalid stored value can never produce an
+ * out-of-bounds engine search. The setting is persisted under
  * `analysis.tacticalDetection` as `{ verificationDepth }`.
  *
  * Pure and framework-free: no React, Dexie or Worker imports. The effective
@@ -13,8 +15,8 @@
  * never served to a search at another; it is **not** a freshness input.
  */
 
-/** Default verification depth: the ADR-012 `tactical` profile depth. */
-export const DEFAULT_VERIFICATION_DEPTH = 22;
+/** Default verification depth (owner decision: 18). */
+export const DEFAULT_VERIFICATION_DEPTH = 18;
 
 /** Minimum accepted verification depth. */
 export const MIN_VERIFICATION_DEPTH = 10;

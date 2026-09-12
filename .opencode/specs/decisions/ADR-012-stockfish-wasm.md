@@ -72,14 +72,16 @@ Full evaluation: `specs/research/browser-stockfish.md`.
   user-selectable cap is `max(1, B - 1)` and the two engines never run
   at maximum together.
 - **Profile depth is a default.** The `tactical` profile's depth (22)
-  is the default for the user-tunable Feature-010 verification depth
-  (ADR-026); MultiPV, hash and WDL remain profile-authoritative.
+  fixes MultiPV, hash and WDL for verification; the Feature-010
+  verification depth is a **separate user setting** (default 18, ADR-026),
+  no longer tied to the profile depth. The `normal` profile is the ADR
+  default for analysis and live play (depth 17, owner decision).
 - Analysis profiles map directly to UCI option configurations:
 
   | Profile        | Depth | Hash   | MultiPV |
   |----------------|-------|--------|---------|
   | Fast Bulk      | 10    | 16 MB  | 1       |
-  | Normal         | 20    | 64 MB  | 1       |
+  | Normal         | 17    | 64 MB  | 1       |
   | Tactical       | 22    | 128 MB | 5       |
   | Deep Verify    | 30    | 256 MB | 3       |
 

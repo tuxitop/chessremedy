@@ -8,6 +8,7 @@ import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
 import { useTacticalDetectionSettings } from '@/hooks/useTacticalDetectionSettings';
 import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
 import {
+  DEFAULT_VERIFICATION_DEPTH,
   MAX_VERIFICATION_DEPTH,
   MIN_VERIFICATION_DEPTH,
   clampVerificationDepth,
@@ -465,8 +466,9 @@ export function SettingsPage({
                 className={styles.helpText}
                 data-testid="setting-verification-depth-help"
               >
-                Default 22, bounds {MIN_VERIFICATION_DEPTH}–{MAX_VERIFICATION_DEPTH}. Applies to new
-                scans and explicit re-scans; completed results stay current.
+                Default {DEFAULT_VERIFICATION_DEPTH}, bounds {MIN_VERIFICATION_DEPTH}–
+                {MAX_VERIFICATION_DEPTH}. Applies to new scans and explicit re-scans; completed
+                results stay current.
               </p>
             </div>
           ) : (

@@ -40,7 +40,7 @@ describe('game-analysis settings', () => {
 
   it('exposes each profile depth for the Settings copy', () => {
     expect(gameAnalysisProfileDepth('fast')).toBe(10);
-    expect(gameAnalysisProfileDepth('normal')).toBe(20);
+    expect(gameAnalysisProfileDepth('normal')).toBe(17);
     expect(gameAnalysisProfileDepth('deep')).toBe(30);
   });
 

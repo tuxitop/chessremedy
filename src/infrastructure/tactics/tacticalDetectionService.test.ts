@@ -27,7 +27,6 @@ import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { SessionAnalysisCache, analysisCacheKey } from '@/infrastructure/engine/cache';
 import { AnalysisJobHandle } from '@/infrastructure/engine/engineService';
 import { VERIFICATION_THREADS } from '@/infrastructure/engine/capabilities';
-import { profileConfig } from '@/infrastructure/engine/engineProfiles';
 import type {
   EngineAnalysisResult,
   EngineService,
@@ -53,7 +52,6 @@ import { DEFAULT_VERIFICATION_DEPTH } from './verificationDepth';
 
 const NOW = 1_700_000_000_000;
 const BULLET_ID = 'li-bullet-missed-mate';
-const TACTICAL_DEPTH = profileConfig('tactical').depth;
 
 /** Engine identity of a `tactical`-profile run against the fake engine. */
 const TACTICAL_ENGINE: EngineMetadata = { ...FAKE_ENGINE_META, profile: 'tactical' };
@@ -385,7 +383,7 @@ describe('TacticalDetectionService — pass orchestration', () => {
       engineName: FAKE_ENGINE_META.engineName,
       engineVersion: FAKE_ENGINE_META.engineVersion,
       engineBuild: FAKE_ENGINE_META.engineBuild,
-      verificationDepth: TACTICAL_DEPTH,
+      verificationDepth: DEFAULT_VERIFICATION_DEPTH,
       verificationTimestamp: NOW,
       wdlAfterBestLine: { w: 1000, d: 0, l: 0 },
     });

@@ -14,7 +14,7 @@ describe('useTacticalDetectionSettings (Feature 010 W2)', () => {
     await db.settings.clear();
   });
 
-  it('falls back to the default depth (22) when unset', async () => {
+  it('falls back to the default depth (18) when unset', async () => {
     const { result } = renderHook(() => useTacticalDetectionSettings());
 
     await waitFor(() => expect(result.current.isReady).toBe(true));

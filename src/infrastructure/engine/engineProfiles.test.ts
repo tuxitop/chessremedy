@@ -48,7 +48,7 @@ describe('engine profiles (ADR-012 table)', () => {
 
   it('maps the ADR-012 depth/hash/MultiPV table', () => {
     expect(profileConfig('fast')).toMatchObject({ depth: 10, hashMb: 16, multipv: 1 });
-    expect(profileConfig('normal')).toMatchObject({ depth: 20, hashMb: 64, multipv: 1 });
+    expect(profileConfig('normal')).toMatchObject({ depth: 17, hashMb: 64, multipv: 1 });
     expect(profileConfig('tactical')).toMatchObject({ depth: 22, hashMb: 128, multipv: 5 });
     expect(profileConfig('deep')).toMatchObject({ depth: 30, hashMb: 256, multipv: 3 });
   });

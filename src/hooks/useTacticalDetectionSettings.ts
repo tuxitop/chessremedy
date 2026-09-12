@@ -18,7 +18,7 @@ export interface UseTacticalDetectionSettings {
  * Reads and writes the persisted tactical-detection settings (Settings page)
  * used by the Feature-010 Stage-2 verification pass. The stored value is
  * clamped on read; an absent/invalid value falls back to the default depth
- * (22). `save` clamps before persisting so an out-of-bounds value can never be
+ * (18). `save` clamps before persisting so an out-of-bounds value can never be
  * stored.
  */
 export function useTacticalDetectionSettings(): UseTacticalDetectionSettings {

@@ -10,7 +10,7 @@ import {
 
 describe('verification-depth setting (Feature 010 W2)', () => {
   it('exposes the ADR-026 defaults and bounds', () => {
-    expect(DEFAULT_VERIFICATION_DEPTH).toBe(22);
+    expect(DEFAULT_VERIFICATION_DEPTH).toBe(18);
     expect(MIN_VERIFICATION_DEPTH).toBe(10);
     expect(MAX_VERIFICATION_DEPTH).toBe(40);
   });

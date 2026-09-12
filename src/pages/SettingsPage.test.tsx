@@ -210,11 +210,11 @@ describe('Settings page — Tactical detection (Feature 010 W2)', () => {
     const depth = (await within(row).findByTestId(
       'setting-verification-depth',
     )) as HTMLInputElement;
-    expect(depth.value).toBe('22');
+    expect(depth.value).toBe('18');
     expect(depth.min).toBe('10');
     expect(depth.max).toBe('40');
     expect(within(row).getByTestId('setting-verification-depth-help')).toHaveTextContent(
-      'Default 22',
+      'Default 18',
     );
   });
 

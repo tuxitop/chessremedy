@@ -8,7 +8,7 @@
  *   | Profile   | Depth | Hash   | MultiPV |
  *   |-----------|-------|--------|---------|
  *   | fast      | 10    | 16 MB  | 1       |
- *   | normal    | 20    | 64 MB  | 1       |
+ *   | normal    | 17    | 64 MB  | 1       |
  *   | tactical  | 22    | 128 MB | 5       |
  *   | deep      | 30    | 256 MB | 3       |
  *
@@ -30,7 +30,7 @@ export interface ProfileConfig {
 
 export const PROFILE_CONFIGS: Record<AnalysisProfile, ProfileConfig> = {
   fast: { profile: 'fast', label: 'Fast', depth: 10, hashMb: 16, multipv: 1, showWdl: false },
-  normal: { profile: 'normal', label: 'Normal', depth: 20, hashMb: 64, multipv: 1, showWdl: true },
+  normal: { profile: 'normal', label: 'Normal', depth: 17, hashMb: 64, multipv: 1, showWdl: true },
   tactical: {
     profile: 'tactical',
     label: 'Tactical',

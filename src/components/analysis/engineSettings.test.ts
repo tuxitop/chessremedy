@@ -45,7 +45,7 @@ describe('live engine settings', () => {
       engine: 'stockfish',
       profile: 'normal',
       lines: 3,
-      depth: 20,
+      depth: 17,
       arrows: 'first',
     });
     expect(s.memoryMb).toBe(64);
