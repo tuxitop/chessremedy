@@ -56,6 +56,7 @@ import {
   nagForClassification,
 } from '@/domain/analysis/classificationMeta';
 import { summarizeAnalysis } from '@/domain/analysis/summary';
+import { isExclusiveMissedTactic } from '@/domain/analysis/effectiveClassification';
 import { gameAccuracy } from '@/domain/analysis/accuracy';
 import type { SummaryDetectionState } from '@/domain/analysis/summaryDerivation';
 import { DETECTION_VERSION } from '@/domain/tactics';
@@ -772,10 +773,30 @@ function GameReview({
     return { classification, plyId: activePly.id };
   }, [live, selected, activePly, liveLines]);
 
+  // Current-version verified-missed plies of the persisted analysis (Feature
+  // 010), keyed the same way as `classificationByPly` (mainline node id) so the
+  // extra marker NAG lands on the same move. Only flags written by the
+  // **current** detection version render (plan 015 freshness gate): an outdated
+  // pass's verdict is suppressed until a fresh scan re-runs it. These plies are
+  // exclusive with the negative classification (ADR-023 amendment).
+  const exclusiveMissedByPly = useMemo(() => {
+    const ids = new Set<number>();
+    mainline.forEach((node, ply) => {
+      const record = records[ply];
+      if (record && isExclusiveMissedTactic(record, DETECTION_VERSION)) {
+        ids.add(node.id);
+      }
+    });
+    return ids;
+  }, [mainline, records]);
+
   // Single source of the classification displayed per ply: the persisted record
   // for each recorded mainline move, overridden by any live classification of
   // that ply (ephemeral engine results win while the engine is on) and by the
-  // active-ply live overlay.
+  // active-ply live overlay. A current-version verified missed-tactic ply is
+  // exclusive (ADR-023 amendment): its classification entry is removed after
+  // the merge so no glyph, chip or square highlight renders for it — only the
+  // missed-tactic marker (below) remains.
   const classificationByPly = useMemo(() => {
     const map = new Map<number, MoveClassification>();
     mainline.forEach((node, ply) => {
@@ -790,44 +811,30 @@ function GameReview({
     if (liveOverlay) {
       map.set(liveOverlay.plyId, liveOverlay.classification);
     }
+    for (const id of exclusiveMissedByPly) {
+      map.delete(id);
+    }
     return map;
-  }, [mainline, records, liveClassificationByPly, liveOverlay]);
-
-  // Verified-missed plies of the persisted analysis (Feature 010), keyed the
-  // same way as `classificationByPly` (mainline node id) so the extra marker
-  // NAG lands on the same move as the classification glyph. Only flags written
-  // by the **current** detection version render (plan 015 freshness gate): an
-  // outdated pass's verdict is suppressed until a fresh scan re-runs it.
-  const missedTacticByPly = useMemo(() => {
-    const ids = new Set<number>();
-    mainline.forEach((node, ply) => {
-      const record = records[ply];
-      if (record && record.missedTactic && record.detectionVersion === DETECTION_VERSION) {
-        ids.add(node.id);
-      }
-    });
-    return ids;
-  }, [mainline, records]);
+  }, [mainline, records, liveClassificationByPly, liveOverlay, exclusiveMissedByPly]);
 
   // NAG overrides for the move list derive from that single map: only the
   // negative classifications render a glyph and its colour; `best`/`good`
-  // plies override to no glyph (quiet by default, R2-3). A verified missed
-  // tactic emits the canonical marker NAG (9) after the classification NAG, so
-  // both glyphs render — the classification is preserved, never replaced.
+  // plies override to no glyph (quiet by default, R2-3). An exclusive
+  // missed-tactic ply renders **exactly one** annotation — the canonical marker
+  // NAG (9) — and never a classification NAG alongside it.
   const effectiveNagOverrides = useMemo(() => {
     const map = new Map<number, readonly number[]>();
     for (const [id, classification] of classificationByPly) {
       const nag = NEGATIVE_CLASSIFICATIONS.has(classification)
         ? nagForClassification(classification)
         : null;
-      const nags = nag === null ? [] : [nag];
-      if (missedTacticByPly.has(id)) {
-        nags.push(MISSED_TACTIC_NAG);
-      }
-      map.set(id, nags);
+      map.set(id, nag === null ? [] : [nag]);
+    }
+    for (const id of exclusiveMissedByPly) {
+      map.set(id, [MISSED_TACTIC_NAG]);
     }
     return map;
-  }, [classificationByPly, missedTacticByPly]);
+  }, [classificationByPly, exclusiveMissedByPly]);
 
   // Classification of the active (selected) ply for chips + square highlights.
   const activeClassification = useMemo<MoveClassification | undefined>(() => {

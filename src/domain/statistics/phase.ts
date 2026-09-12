@@ -14,6 +14,7 @@
 import type { Color } from 'chessops/types';
 import { GAME_PHASES } from '@/domain/chess/analysis';
 import type { GamePhase, MoveAnalysis } from '@/domain/chess/analysis';
+import { isExclusiveMissedTactic } from '@/domain/analysis/effectiveClassification';
 import { aggregateOf, notDetectedAggregate, rate } from './aggregate';
 import type { PhaseMetricCounts, PhaseMetrics } from './types';
 
@@ -59,11 +60,17 @@ interface MutablePhaseSummary {
  * whose classification is positive (`best`/`good`) never fabricate a phase or
  * a count. `currentDetectionAnalysisIds` restricts missed-tactic and
  * detection-denominator counting to analyses with a current completed pass.
+ * `currentDetectionVersion` is the caller's `DETECTION_VERSION`; a user ply that
+ * is a current-version verified missed tactic is excluded from the
+ * inaccuracy/mistake/blunder numerators (ADR-023 amendment) but still counts in
+ * `userMovesInPhase` and `detectedUserMovesInPhase` (move-exposure
+ * denominators) and in `missedTactics`.
  */
 export function summarizeByPhase(
   records: readonly MoveAnalysis[],
   userColor: Color,
   currentDetectionAnalysisIds: ReadonlySet<string>,
+  currentDetectionVersion: number,
 ): PhaseSummarySet {
   const accumulators = new Map<GamePhase, MutablePhaseSummary>();
   for (const phase of GAME_PHASES) {
@@ -95,12 +102,14 @@ export function summarizeByPhase(
     }
     accumulator.userMovesInPhase += 1;
     analyzedGameIds.add(record.gameId);
-    if (record.classification === 'inaccuracy') {
-      accumulator.inaccuracies += 1;
-    } else if (record.classification === 'mistake') {
-      accumulator.mistakes += 1;
-    } else if (record.classification === 'blunder') {
-      accumulator.blunders += 1;
+    if (!isExclusiveMissedTactic(record, currentDetectionVersion)) {
+      if (record.classification === 'inaccuracy') {
+        accumulator.inaccuracies += 1;
+      } else if (record.classification === 'mistake') {
+        accumulator.mistakes += 1;
+      } else if (record.classification === 'blunder') {
+        accumulator.blunders += 1;
+      }
     }
     if (currentDetectionAnalysisIds.has(record.analysisId)) {
       accumulator.detectedUserMovesInPhase += 1;

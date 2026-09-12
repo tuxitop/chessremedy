@@ -124,6 +124,11 @@ test.describe('Puzzle generation (Feature 011)', () => {
     const card = page.getByTestId('puzzle-card-6');
     await expect(card).toBeVisible();
 
+    // Exclusivity (ADR-023 amendment): the ply is a current-version verified
+    // candidate *and* a raw blunder, but it yields exactly one puzzle — the
+    // blunder-origin input must not add a duplicate row for the same ply.
+    await expect(page.locator('[data-testid^="puzzle-card-"]')).toHaveCount(1);
+
     // Board present (starting position rendered through the shared wrapper).
     await expect(card.getByTestId('puzzle-board-6')).toBeVisible();
     await expect(card.getByTestId('puzzle-board-6').locator('cg-board')).toBeVisible();

@@ -3,6 +3,7 @@ import { CLASSIFICATION_VERSION } from '@/domain/chess/classification';
 import { DETECTION_VERSION } from '@/domain/tactics/types';
 import { MASTERY_VERSION } from '@/domain/training/mastery';
 import { buildVersionSummary } from '../version';
+import { STATISTICS_VERSION } from '../types';
 import { detectionStatesScenario, mixedVersionsScenario, oneAnalyzedScenario } from './scenarios';
 
 describe('buildVersionSummary', () => {
@@ -16,7 +17,7 @@ describe('buildVersionSummary', () => {
       CLASSIFICATION_VERSION,
       CLASSIFICATION_VERSION + 1,
     ]);
-    expect(version.statisticsVersion).toBe(1);
+    expect(version.statisticsVersion).toBe(STATISTICS_VERSION);
     expect(version.masteryVersion).toBe(MASTERY_VERSION);
   });
 

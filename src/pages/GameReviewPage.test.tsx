@@ -546,7 +546,7 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     await db.positionAnalysisCache.clear();
   });
 
-  it('renders the classification glyph plus the missed-tactic marker for a verified miss', async () => {
+  it('renders exactly one annotation (the missed-tactic marker) for a verified miss', async () => {
     // 2.g4 is White's blunder and a verified missed tactic (current detectionVersion).
     await seedCompleted([
       undefined,
@@ -559,15 +559,18 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
 
     const g4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!;
     const glyphs = within(g4).getAllByTestId('nag-glyph');
-    expect(glyphs).toHaveLength(2);
-    // Classification glyph first, preserved; marker NAG 9 (X) added after it.
-    expect(glyphs[0]).toHaveAttribute('data-nag', '4');
-    expect(glyphs[0]).toHaveTextContent('??');
-    expect(glyphs[1]).toHaveAttribute('data-nag', '9');
-    expect(glyphs[1]).toHaveTextContent('X');
+    // Exactly one annotation: the missed-tactic marker (NAG 9, X). The
+    // classification glyph (NAG 4, ??) is suppressed for an exclusive ply.
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0]).toHaveAttribute('data-nag', '9');
+    expect(glyphs[0]).toHaveTextContent('X');
+    expect(glyphs.some((glyph) => glyph.dataset.nag === '4')).toBe(false);
+    expect(within(g4).queryByText('??')).not.toBeInTheDocument();
 
-    // The classification is untouched: g4 is still counted as a user blunder.
-    expect(screen.getByTestId('summary-user-blunder-value')).toHaveTextContent('1');
+    // The ply is excluded from the classification counts and counted only as a
+    // missed tactic in the Review Summary.
+    expect(screen.getByTestId('summary-user-blunder-value')).toHaveTextContent('0');
+    expect(screen.getByTestId('summary-missed-tactics-value')).toHaveTextContent('1');
 
     // Ordinary (good) plies render no classification glyph and no marker.
     for (const san of ['f3', 'e5']) {
@@ -579,6 +582,46 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     // classification glyph and no marker (R2-3).
     const qh4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'Qh4#')!;
     expect(within(qh4).queryByTestId('nag-glyph')).not.toBeInTheDocument();
+
+    // Selecting the exclusive ply suppresses the classification chip, colour
+    // and start/end-square highlight; the plain last-move highlight returns and
+    // the missed-tactic label is still shown.
+    const user = userEvent.setup();
+    await user.click(g4);
+    await waitFor(() => {
+      const last = chessboardProps.at(-1)!;
+      expect(last.lastMove).toEqual(['g2', 'g4']);
+      expect((last as { customSquareClasses?: unknown }).customSquareClasses).toBeUndefined();
+    });
+    const overlayItems = (): unknown =>
+      (chessboardProps.at(-1)!.overlay as { props?: { items?: unknown } } | undefined)?.props
+        ?.items;
+    expect(overlayItems()).toBeUndefined();
+    expect(screen.getByTestId('review-missed-tactic-label')).toBeInTheDocument();
+  });
+
+  it('keeps exactly one annotation for an exclusive ply while live analysis is on', async () => {
+    await seedCompleted([
+      undefined,
+      undefined,
+      { missedTactic: true, detectionVersion: DETECTION_VERSION },
+      undefined,
+    ]);
+    renderReview(null);
+    await screen.findByTestId('review-layout');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('engine-toggle'));
+    expect(screen.getByTestId('engine-toggle')).toHaveAttribute('aria-checked', 'true');
+
+    // A live classification must not re-introduce a glyph for the exclusive
+    // ply: exclusivity is applied after the live/overlay merge.
+    const g4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!;
+    const glyphs = within(g4).getAllByTestId('nag-glyph');
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0]).toHaveAttribute('data-nag', '9');
+    expect(glyphs.some((glyph) => glyph.dataset.nag === '4')).toBe(false);
+    expect(screen.getByTestId('summary-user-blunder-value')).toHaveTextContent('0');
   });
 
   it('shows the missed-tactic label when the verified-miss move is active', async () => {
@@ -687,9 +730,13 @@ describe('Game Review missed-tactic markers (Feature 010)', () => {
     await screen.findByTestId('review-layout');
 
     // An old-version verified miss is not trusted: no NAG-9 marker, no count.
+    // The ply falls back to its raw ADR-023 classification (`??`, NAG 4) and is
+    // counted as a user blunder again.
     const g4 = screen.getAllByTestId('move-list-move').find((b) => b.dataset.san === 'g4')!;
     const glyphs = within(g4).getAllByTestId('nag-glyph');
     expect(glyphs.some((glyph) => glyph.dataset.nag === '9')).toBe(false);
+    expect(glyphs.some((glyph) => glyph.dataset.nag === '4')).toBe(true);
+    expect(screen.getByTestId('summary-user-blunder-value')).toHaveTextContent('1');
     expect(screen.queryByTestId('summary-missed-tactics-value')).not.toBeInTheDocument();
 
     // The Review says the result is out of date and offers a refresh scan.

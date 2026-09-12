@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { VerifiedTacticalCandidate } from '@/domain/tactics';
+import { DETECTION_VERSION, type VerifiedTacticalCandidate } from '@/domain/tactics';
 import type { EvalCpMate } from '@/domain/chess';
 import { assembleBlunderPuzzle, assemblePuzzle, blunderDifficultyOf } from './assemble';
 import { PUZZLE_GENERATOR_VERSION } from './types';
@@ -99,7 +99,7 @@ describe('assemblePuzzle', () => {
   it('retains the version trio on the row', () => {
     const row = puzzleRowFixture('multi-move-combination');
     expect(row.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
-    expect(row.detectionVersion).toBe(10);
+    expect(row.detectionVersion).toBe(DETECTION_VERSION);
     expect(row.candidateGenerationVersion).toBe(2);
   });
 

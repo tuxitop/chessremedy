@@ -8,6 +8,8 @@
 
 import type { Color } from 'chessops/types';
 import type { MoveAnalysis, MoveClassification } from '@/domain/chess';
+import { DETECTION_VERSION } from '@/domain/tactics';
+import { isExclusiveMissedTactic } from './effectiveClassification';
 
 // Canonical ordering/labels live in `classificationMeta.ts` (Feature 009);
 // re-exported here so existing importers keep working.
@@ -47,10 +49,18 @@ function addCount(
 /**
  * Summarize one game's persisted `MoveAnalysis` records. The user's color
  * comes from the stored `Game.userColor`.
+ *
+ * ADR-023 missed-tactic exclusivity: a user ply that is a current-version
+ * verified missed tactic is not counted in any of the five classification
+ * buckets — it is counted only in `userMissedTactics` — but still increments
+ * `userMoves` (the move-exposure denominator). The opponent branch is raw.
+ * `currentDetectionVersion` defaults to the current `DETECTION_VERSION`; a
+ * stale marker (an older version) is counted as its raw classification.
  */
 export function summarizeAnalysis(
   records: readonly MoveAnalysis[],
   userColor: Color,
+  currentDetectionVersion: number = DETECTION_VERSION,
 ): AnalysisSummary {
   let user = emptyClassificationCounts();
   let opponent = emptyClassificationCounts();
@@ -60,7 +70,9 @@ export function summarizeAnalysis(
   for (const record of records) {
     const isUser = record.side === userColor;
     if (isUser) {
-      user = addCount(user, record.classification);
+      if (!isExclusiveMissedTactic(record, currentDetectionVersion)) {
+        user = addCount(user, record.classification);
+      }
       userMoves += 1;
       if (record.missedTactic) {
         userMissedTactics += 1;

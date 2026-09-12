@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MoveAnalysis } from '@/domain/chess';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { makeMove } from './test-support';
 import { summarizeAnalysis } from './summary';
 
@@ -54,5 +55,63 @@ describe('summarizeAnalysis (Review summary)', () => {
     const records = [record(0, 'white', 'best'), record(1, 'black', 'good')];
     const summary = summarizeAnalysis(records, 'black');
     expect(summary.user).toEqual({ best: 0, good: 1, inaccuracy: 0, mistake: 0, blunder: 0 });
+  });
+});
+
+describe('summarizeAnalysis (missed-tactic exclusivity, ADR-023 amendment)', () => {
+  it('excludes a current-version verified miss from every bucket but keeps userMoves', () => {
+    const records = [
+      makeMove(0, {
+        gameId: 'lichess:x',
+        analysisId: ANALYSIS,
+        side: 'white',
+        classification: 'blunder',
+        missedTactic: true,
+        detectionVersion: DETECTION_VERSION,
+      }),
+      record(1, 'black', 'blunder'),
+      record(2, 'white', 'good'),
+    ];
+    const summary = summarizeAnalysis(records, 'white');
+    expect(summary.user).toEqual({ best: 0, good: 1, inaccuracy: 0, mistake: 0, blunder: 0 });
+    expect(summary.userMissedTactics).toBe(1);
+    // The move-exposure denominator keeps the exclusive ply.
+    expect(summary.userMoves).toBe(2);
+    expect(summary.totalMoves).toBe(3);
+    // Opponent counts are raw.
+    expect(summary.opponent.blunder).toBe(1);
+  });
+
+  it('counts a stale marker as its raw classification', () => {
+    const records = [
+      makeMove(0, {
+        gameId: 'lichess:x',
+        analysisId: ANALYSIS,
+        side: 'white',
+        classification: 'blunder',
+        missedTactic: true,
+        detectionVersion: DETECTION_VERSION - 1,
+      }),
+    ];
+    const summary = summarizeAnalysis(records, 'white');
+    expect(summary.user.blunder).toBe(1);
+    expect(summary.userMoves).toBe(1);
+  });
+
+  it('never treats an opponent ply as exclusive', () => {
+    const records = [
+      makeMove(1, {
+        gameId: 'lichess:x',
+        analysisId: ANALYSIS,
+        side: 'black',
+        classification: 'blunder',
+        missedTactic: true,
+        detectionVersion: DETECTION_VERSION,
+      }),
+    ];
+    const summary = summarizeAnalysis(records, 'white');
+    expect(summary.user.blunder).toBe(0);
+    expect(summary.userMissedTactics).toBe(0);
+    expect(summary.opponent.blunder).toBe(1);
   });
 });

@@ -62,8 +62,18 @@ export interface AccuracyAggregate extends Aggregate {
 /** Canonical minimum sample size (`domain/statistics.md`, ADR-013). */
 export const MIN_SAMPLE_SIZE = 5;
 
-/** Version of the aggregation semantics (bumped on any semantic change). */
-export const STATISTICS_VERSION = 1;
+/**
+ * Version of the aggregation semantics (bumped on any semantic change).
+ *
+ * Version 2 (plan 009 W3, ADR-023 amendment) adds **missed-tactic
+ * exclusivity**: a current-version verified missed-tactic ply is excluded from
+ * the classification/error counts, per-game rates/shares and phase error
+ * numerators (it is counted only in the missed-tactic metrics), while the
+ * move-exposure denominators and the ADR-024 accuracy weight keep it. W5's
+ * ADR-013 time-control re-normalization takes this to 3; both changes are
+ * recorded in the version provenance.
+ */
+export const STATISTICS_VERSION = 2;
 
 /** Platform dimension; `fixture` is test-only and never a production result. */
 export type PlatformDimension = 'all' | GameSource;

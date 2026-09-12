@@ -621,12 +621,13 @@ describe('PuzzleGenerationService', () => {
     expect(await r.puzzles.countForGame(GAME_ID)).toBe(0);
   });
 
-  it('a ply that is both a verified candidate and a user blunder keeps the tactical row', async () => {
+  it('a ply that is both a verified candidate and a user blunder yields exactly one tactical row', async () => {
     const summaries = new FakeSummariesRepository();
     await seedSummary(summaries);
     const verified = verifiedCandidates();
     const r = rig(verified, summaries, [
-      // Ply 6 is BOTH the verified mate-one candidate and a user blunder.
+      // Ply 6 is BOTH the verified mate-one candidate and a user blunder: the
+      // blunder input excludes it (ADR-023 exclusivity), so it settles once.
       blunderRecord(6),
       // A pure user blunder at ply 10 (no candidate) still becomes a puzzle.
       blunderRecord(10),
@@ -636,9 +637,9 @@ describe('PuzzleGenerationService', () => {
 
     const summary = (await summaries.getForAnalysis(ANALYSIS_ID))!;
     expect(summary.puzzleState).toBe('completed');
-    // Items settled: 3 verified candidates + 2 blunder plies. Ply 6 settles
-    // twice (candidate row + blunder skipped by the natural key).
-    expect(summary.puzzleProgress).toEqual({ done: 5, total: 5 });
+    // Items settled: 3 verified candidates + 1 qualifying blunder ply (ply 6 is
+    // candidate-owned and excluded), so the missed tactic counts once.
+    expect(summary.puzzleProgress).toEqual({ done: 4, total: 4 });
 
     const rows = await r.puzzles.listForGame(GAME_ID);
     expect(rows.map((row) => row.sourcePly)).toEqual([6, 8, 10, 20]);
@@ -649,5 +650,24 @@ describe('PuzzleGenerationService', () => {
     const ply10 = rows.find((row) => row.sourcePly === 10)!;
     expect(ply10.origin).toBe('blunder');
     expect(ply10.bestPv).toEqual(['h5f7']);
+  });
+
+  it('a stale verified candidate does not own its ply, so the blunder origin produces the row', async () => {
+    const summaries = new FakeSummariesRepository();
+    await seedSummary(summaries);
+    // The candidate at ply 10 is stale (older detectionVersion): ignored by the
+    // freshness gate, so the ply-10 user blunder falls through to the
+    // correct-move origin.
+    const r = rig([staleVerifiedCandidate()], summaries, [blunderRecord(10)]);
+
+    await run(r.service);
+
+    const summary = (await summaries.getForAnalysis(ANALYSIS_ID))!;
+    expect(summary.puzzleState).toBe('completed');
+    expect(summary.puzzleProgress).toEqual({ done: 1, total: 1 });
+    const rows = await r.puzzles.listForGame(GAME_ID);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.origin).toBe('blunder');
+    expect(rows[0]!.sourcePly).toBe(10);
   });
 });

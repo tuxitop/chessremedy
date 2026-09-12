@@ -255,12 +255,18 @@ test.describe('Game analysis & review (Feature 008)', () => {
       .locator('[data-testid="move-list-move"]')
       .filter({ has: page.locator('[data-testid="nag-glyph"][data-nag="9"]') });
     if ((await markedMove.count()) > 0) {
-      // A verified miss renders as an *additional* NAG 9 glyph on its move,
-      // next to — never instead of — the move's classification NAG.
+      // A current-version verified miss is exclusive (ADR-023 amendment): the
+      // move renders exactly one annotation — the NAG 9 missed-tactic marker —
+      // and never a classification glyph (`??`/`?`/`?!`) alongside it.
       const firstMarked = markedMove.first();
       await expect(firstMarked).toBeVisible();
-      await expect(firstMarked.locator('[data-testid="nag-glyph"]')).toHaveCount(2);
+      await expect(firstMarked.locator('[data-testid="nag-glyph"]')).toHaveCount(1);
       await expect(firstMarked.locator('[data-testid="nag-glyph"][data-nag="9"]')).toHaveCount(1);
+      for (const nag of ['2', '4', '6']) {
+        await expect(
+          firstMarked.locator(`[data-testid="nag-glyph"][data-nag="${nag}"]`),
+        ).toHaveCount(0);
+      }
     } else {
       // No verified miss: the classification glyphs are intact and no phantom
       // marker was added to the move list.
@@ -327,8 +333,14 @@ test.describe('Missed-tactic surface proof (Feature 010 / plan 011 P7)', () => {
 
     const d3 = page.locator('[data-testid="move-list-move"][data-san="d3"]');
     await expect(d3).toBeVisible();
-    // 4.d3 was also a blunder (?? NAG 4): the verified miss adds NAG 9 next to it.
-    await expect(d3.locator('[data-testid="nag-glyph"]')).toHaveCount(2);
+    // 4.d3's raw label is a blunder, but a current-version verified miss is
+    // exclusive (ADR-023 amendment): the ply renders exactly one annotation,
+    // the NAG 9 marker, and no classification glyph (`??`/`?`/`?!`) alongside it.
+    await expect(d3.locator('[data-testid="nag-glyph"]')).toHaveCount(1);
     await expect(d3.locator('[data-testid="nag-glyph"][data-nag="9"]')).toHaveCount(1);
+    for (const nag of ['2', '4', '6']) {
+      await expect(d3.locator(`[data-testid="nag-glyph"][data-nag="${nag}"]`)).toHaveCount(0);
+    }
+    await expect(d3).not.toContainText('??');
   });
 });

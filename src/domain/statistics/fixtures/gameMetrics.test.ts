@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { summarizeAnalysis } from '@/domain/analysis/summary';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { buildGameHistoryEntries } from '../history';
 import { gameMetricsFor } from '../gameMetrics';
-import { analyzedGame, scenarioOf, type AnalyzedGame, type StatisticsScenario } from './builders';
+import {
+  analyzedGame,
+  moveAnalysis,
+  scenarioOf,
+  type AnalyzedGame,
+  type StatisticsScenario,
+} from './builders';
 import {
   detectionStatesScenario,
   emptyScenario,
@@ -177,5 +185,40 @@ describe('gameMetricsFor — state boundaries and absent-vs-zero', () => {
     });
     expect(metrics.missedTactics.missedTacticsPerGame.state).toBe('notDetected');
     expect(metrics.missedTactics.gamesWithMissedTacticShare.state).toBe('notDetected');
+  });
+});
+
+describe('gameMetricsFor — missed-tactic exclusivity (ADR-023 amendment)', () => {
+  it('excludes an exclusive-only blunder from blunder metrics and the blunder share', () => {
+    // A game whose only blunder is a current-version verified missed tactic: the
+    // persisted summary's counts exclude it (Stage 1), so it contributes 0 to
+    // blunders and is not a gamesWithBlunderShare member; it is counted as a
+    // missed tactic instead.
+    const records = [
+      moveAnalysis({
+        analysisId: 'a1',
+        gameId: 'g-exclusive',
+        gamePhase: 'middlegame',
+        classification: 'blunder',
+        missedTactic: true,
+        detectionVersion: DETECTION_VERSION,
+      }),
+    ];
+    const counts = summarizeAnalysis(records, 'white').user;
+    const analyzed = [
+      analyzedGame('g-exclusive', {
+        summary: {
+          classificationCounts: counts,
+          missedTacticCount: 1,
+          detectionVersion: DETECTION_VERSION,
+        },
+      }),
+    ];
+
+    const metrics = gameMetricsFor(entriesFor(scenarioOf(analyzed)));
+    expect(metrics.classification.blunders.value).toBe(0);
+    expect(metrics.classification.gamesWithBlunderShare.value).toBe(0);
+    expect(metrics.missedTactics.missedTactics.value).toBe(1);
+    expect(metrics.missedTactics.gamesWithMissedTacticShare.value).toBe(1);
   });
 });

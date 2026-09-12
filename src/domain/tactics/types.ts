@@ -60,6 +60,16 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  * net two points inside the window while remaining dead lost before and after —
  * engine-resistance noise, not a missed tactic. Forced mate and the defensive
  * objectives still surface from lost positions.
+ * Version 11 (plan 009 W3, ADR-023 amendment) adds **missed-tactic
+ * exclusivity**: a current-version verified missed-tactic ply has the derived
+ * effective state `missedTactic` and is suppressed from the five
+ * classification buckets, the per-game error rates/shares and the phase error
+ * numerators, while staying in the move-exposure denominators and the ADR-024
+ * accuracy set. The raw ADR-023 label is retained as provenance; the persisted
+ * `MoveAnalysis.classification` is never rewritten. The bump re-derives every
+ * existing per-analysis summary through the freshness gate so the exclusive
+ * plies are removed from the stored error counts at the same moment the marker
+ * becomes current.
  * Version 9 (plan 015, owner decision) carries no rule change: it marks the
  * **detection-freshness gate**. A completed detection result is only trusted
  * (rendered, counted, reused) when its persisted `detectionVersion` equals the
@@ -68,7 +78,7 @@ export type DetectionPassState = 'queued' | 'inProgress' | 'completed' | 'failed
  * mandatory whenever any Stage-1/Stage-2 rule, guard or versioned constant in
  * this file changes.
  */
-export const DETECTION_VERSION = 10;
+export const DETECTION_VERSION = 11;
 
 /**
  * Candidate-generation version. Incremented when the Stage-1 candidate rules

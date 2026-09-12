@@ -35,7 +35,7 @@ const KEEP_BLOCK_ID = 'e2e:keep-block';
 
 const PUZZLE_FIXTURE_NOW = 1_700_000_000_000;
 const PUZZLE_GENERATOR_VERSION = 2;
-const DETECTION_VERSION = 10;
+const DETECTION_VERSION = 11;
 const CANDIDATE_GENERATION_VERSION = 2;
 
 interface SeedPuzzle {

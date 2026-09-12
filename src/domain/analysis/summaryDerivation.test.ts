@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MoveAnalysis } from '@/domain/chess';
 import { PUZZLE_GENERATOR_VERSION } from '@/domain/puzzle';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { makeMove } from './test-support';
 import { summarizeAnalysis } from './summary';
 import { gameAccuracy } from './accuracy';
@@ -19,9 +20,10 @@ function freezeRecords(records: readonly MoveAnalysis[]): readonly MoveAnalysis[
 }
 
 /**
- * Two verified user missed tactics (plies 0 and 2), one opponent missed
- * tactic (ply 1) that must never be counted for a White user, and a clean
- * opponent ply.
+ * Two current-version verified user missed tactics (plies 0 and 2), one
+ * opponent missed tactic (ply 1) that must never be counted for a White user,
+ * and a clean opponent ply. The flags are current (`DETECTION_VERSION`), so the
+ * user plies are exclusive under the ADR-023 amendment.
  */
 function missedTacticRecords(): readonly MoveAnalysis[] {
   const missed = (
@@ -35,7 +37,7 @@ function missedTacticRecords(): readonly MoveAnalysis[] {
       side,
       classification,
       missedTactic: true,
-      detectionVersion: 1,
+      detectionVersion: DETECTION_VERSION,
     });
   return [
     missed(0, 'white', 'blunder'),
@@ -161,7 +163,10 @@ describe('buildAnalysisSummary (detection holder: absent vs zero)', () => {
     expect(built.detectionState).toBe('queued');
     expect(built.missedTacticCount).toBeNull();
     expect(built.detectionVersion).toBeNull();
-    expect(built.classificationCounts.blunder).toBe(1);
+    // The current-version verified misses are exclusive: absent from the error
+    // buckets, but still counted in the ADR-024 accuracy denominator.
+    expect(built.classificationCounts.blunder).toBe(0);
+    expect(built.classificationCounts.mistake).toBe(0);
     expect(built.accuracyMoves).toBe(2);
   });
 
@@ -213,6 +218,54 @@ describe('buildAnalysisSummary (detection holder: absent vs zero)', () => {
       detectionVersion: 1,
     });
     expect(built.missedTacticCount).toBe(5);
+  });
+});
+
+describe('buildAnalysisSummary (missed-tactic exclusivity, ADR-023 amendment)', () => {
+  function exclusiveRecords(detectionVersion: number): readonly MoveAnalysis[] {
+    return [
+      makeMove(0, {
+        gameId: GAME,
+        analysisId: ANALYSIS,
+        side: 'white',
+        classification: 'blunder',
+        missedTactic: true,
+        detectionVersion,
+      }),
+      makeMove(1, {
+        gameId: GAME,
+        analysisId: ANALYSIS,
+        side: 'black',
+        classification: 'blunder',
+      }),
+      makeMove(2, { gameId: GAME, analysisId: ANALYSIS, side: 'white', classification: 'best' }),
+    ];
+  }
+
+  it('excludes a current-version verified miss from all five buckets and keeps it in accuracy', () => {
+    const built = buildAnalysisSummary(exclusiveRecords(DETECTION_VERSION), 'white', {
+      detectionState: 'completed',
+      detectionVersion: DETECTION_VERSION,
+    });
+    expect(built.classificationCounts).toEqual({
+      best: 1,
+      good: 0,
+      inaccuracy: 0,
+      mistake: 0,
+      blunder: 0,
+    });
+    expect(built.userMoves).toBe(2);
+    expect(built.accuracyMoves).toBe(2);
+    expect(built.missedTacticCount).toBe(1);
+  });
+
+  it('counts a stale marker as its raw classification', () => {
+    const built = buildAnalysisSummary(exclusiveRecords(DETECTION_VERSION - 1), 'white', {
+      detectionState: 'completed',
+      detectionVersion: DETECTION_VERSION - 1,
+    });
+    expect(built.classificationCounts.blunder).toBe(1);
+    expect(built.userMoves).toBe(2);
   });
 });
 

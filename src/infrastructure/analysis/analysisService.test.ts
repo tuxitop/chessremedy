@@ -1203,9 +1203,10 @@ describe('AnalysisService — Feature-011 puzzle-generation hook (Stage C)', () 
     const summary = (await summariesRepository.getForAnalysis(job.id))!;
     expect(summary.puzzleState).toBe('completed');
     // The missed-mate ply (4.d3) is BOTH the verified candidate and a user
-    // blunder in the run's MoveAnalysis: the pass settles two items (candidate
-    // row written, blunder skipped by the natural key) but produces one row.
-    expect(summary.puzzleProgress).toEqual({ done: 2, total: 2 });
+    // blunder in the run's MoveAnalysis. Under the missed-tactic exclusivity
+    // rule the blunder-origin input excludes candidate-owned plies, so the pass
+    // settles a single item and still produces one row.
+    expect(summary.puzzleProgress).toEqual({ done: 1, total: 1 });
     expect(summary.puzzleGeneratorVersion).toBe(PUZZLE_GENERATOR_VERSION);
     // Detection fields were never clobbered by the generation writes.
     expect(summary.detectionState).toBe('completed');

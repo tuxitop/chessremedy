@@ -7,7 +7,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { computeStatistics, type StatisticsComputeInput } from '@/domain/statistics';
+import {
+  computeStatistics,
+  STATISTICS_VERSION,
+  type StatisticsComputeInput,
+} from '@/domain/statistics';
 import type { StatisticsComputeRequest, StatisticsComputeResponse } from './worker-protocol';
 import { createInlineStatisticsCompute, createStatisticsCompute } from './worker-client';
 
@@ -64,7 +68,7 @@ describe('statistics compute protocol', () => {
     if (result.operation === 'gameMetrics') {
       expect(result.partitions).toEqual([]);
       expect(result.diagnostics.missingSummary).toBe(0);
-      expect(result.statisticsVersion).toBe(1);
+      expect(result.statisticsVersion).toBe(STATISTICS_VERSION);
     }
   });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { phaseMetricsFor, summarizeByPhase } from '../phase';
 import { moveAnalysis } from './builders';
 
@@ -66,12 +67,12 @@ function records() {
 }
 
 function metrics() {
-  return phaseMetricsFor(summarizeByPhase(records(), 'white', CURRENT));
+  return phaseMetricsFor(summarizeByPhase(records(), 'white', CURRENT, DETECTION_VERSION));
 }
 
 describe('summarizeByPhase', () => {
   it('groups by stored phase with per-phase denominators and current detection', () => {
-    const summary = summarizeByPhase(records(), 'white', CURRENT);
+    const summary = summarizeByPhase(records(), 'white', CURRENT, DETECTION_VERSION);
     expect(summary.analyzedGames).toBe(2);
     expect(summary.detectedGames).toBe(1);
     const opening = summary.phases.find((phase) => phase.phase === 'opening');
@@ -99,7 +100,7 @@ describe('summarizeByPhase', () => {
   });
 
   it('never fabricates a phase from a missing/undefined gamePhase', () => {
-    const summary = summarizeByPhase(records(), 'white', CURRENT);
+    const summary = summarizeByPhase(records(), 'white', CURRENT, DETECTION_VERSION);
     const totalUserMoves = summary.phases.reduce((sum, phase) => sum + phase.userMovesInPhase, 0);
     expect(totalUserMoves).toBe(7);
     expect(summary.phases.map((phase) => phase.phase)).toEqual([
@@ -110,7 +111,7 @@ describe('summarizeByPhase', () => {
   });
 
   it('ignores opponent moves', () => {
-    const summary = summarizeByPhase(records(), 'black', CURRENT);
+    const summary = summarizeByPhase(records(), 'black', CURRENT, DETECTION_VERSION);
     const opening = summary.phases.find((phase) => phase.phase === 'opening');
     expect(opening?.blunders).toBe(1);
     expect(opening?.userMovesInPhase).toBe(1);
@@ -175,9 +176,9 @@ describe('phaseMetricsFor', () => {
   });
 
   it('reports notDetected for missed tactics when no analysis has a current pass', () => {
-    const opening = phaseMetricsFor(summarizeByPhase(records(), 'white', new Set())).find(
-      (phase) => phase.phase === 'opening',
-    );
+    const opening = phaseMetricsFor(
+      summarizeByPhase(records(), 'white', new Set(), DETECTION_VERSION),
+    ).find((phase) => phase.phase === 'opening');
     expect(opening?.counts.missedTactics).toEqual({
       value: null,
       state: 'notDetected',
@@ -188,5 +189,68 @@ describe('phaseMetricsFor', () => {
       state: 'notDetected',
       sample: { unit: 'moves', n: 0 },
     });
+  });
+});
+
+describe('summarizeByPhase (missed-tactic exclusivity, ADR-023 amendment)', () => {
+  function exclusiveRecords(detectionVersion: number) {
+    return [
+      moveAnalysis({
+        analysisId: 'a-current',
+        gameId: 'gA',
+        gamePhase: 'opening',
+        classification: 'blunder',
+        missedTactic: true,
+        detectionVersion,
+      }),
+      moveAnalysis({
+        analysisId: 'a-current',
+        gameId: 'gA',
+        gamePhase: 'opening',
+        classification: 'best',
+      }),
+    ];
+  }
+
+  it('excludes a current-version verified miss from the error numerators but keeps the denominators', () => {
+    const summary = summarizeByPhase(
+      exclusiveRecords(DETECTION_VERSION),
+      'white',
+      CURRENT,
+      DETECTION_VERSION,
+    );
+    const opening = summary.phases.find((phase) => phase.phase === 'opening');
+    expect(opening).toEqual({
+      phase: 'opening',
+      userMovesInPhase: 2,
+      detectedUserMovesInPhase: 2,
+      inaccuracies: 0,
+      mistakes: 0,
+      blunders: 0,
+      missedTactics: 1,
+    });
+
+    const metrics = phaseMetricsFor(summary).find((phase) => phase.phase === 'opening');
+    expect(metrics?.counts.blunders).toEqual({
+      value: 0,
+      state: 'insufficient',
+      sample: { unit: 'games', n: 1 },
+    });
+    expect(metrics?.errorsPer100Moves.blunders).toEqual({
+      value: 0,
+      state: 'insufficient',
+      sample: { unit: 'moves', n: 2 },
+    });
+  });
+
+  it('counts a stale marker as its raw classification', () => {
+    const opening = summarizeByPhase(
+      exclusiveRecords(DETECTION_VERSION - 1),
+      'white',
+      CURRENT,
+      DETECTION_VERSION,
+    ).phases.find((phase) => phase.phase === 'opening');
+    expect(opening?.blunders).toBe(1);
+    expect(opening?.missedTactics).toBe(1);
   });
 });

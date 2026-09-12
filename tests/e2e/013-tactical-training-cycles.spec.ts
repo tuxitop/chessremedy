@@ -18,7 +18,7 @@ const MATE_ONE_PUZZLE_ID = 'fixture:mate-one:6';
 
 const PUZZLE_FIXTURE_NOW = 1_700_000_000_000;
 const PUZZLE_GENERATOR_VERSION = 2;
-const DETECTION_VERSION = 10;
+const DETECTION_VERSION = 11;
 const CANDIDATE_GENERATION_VERSION = 2;
 
 interface SeedPuzzle {

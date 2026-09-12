@@ -44,3 +44,5 @@ export {
 } from './classificationMeta';
 export { moveAccuracy, gameAccuracy, MOVE_ACCURACY_VERSION } from './accuracy';
 export type { GameAccuracy, GameAccuracyOptions } from './accuracy';
+export { isExclusiveMissedTactic, effectiveClassificationOf } from './effectiveClassification';
+export type { EffectiveClassification } from './effectiveClassification';

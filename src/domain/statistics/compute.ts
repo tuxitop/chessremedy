@@ -20,6 +20,7 @@ import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { PuzzleRow } from '@/domain/puzzle/types';
 import type { TacticalTrainingSetRow, TrainingCycleRow } from '@/domain/training/cycleTypes';
 import type { PuzzleAttemptRow } from '@/domain/training/types';
+import { DETECTION_VERSION } from '@/domain/tactics';
 import { STATISTICS_VERSION } from './types';
 import type {
   Aggregate,
@@ -442,8 +443,8 @@ function phaseSetForRecords(
     byColor[game.userColor].push(record);
   }
   return mergePhaseSets([
-    summarizeByPhase(byColor.white, 'white', currentDetectionAnalysisIds),
-    summarizeByPhase(byColor.black, 'black', currentDetectionAnalysisIds),
+    summarizeByPhase(byColor.white, 'white', currentDetectionAnalysisIds, DETECTION_VERSION),
+    summarizeByPhase(byColor.black, 'black', currentDetectionAnalysisIds, DETECTION_VERSION),
   ]);
 }
 
