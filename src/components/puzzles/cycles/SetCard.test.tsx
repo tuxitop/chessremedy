@@ -12,7 +12,7 @@ describe('SetCard', () => {
         puzzleCount={0}
         cycle={null}
         lastActivityAt={null}
-        to="/puzzles/sets/s"
+        to="/training/sets/s"
       />,
     );
 
@@ -29,11 +29,11 @@ describe('SetCard', () => {
         puzzleCount={2}
         cycle={cycleFixture({ cycleNumber: 4, status: 'completed' })}
         lastActivityAt={1_700_000_000_000}
-        to="/puzzles/sets/s2"
+        to="/training/sets/s2"
       />,
     );
 
-    expect(screen.getByTestId('set-card-open-s2')).toHaveAttribute('href', '/puzzles/sets/s2');
+    expect(screen.getByTestId('set-card-open-s2')).toHaveAttribute('href', '/training/sets/s2');
     expect(screen.getByTestId('set-card-cycle-s2')).toHaveTextContent('Cycle 4 · Completed');
     expect(screen.getByTestId('set-card-count-s2')).toHaveTextContent('2 puzzles');
     // A custom set carries no Woodpecker-block badge or size.
@@ -48,7 +48,7 @@ describe('SetCard', () => {
         puzzleCount={2}
         cycle={null}
         lastActivityAt={null}
-        to="/puzzles/sets/block"
+        to="/training/sets/block"
       />,
     );
 
@@ -65,7 +65,7 @@ describe('SetCard', () => {
         puzzleCount={0}
         cycle={null}
         lastActivityAt={null}
-        to="/puzzles/sets/block-empty"
+        to="/training/sets/block-empty"
         emptyCountLabel="No puzzles yet"
       />,
     );

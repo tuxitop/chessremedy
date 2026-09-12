@@ -32,7 +32,9 @@ import {
   masteredPuzzleIds,
   resolveSetMembership,
   validateCycleConfig,
+  validateHintConfig,
   type CycleConfig,
+  type HintConfig,
   type OrderingPolicy,
   type PuzzlePoolEntry,
   type PuzzlePoolFilters,
@@ -42,6 +44,8 @@ import {
 } from '@/domain/training';
 import type { DifficultyBucketName } from '@/domain/puzzle/buckets';
 import type { PuzzleOrigin, PuzzleRow } from '@/domain/puzzle/types';
+import { settingsRepository } from '@/infrastructure/db/settings-repository';
+import { SETTINGS_KEYS } from '@/config/app-config';
 import type {
   TrainingSetUpdate,
   TrainingSetsRepository,
@@ -203,6 +207,12 @@ export interface TrainingSetsServiceOptions {
   readonly now?: () => number;
   /** Id factory for new set ids; defaults to `crypto.randomUUID()`. */
   readonly newId?: () => string;
+  /**
+   * Resolves the global default `HintConfig` used to seed **new** sets/blocks
+   * (Feature 017 §7). Defaults to a settings-repo read normalised with
+   * `validateHintConfig`, falling back to `DEFAULT_CYCLE_CONFIG.hints`.
+   */
+  readonly readDefaultHintConfig?: () => Promise<HintConfig>;
 }
 
 export class TrainingSetsService {
@@ -213,6 +223,7 @@ export class TrainingSetsService {
   private readonly cycles: TrainingCyclesRepository;
   private readonly now: () => number;
   private readonly newId: () => string;
+  private readonly readDefaultHintConfig: () => Promise<HintConfig>;
 
   constructor(options: TrainingSetsServiceOptions) {
     this.sets = options.sets;
@@ -222,6 +233,7 @@ export class TrainingSetsService {
     this.cycles = options.cycles;
     this.now = options.now ?? (() => Date.now());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.readDefaultHintConfig = options.readDefaultHintConfig ?? readStoredDefaultHintConfig;
   }
 
   /**
@@ -338,7 +350,7 @@ export class TrainingSetsService {
     if (puzzleIds.length === 0) {
       return { ok: false, reason: 'empty-pool' };
     }
-    const config = blockConfig();
+    const config = blockConfig(await this.readDefaultHintConfig());
     const check = validateCycleConfig(config);
     if (!check.ok) {
       // Unreachable for the fixed block preset; kept so a future edit cannot
@@ -456,7 +468,7 @@ export class TrainingSetsService {
     ordering: OrderingPolicy,
     targetSize: number,
   ): Promise<CreateSetResult> {
-    const config = defaultConfigFor(ordering);
+    const config = defaultConfigFor(ordering, await this.readDefaultHintConfig());
     const check = validateCycleConfig(config);
     if (!check.ok) {
       return { ok: false, reason: 'invalid-config', message: check.message };
@@ -502,25 +514,22 @@ function isBlock(set: TacticalTrainingSetRow): boolean {
   return set.source.kind === 'auto';
 }
 
-/** The default cycle config with the requested ordering, deep-cloned. */
-function defaultConfigFor(ordering: OrderingPolicy): CycleConfig {
+/** The default cycle config with the requested ordering and global hints. */
+function defaultConfigFor(ordering: OrderingPolicy, hints: HintConfig): CycleConfig {
   return {
     ...DEFAULT_CYCLE_CONFIG,
     ordering,
-    hints: {
-      ...DEFAULT_CYCLE_CONFIG.hints,
-      enabledLevels: [...DEFAULT_CYCLE_CONFIG.hints.enabledLevels],
-    },
+    hints: { enabledLevels: [...hints.enabledLevels], firstHintLevel: hints.firstHintLevel },
   };
 }
 
 /**
  * The fixed Woodpecker block preset (spec §3a, `domain/tactical-training.md`):
- * `difficultyAsc`, retry `endOfCycle`, hints enabled, skipping allowed, no
+ * `difficultyAsc`, retry `endOfCycle`, the global hints, skipping allowed, no
  * accuracy gate (`targetAccuracy`/`targetSolvingTimeMs` unset), and the
  * suggested ~6-cycle plan as the informational `plannedCycles`.
  */
-function blockConfig(): CycleConfig {
+function blockConfig(hints: HintConfig): CycleConfig {
   return {
     ...DEFAULT_CYCLE_CONFIG,
     ordering: 'difficultyAsc',
@@ -529,11 +538,28 @@ function blockConfig(): CycleConfig {
     targetAccuracy: null,
     targetSolvingTimeMs: null,
     plannedCycles: WOODPECKER_PLAN_CYCLES,
-    hints: {
-      ...DEFAULT_CYCLE_CONFIG.hints,
-      enabledLevels: [...DEFAULT_CYCLE_CONFIG.hints.enabledLevels],
-    },
+    hints: { enabledLevels: [...hints.enabledLevels], firstHintLevel: hints.firstHintLevel },
   };
+}
+
+/**
+ * Production default-hint reader: the stored `training.hints` value validated
+ * and normalised, falling back to `DEFAULT_CYCLE_CONFIG.hints` when unset or
+ * invalid (never a crash).
+ */
+async function readStoredDefaultHintConfig(): Promise<HintConfig> {
+  try {
+    const stored = await settingsRepository.get<unknown>(SETTINGS_KEYS.defaultHintConfig);
+    if (stored !== undefined) {
+      const check = validateHintConfig(stored);
+      if (check.ok) {
+        return check.config;
+      }
+    }
+  } catch {
+    // Fall through to the hardcoded default.
+  }
+  return DEFAULT_CYCLE_CONFIG.hints;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/test-utils';
@@ -31,15 +31,32 @@ vi.mock('recharts', () => {
 });
 
 describe('DashboardGameSection', () => {
-  it('defaults to the first concrete partition and can show every labeled partition', async () => {
-    const user = userEvent.setup();
-    renderWithProviders(
-      <DashboardGameSection game={gameAnalysisFromScenario()} chartWidth={320} chartHeight={180} />,
+  /** Controlled harness: the hook owns the URL; the section is presentational. */
+  function Harness({
+    initialPartition = 'lichess:rapid',
+  }: {
+    initialPartition?: string;
+  }): React.JSX.Element {
+    const [partition, setPartition] = useState(initialPartition);
+    return (
+      <DashboardGameSection
+        game={gameAnalysisFromScenario()}
+        partition={partition}
+        onPartition={setPartition}
+        chartWidth={320}
+        chartHeight={180}
+      />
     );
+  }
 
-    // Plan A1: the rendered default is a single concrete partition.
-    expect(screen.getByTestId('summary-lichess-bullet')).toBeInTheDocument();
-    expect(screen.queryByTestId('summary-lichess-rapid')).toBeNull();
+  it('renders the most-games concrete partition by default and can show every labeled partition', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+
+    // Feature 017 §8: the default is the concrete partition with the most games
+    // (the rich fixture has 12+ Lichess rapid games, not the first bullet one).
+    expect(screen.getByTestId('summary-lichess-rapid')).toBeInTheDocument();
+    expect(screen.queryByTestId('summary-lichess-bullet')).toBeNull();
 
     await user.selectOptions(screen.getByTestId('dashboard-partition'), 'all');
     expect(screen.getByTestId('summary-lichess-rapid')).toBeInTheDocument();
@@ -48,9 +65,7 @@ describe('DashboardGameSection', () => {
 
   it('renders one rating chart per concrete partition without averaging', async () => {
     const user = userEvent.setup();
-    renderWithProviders(
-      <DashboardGameSection game={gameAnalysisFromScenario()} chartWidth={320} chartHeight={180} />,
-    );
+    renderWithProviders(<Harness />);
     await user.selectOptions(screen.getByTestId('dashboard-partition'), 'all');
 
     expect(screen.getByTestId('rating-lichess-rapid')).toBeInTheDocument();
@@ -59,9 +74,7 @@ describe('DashboardGameSection', () => {
 
   it('keeps partitions as separate series and gaps non-ok accuracy points', async () => {
     const user = userEvent.setup();
-    renderWithProviders(
-      <DashboardGameSection game={gameAnalysisFromScenario()} chartWidth={320} chartHeight={180} />,
-    );
+    renderWithProviders(<Harness />);
     await user.selectOptions(screen.getByTestId('dashboard-partition'), 'all');
 
     const table = screen.getByTestId('trend-accuracy-table');
@@ -77,9 +90,7 @@ describe('DashboardGameSection', () => {
 
   it('renders missed tactics as "Tactics not scanned" without a detection pass', async () => {
     const user = userEvent.setup();
-    renderWithProviders(
-      <DashboardGameSection game={gameAnalysisFromScenario()} chartWidth={320} chartHeight={180} />,
-    );
+    renderWithProviders(<Harness />);
     await user.selectOptions(screen.getByTestId('dashboard-partition'), 'all');
 
     const table = screen.getByTestId('trend-missed-tactics-table');
@@ -88,9 +99,7 @@ describe('DashboardGameSection', () => {
 
   it('defaults the phase chart to errorsPer100Moves and offers the counts alternate', async () => {
     const user = userEvent.setup();
-    renderWithProviders(
-      <DashboardGameSection game={gameAnalysisFromScenario()} chartWidth={320} chartHeight={180} />,
-    );
+    renderWithProviders(<Harness />);
     await user.selectOptions(screen.getByTestId('dashboard-partition'), 'all');
 
     const card = screen.getByTestId('phase-lichess-rapid');

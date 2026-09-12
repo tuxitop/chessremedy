@@ -23,7 +23,10 @@ describe('DashboardStates', () => {
   it('renders the no-training empty state linking to Puzzles', () => {
     renderWithProviders(<DashboardNoTraining />);
     expect(screen.getByTestId('dashboard-no-training')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to Puzzles' })).toHaveAttribute('href', '/puzzles');
+    expect(screen.getByRole('link', { name: 'Go to Training' })).toHaveAttribute(
+      'href',
+      '/training',
+    );
   });
 
   it('renders an inline load error with a retry', async () => {

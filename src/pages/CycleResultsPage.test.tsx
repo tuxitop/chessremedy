@@ -96,16 +96,16 @@ function renderResults(cycleNumber: number, service: CycleService): void {
   renderWithProviders(
     <Routes>
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber/results"
+        path="/training/sets/:setId/cycles/:cycleNumber/results"
         element={<CycleResultsPage cycleService={service} now={() => NOW} />}
       />
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        path="/training/sets/:setId/cycles/:cycleNumber"
         element={<div data-testid="cycle-session-stub" />}
       />
-      <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
+      <Route path="/training/sets/:setId" element={<div data-testid="set-detail-stub" />} />
     </Routes>,
-    { initialEntries: [`/puzzles/sets/${SET_ID}/cycles/${cycleNumber}/results`] },
+    { initialEntries: [`/training/sets/${SET_ID}/cycles/${cycleNumber}/results`] },
   );
 }
 
@@ -210,7 +210,7 @@ describe('CycleResultsPage (Feature 013, Stage F)', () => {
     expect(screen.getByTestId('cycle-results-partial-note')).toBeInTheDocument();
     expect(screen.getByTestId('cycle-results-resume')).toHaveAttribute(
       'href',
-      `/puzzles/sets/${SET_ID}/cycles/1`,
+      `/training/sets/${SET_ID}/cycles/1`,
     );
     expect(screen.queryByTestId('cycle-results-next-cycle')).not.toBeInTheDocument();
   });
@@ -303,6 +303,6 @@ describe('CycleResultsPage (Feature 013, Stage F)', () => {
     renderResults(9, makeService());
 
     await screen.findByTestId('cycle-results-missing');
-    expect(screen.getByTestId('cycle-results-back')).toHaveAttribute('href', '/puzzles');
+    expect(screen.getByTestId('cycle-results-back')).toHaveAttribute('href', '/training');
   });
 });

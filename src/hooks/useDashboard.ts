@@ -47,7 +47,11 @@ import {
   mixedDimensions,
   type MixedDimensions,
 } from '@/presentation/dashboard/query';
-import { selectDefaultTrainingSet } from '@/presentation/dashboard/selection';
+import {
+  selectDefaultTrainingSet,
+  partitionOptions,
+  selectDefaultPartition,
+} from '@/presentation/dashboard/selection';
 
 /** Result type of one trend read (the Feature-014 `trendSeries` computation). */
 export type DashboardTrendComputation = Extract<
@@ -163,8 +167,11 @@ export interface UseDashboard {
   readonly loading: boolean;
   readonly error: string | null;
   readonly dataVersionKey: string;
+  /** URL-backed selected partition (`all` or `{platform}:{timeControl}`). */
+  readonly partition: string;
   updateFilters(next: GameLibraryFilters, replace?: boolean): void;
   selectSet(setId: string | null): void;
+  selectPartition(value: string): void;
   reload(): void;
 }
 
@@ -233,6 +240,7 @@ export function useDashboard(options: UseDashboardOptions = {}): UseDashboard {
   const hint = dashboardFilterHint(filters);
   const mixed = mixedDimensions(filters);
   const setParam = searchParams.get('set');
+  const partitionParam = searchParams.get('partition');
 
   const reactId = useId();
   const [retryToken, setRetryToken] = useState(0);
@@ -258,6 +266,36 @@ export function useDashboard(options: UseDashboardOptions = {}): UseDashboard {
   );
   const [setsRefresh, setSetsRefresh] = useState(0);
 
+  // URL-backed partition (Feature 017 §8): derived from the `partition` param
+  // and the loaded Feature-014 partitions. Explicit `all` and a valid concrete
+  // value are preserved; absent/invalid/stale/`fixture`/combined-only values
+  // resolve to the most-games concrete partition. The effect below writes the
+  // resolved value so the URL stays the source of truth (no state mirror).
+  const partition = useMemo<string>(() => {
+    const report = metrics.data;
+    if (report === null) {
+      return partitionParam ?? 'all';
+    }
+    const options = partitionOptions(report.partitions);
+    const validConcrete = options.some(
+      (option) => option.value === partitionParam && !option.combined,
+    );
+    if (partitionParam === 'all') {
+      return 'all';
+    }
+    if (partitionParam !== null && validConcrete) {
+      return partitionParam;
+    }
+    return selectDefaultPartition(
+      report.partitions.map((entry) => ({
+        platform: entry.platform,
+        timeControl: entry.timeControl,
+        combined: entry.combined,
+        gameCount: entry.metrics.games.total,
+      })),
+    );
+  }, [metrics.data, partitionParam]);
+
   const gameRequestId = useRef(0);
   const trainingRequestId = useRef(0);
 
@@ -268,29 +306,33 @@ export function useDashboard(options: UseDashboardOptions = {}): UseDashboard {
     [filtersKey, hint, now],
   );
 
-  function writeSetParam(setId: string | null): void {
-    const params = paramsFromFilters(filters);
+  function writeSelection(
+    nextFilters: GameLibraryFilters,
+    setId: string | null,
+    partitionValue: string | null,
+    replace: boolean,
+  ): void {
+    const params = paramsFromFilters(nextFilters);
     if (setId !== null) {
       params.set('set', setId);
     }
-    setSearchParams(params, { replace: true });
-  }
-
-  function updateFilters(next: GameLibraryFilters, replace?: boolean): void {
-    const params = paramsFromFilters(next);
-    if (setParam !== null) {
-      params.set('set', setParam);
+    if (partitionValue !== null) {
+      params.set('partition', partitionValue);
     }
     setSearchParams(params, replace ? { replace: true } : undefined);
   }
 
+  function updateFilters(next: GameLibraryFilters, replace?: boolean): void {
+    writeSelection(next, selectedSetId, partition, replace ?? false);
+  }
+
   function selectSet(setId: string | null): void {
     setSelectedSetId(setId);
-    const params = paramsFromFilters(filters);
-    if (setId !== null) {
-      params.set('set', setId);
-    }
-    setSearchParams(params, { replace: true });
+    writeSelection(filters, setId, partition, true);
+  }
+
+  function selectPartition(value: string): void {
+    writeSelection(filters, selectedSetId, value, true);
   }
 
   function reload(): void {
@@ -369,6 +411,37 @@ export function useDashboard(options: UseDashboardOptions = {}): UseDashboard {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersKey, dataVersionKey, source, granularity, trendMetricsKey, now]);
 
+  // Partition persistence (Feature 017 §8). Once the Feature-014 partitions
+  // load, write the resolved default with `replace` when the URL param is
+  // absent/invalid/stale/`fixture`/combined-only. An explicit `all` and a valid
+  // concrete value are never rewritten. A read failure writes nothing (the
+  // derived value keeps `all`/its last valid URL value).
+  useEffect(() => {
+    const report = metrics.data;
+    if (report === null) {
+      return;
+    }
+    const options = partitionOptions(report.partitions);
+    const validConcrete = options.some(
+      (option) => option.value === partitionParam && !option.combined,
+    );
+    if (partitionParam === 'all' || (partitionParam !== null && validConcrete)) {
+      return;
+    }
+    const resolved = selectDefaultPartition(
+      report.partitions.map((entry) => ({
+        platform: entry.platform,
+        timeControl: entry.timeControl,
+        combined: entry.combined,
+        gameCount: entry.metrics.games.total,
+      })),
+    );
+    writeSelection(filters, selectedSetId, resolved, true);
+    // `filters`/`selectedSetId` are captured only for the param rewrite;
+    // `filtersKey` identifies the filter state and `partitionParam` the request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metrics.data, partitionParam, filtersKey, selectedSetId]);
+
   // Training-set listing + default selection (A5/A7). Reading the URL `set`
   // param keeps the selection bookmarkable/restorable.
   useEffect(() => {
@@ -395,7 +468,7 @@ export function useDashboard(options: UseDashboardOptions = {}): UseDashboard {
         const next = requested ?? selectDefaultTrainingSet(activeList, archivedList, block);
         setSelectedSetId(next?.id ?? null);
         if (next != null && setParam !== next.id) {
-          writeSetParam(next.id);
+          writeSelection(filters, next.id, partitionParam, true);
         }
       } catch {
         if (!cancelled) {
@@ -409,7 +482,7 @@ export function useDashboard(options: UseDashboardOptions = {}): UseDashboard {
     return () => {
       cancelled = true;
     };
-    // `writeSetParam` is stable enough for the set-param write; the effect
+    // `writeSelection` is stable enough for the set/partition write; the effect
     // intentionally re-runs only on the set param / retry / source.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryToken, setsRefresh, setsSource, setParam]);
@@ -491,8 +564,10 @@ export function useDashboard(options: UseDashboardOptions = {}): UseDashboard {
     loading,
     error,
     dataVersionKey,
+    partition,
     updateFilters,
     selectSet,
+    selectPartition,
     reload,
   };
 }

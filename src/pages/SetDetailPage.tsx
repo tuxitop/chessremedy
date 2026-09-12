@@ -10,7 +10,7 @@ import {
   cycleConfigSummary,
   type MembershipListItem,
 } from '@/components/puzzles/cycles';
-import { ROUTES, puzzlesCyclePath, puzzlesCycleResultsPath } from '@/app/routes';
+import { ROUTES, trainingCyclePath, trainingCycleResultsPath } from '@/app/routes';
 import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
@@ -247,7 +247,7 @@ export function SetDetailPage({
         setError('That set no longer exists.');
         return;
       }
-      navigate(ROUTES.puzzles);
+      navigate(ROUTES.training);
     });
 
   const confirmClose = (): void =>
@@ -280,7 +280,7 @@ export function SetDetailPage({
           reload();
           return;
         }
-        navigate(puzzlesCyclePath(setId, inProgress.cycleNumber));
+        navigate(trainingCyclePath(setId, inProgress.cycleNumber));
         return;
       }
       const started = await cycleService.start(setId);
@@ -288,7 +288,7 @@ export function SetDetailPage({
         setError(startErrorMessage(started));
         return;
       }
-      navigate(puzzlesCyclePath(setId, started.cycle.cycleNumber));
+      navigate(trainingCyclePath(setId, started.cycle.cycleNumber));
     });
 
   if (loading) {
@@ -304,7 +304,7 @@ export function SetDetailPage({
   if (set === null) {
     return (
       <div className={styles.page} data-testid="set-detail">
-        <Link className={styles.backLink} to={ROUTES.puzzles}>
+        <Link className={styles.backLink} to={ROUTES.training}>
           ← Training
         </Link>
         <section className={styles.statePanel} data-testid="set-detail-missing">
@@ -323,7 +323,7 @@ export function SetDetailPage({
     <div className={styles.page} data-testid="set-detail">
       <header className={styles.header}>
         <div>
-          <Link className={styles.backLink} to={ROUTES.puzzles} data-testid="set-detail-back">
+          <Link className={styles.backLink} to={ROUTES.training} data-testid="set-detail-back">
             ← Training
           </Link>
           <h1 className={styles.heading} data-testid="set-detail-name">
@@ -394,7 +394,7 @@ export function SetDetailPage({
               </p>
               <Link
                 className={styles.primaryLink}
-                to={ROUTES.puzzlesNew}
+                to={ROUTES.trainingNew}
                 data-testid="set-detail-empty-new"
               >
                 Create a set
@@ -501,7 +501,7 @@ export function SetDetailPage({
           cycles={data.cycles}
           emptyMessage="No cycles yet."
           testId="set-detail-history"
-          resultsPathFor={(cycle) => puzzlesCycleResultsPath(setId, cycle.cycleNumber)}
+          resultsPathFor={(cycle) => trainingCycleResultsPath(setId, cycle.cycleNumber)}
         />
       </section>
 

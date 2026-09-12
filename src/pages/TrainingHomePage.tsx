@@ -3,7 +3,7 @@ import type * as React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { SetCard } from '@/components/puzzles/cycles';
 import { Button } from '@/components/ui/Button';
-import { ROUTES, puzzlesCyclePath, puzzlesSetPath } from '@/app/routes';
+import { ROUTES, trainingCyclePath, trainingSetPath } from '@/app/routes';
 import {
   BLOCK_SIZE_OPTIONS,
   DEFAULT_BLOCK_SIZE,
@@ -73,7 +73,7 @@ export interface TrainingHomePageProps {
 }
 
 /**
- * Training home (`/puzzles`): the derived puzzle pool and the one-click
+ * Training home (`/training`): the derived puzzle pool and the one-click
  * Woodpecker block, a Quick train action, the active custom sets as cards, a
  * resume banner for an in-progress cycle, an archived-sets affordance, a New
  * set action and an explicit empty state pointing at the Game Library. The app
@@ -182,7 +182,7 @@ export function TrainingHomePage({
         setNotice('The puzzle pool is empty. Generate puzzles from a game first.');
         return;
       }
-      navigate(puzzlesSetPath(result.set.id));
+      navigate(trainingSetPath(result.set.id));
     });
 
   const quickTrain = (): void =>
@@ -196,7 +196,7 @@ export function TrainingHomePage({
         );
         return;
       }
-      navigate(puzzlesCyclePath(QUICK_TRAIN_SET_ID, result.cycle.cycleNumber));
+      navigate(trainingCyclePath(QUICK_TRAIN_SET_ID, result.cycle.cycleNumber));
     });
 
   return (
@@ -211,14 +211,14 @@ export function TrainingHomePage({
         <div className={styles.headerActions}>
           <Link
             className={styles.secondaryLink}
-            to={ROUTES.puzzlesMastered}
+            to={ROUTES.trainingMastered}
             data-testid="training-mastered-link"
           >
             Mastered puzzles
           </Link>
           <Link
             className={styles.primaryLink}
-            to={ROUTES.puzzlesNew}
+            to={ROUTES.trainingNew}
             data-testid="training-new-set"
           >
             New set
@@ -241,7 +241,7 @@ export function TrainingHomePage({
           </div>
           <Link
             className={styles.resumeLink}
-            to={puzzlesCyclePath(data.resume.set.id, data.resume.cycle.cycleNumber)}
+            to={trainingCyclePath(data.resume.set.id, data.resume.cycle.cycleNumber)}
             data-testid="training-resume-link"
           >
             Resume cycle
@@ -299,7 +299,7 @@ export function TrainingHomePage({
                   puzzleCount={openBlock.puzzleCount}
                   cycle={openBlock.cycle}
                   lastActivityAt={openBlock.lastActivityAt}
-                  to={puzzlesSetPath(openBlock.set.id)}
+                  to={trainingSetPath(openBlock.set.id)}
                 />
                 <p className={styles.state} data-testid="training-block-open-note">
                   A block is open. Finish or abandon it before creating the next block.
@@ -399,7 +399,7 @@ export function TrainingHomePage({
                     puzzleCount={summary.puzzleCount}
                     cycle={summary.cycle}
                     lastActivityAt={summary.lastActivityAt}
-                    to={puzzlesSetPath(summary.set.id)}
+                    to={trainingSetPath(summary.set.id)}
                   />
                 ))}
               </div>
@@ -434,7 +434,7 @@ export function TrainingHomePage({
                       puzzleCount={summary.puzzleCount}
                       cycle={summary.cycle}
                       lastActivityAt={summary.lastActivityAt}
-                      to={puzzlesSetPath(summary.set.id)}
+                      to={trainingSetPath(summary.set.id)}
                     />
                   ))}
                 </div>

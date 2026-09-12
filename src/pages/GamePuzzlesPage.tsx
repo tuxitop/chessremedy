@@ -357,7 +357,7 @@ function GamePuzzlesPage({ analysisService }: GamePuzzlesPageProps): React.JSX.E
         </div>
         <Link
           className={styles.createSetLink}
-          to={`${ROUTES.puzzlesNew}?source=game&gameId=${encodeURIComponent(id)}`}
+          to={`${ROUTES.trainingNew}?source=game&gameId=${encodeURIComponent(id)}`}
           data-testid="puzzles-create-set"
         >
           Create training set

@@ -3,9 +3,9 @@ import { aggregateOf, emptyAggregate } from '@/domain/statistics';
 import type { PhaseMetricCounts, PhaseMetrics } from '@/domain/statistics';
 import { setFixture } from '@/domain/training/test-support';
 import {
-  defaultPartitionValue,
   partitionKey,
   partitionOptions,
+  selectDefaultPartition,
   selectDefaultTrainingSet,
   weakestPhase,
 } from './selection';
@@ -49,17 +49,64 @@ describe('partitionOptions', () => {
     expect(options[0]?.label).toBe('Lichess · Rapid');
   });
 
-  it('defaults to the first concrete partition, or all when empty', () => {
-    expect(
-      defaultPartitionValue(
-        partitionOptions([{ platform: 'lichess', timeControl: 'rapid', combined: false }]),
-      ),
-    ).toBe('lichess:rapid');
-    expect(defaultPartitionValue([])).toBe('all');
-  });
-
   it('builds a stable partition key', () => {
     expect(partitionKey('chesscom', 'blitz')).toBe('chesscom:blitz');
+  });
+});
+
+describe('selectDefaultPartition', () => {
+  it('picks the concrete partition with the most games', () => {
+    expect(
+      selectDefaultPartition([
+        { platform: 'lichess', timeControl: 'bullet', combined: false, gameCount: 2 },
+        { platform: 'lichess', timeControl: 'rapid', combined: false, gameCount: 12 },
+        { platform: 'chesscom', timeControl: 'blitz', combined: false, gameCount: 4 },
+      ]),
+    ).toBe('lichess:rapid');
+  });
+
+  it('breaks game-count ties by platform, then time control, then key', () => {
+    expect(
+      selectDefaultPartition([
+        { platform: 'chesscom', timeControl: 'blitz', combined: false, gameCount: 5 },
+        { platform: 'lichess', timeControl: 'rapid', combined: false, gameCount: 5 },
+      ]),
+    ).toBe('lichess:rapid');
+
+    expect(
+      selectDefaultPartition([
+        { platform: 'lichess', timeControl: 'rapid', combined: false, gameCount: 5 },
+        { platform: 'lichess', timeControl: 'bullet', combined: false, gameCount: 5 },
+      ]),
+    ).toBe('lichess:bullet');
+
+    // Same platform + time control tie-break is not reachable with distinct
+    // keys, but the key-ascending rule still yields a deterministic result.
+    expect(
+      selectDefaultPartition([
+        { platform: 'local', timeControl: 'rapid', combined: false, gameCount: 5 },
+        { platform: 'local', timeControl: 'blitz', combined: false, gameCount: 5 },
+      ]),
+    ).toBe('local:blitz');
+  });
+
+  it('excludes combined and fixture partitions and falls back to all', () => {
+    expect(
+      selectDefaultPartition([
+        { platform: 'all', timeControl: 'all', combined: true, gameCount: 99 },
+        { platform: 'fixture', timeControl: 'rapid', combined: false, gameCount: 50 },
+      ]),
+    ).toBe('all');
+    expect(selectDefaultPartition([])).toBe('all');
+  });
+
+  it('never selects a fixture partition even when it has the most games', () => {
+    expect(
+      selectDefaultPartition([
+        { platform: 'fixture', timeControl: 'rapid', combined: false, gameCount: 100 },
+        { platform: 'lichess', timeControl: 'blitz', combined: false, gameCount: 3 },
+      ]),
+    ).toBe('lichess:blitz');
   });
 });
 

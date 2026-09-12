@@ -17,6 +17,8 @@ import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-re
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
+import { settingsRepository } from '@/infrastructure/db/settings-repository';
+import { SETTINGS_KEYS } from '@/config/app-config';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import { fixtureGame } from '@/domain/chess/fixtures';
@@ -89,6 +91,7 @@ describe('TrainingSetsService', () => {
     await db.puzzleAttempts.clear();
     await db.puzzles.clear();
     await db.games.clear();
+    await db.settings.clear();
     idCounter = 0;
   });
 
@@ -432,5 +435,84 @@ describe('TrainingSetsService', () => {
     const stored = await service.getOpenBlock();
     expect(stored?.id).toBe(block.id);
     expect(stored?.status).toBe('active');
+  });
+
+  it('seeds a new set and block from the stored global hint default', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.defaultHintConfig, {
+      enabledLevels: [2, 4],
+      firstHintLevel: 4,
+    });
+    const service = makeService();
+
+    const created = await service.createFromGame({
+      gameId: 'game:hints',
+      name: 'Hints',
+      ordering: 'difficultyAsc',
+      targetSize: 10,
+    });
+    if (!created.ok) throw new Error('expected create to succeed');
+    expect(created.set.config.hints).toEqual({ enabledLevels: [2, 4], firstHintLevel: 4 });
+    // All other fields keep the existing defaults.
+    expect(created.set.config.ordering).toBe('difficultyAsc');
+    expect(created.set.config.retryFailed).toBe(DEFAULT_CYCLE_CONFIG.retryFailed);
+    expect(created.set.config.allowSkip).toBe(true);
+    expect(created.set.config.targetAccuracy).toBeNull();
+
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
+    const block = await createBlock(service, 200);
+    expect(block.config.hints).toEqual({ enabledLevels: [2, 4], firstHintLevel: 4 });
+    expect(block.config.plannedCycles).toBe(WOODPECKER_PLAN_CYCLES);
+  });
+
+  it('falls back to the hardcoded hints when the stored default is unset', async () => {
+    const created = await makeService().createFromGame({
+      gameId: 'game:no-hints',
+      name: 'No hints',
+      ordering: 'difficultyAsc',
+      targetSize: 10,
+    });
+    if (!created.ok) throw new Error('expected create to succeed');
+    expect(created.set.config.hints).toEqual(DEFAULT_CYCLE_CONFIG.hints);
+  });
+
+  it('leaves an existing set config untouched when the global default changes', async () => {
+    const service = makeService();
+    const created = await service.createFromGame({
+      gameId: 'game:stable',
+      name: 'Stable',
+      ordering: 'difficultyAsc',
+      targetSize: 10,
+    });
+    if (!created.ok) throw new Error('expected create to succeed');
+
+    await settingsRepository.set(SETTINGS_KEYS.defaultHintConfig, {
+      enabledLevels: [1],
+      firstHintLevel: 1,
+    });
+
+    const stored = await trainingSetsRepository.get(created.set.id);
+    expect(stored?.config.hints).toEqual(DEFAULT_CYCLE_CONFIG.hints);
+  });
+
+  it('uses an injected readDefaultHintConfig when provided', async () => {
+    const service = new TrainingSetsService({
+      sets: trainingSetsRepository,
+      puzzles: puzzlesRepository,
+      games: gamesRepository,
+      attempts: attemptsRepository,
+      cycles: trainingCyclesRepository,
+      now: () => NOW,
+      newId,
+      readDefaultHintConfig: async () => ({ enabledLevels: [3], firstHintLevel: 3 }),
+    });
+
+    const created = await service.createFromGame({
+      gameId: 'game:injected',
+      name: 'Injected',
+      ordering: 'difficultyAsc',
+      targetSize: 10,
+    });
+    if (!created.ok) throw new Error('expected create to succeed');
+    expect(created.set.config.hints).toEqual({ enabledLevels: [3], firstHintLevel: 3 });
   });
 });

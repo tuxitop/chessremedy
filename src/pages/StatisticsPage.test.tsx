@@ -1,5 +1,5 @@
 /**
- * DashboardPage tests (Feature 015, Stage 6).
+ * StatisticsPage tests (Feature 015, Stage 6).
  *
  * Deterministic page tests over an injected fake statistics/training source —
  * no engine, network or IndexedDB. Covers both sections, the honest states,
@@ -21,22 +21,22 @@ import {
   FakeStatisticsSource,
   FakeTrainingSetsSource,
 } from '@/test/fixtures/dashboard/fakeStatistics';
-import { DashboardPage } from './DashboardPage';
+import { StatisticsPage } from './StatisticsPage';
 
-function setup(scenario: DashboardScenario, initialEntries: string[] = ['/dashboard']) {
+function setup(scenario: DashboardScenario, initialEntries: string[] = ['/statistics']) {
   const source = new FakeStatisticsSource(scenario.data);
   const sets = new FakeTrainingSetsSource(
     scenario.activeSets,
     scenario.archivedSets,
     scenario.openBlock,
   );
-  const view = renderWithProviders(<DashboardPage source={source} sets={sets} />, {
+  const view = renderWithProviders(<StatisticsPage source={source} sets={sets} />, {
     initialEntries,
   });
   return { source, sets, ...view };
 }
 
-describe('DashboardPage', () => {
+describe('StatisticsPage', () => {
   it('renders the game-analysis section, the training section and the provenance footer', async () => {
     setup(richDashboardScenario());
 
@@ -124,11 +124,11 @@ describe('DashboardPage', () => {
     const { container } = setup(richDashboardScenario());
 
     await screen.findByTestId('dashboard-game-section');
-    const page = screen.getByTestId('dashboard-page');
+    const page = screen.getByTestId('statistics-page');
     expect(within(page).getByTestId('dashboard-game-section')).toBeInTheDocument();
     expect(within(page).getByTestId('dashboard-training-section')).toBeInTheDocument();
     expect(screen.getByTestId('dashboard-live')).toHaveAttribute('aria-live', 'polite');
     expect(screen.getAllByRole('img').length).toBeGreaterThan(0);
-    expect(container.querySelector('h1')).toHaveTextContent('Dashboard');
+    expect(container.querySelector('h1')).toHaveTextContent('Statistics');
   });
 });

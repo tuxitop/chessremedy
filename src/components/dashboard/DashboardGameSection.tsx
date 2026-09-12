@@ -19,7 +19,6 @@ import type {
 } from '@/presentation/dashboard';
 import {
   ERROR_METRIC_LABELS,
-  defaultPartitionValue,
   formatAccuracyDisplay,
   formatCount,
   formatDashboardDate,
@@ -31,6 +30,8 @@ import {
   partitionOptions,
   phaseLabel,
   ratingToChartPoints,
+  selectDefaultPartition,
+  type PartitionCandidate,
 } from '@/presentation/dashboard';
 import type { DataTableColumn } from './DataTable';
 import { ChartCard } from './ChartCard';
@@ -62,6 +63,10 @@ type PartitionFilter = (platform: PlatformDimension, timeControl: TimeControlDim
 export interface DashboardGameSectionProps {
   /** The game-analysis slices from `useDashboard`. */
   readonly game: DashboardGameAnalysis;
+  /** The URL-backed selected partition (`all` or a `{platform}:{timeControl}` key). */
+  readonly partition: string;
+  /** Select a partition; the hook owns the URL write. */
+  readonly onPartition: (value: string) => void;
   readonly granularity?: TrendGranularity;
   readonly onRetry?: () => void;
   /** Fixed chart size override for tests. */
@@ -230,6 +235,8 @@ function TrendCard({
  */
 export function DashboardGameSection({
   game,
+  partition,
+  onPartition,
   granularity = 'week',
   onRetry,
   chartWidth,
@@ -238,24 +245,27 @@ export function DashboardGameSection({
 }: DashboardGameSectionProps): React.JSX.Element {
   const partitions = game.metrics.data?.partitions ?? [];
   const options = partitionOptions(partitions);
-  const [requestedPartition, setRequestedPartition] = useState<string | null>(null);
   const [phaseField, setPhaseField] = useState<PhaseMetricField>('errorsPer100Moves');
 
-  // The default rendering is the first concrete partition (plan A1). `null`
-  // means "not chosen yet"; an explicit `all` is preserved, and a concrete
-  // choice that disappears falls back to the first concrete partition.
-  const partition =
-    requestedPartition === null
-      ? defaultPartitionValue(options)
-      : requestedPartition === 'all' ||
-          options.some((option) => option.value === requestedPartition)
-        ? requestedPartition
-        : defaultPartitionValue(options);
+  // The hook owns the URL-backed partition. The section still validates the
+  // controlled value against the loaded options for rendering: `all` and a
+  // present concrete value render as-is; a stale/invalid value falls back to
+  // the most-games concrete partition (never an empty partition).
+  const candidates: readonly PartitionCandidate[] = partitions.map((entry) => ({
+    platform: entry.platform,
+    timeControl: entry.timeControl,
+    combined: entry.combined,
+    gameCount: entry.metrics.games.total,
+  }));
+  const resolvedPartition =
+    partition === 'all' || options.some((option) => option.value === partition)
+      ? partition
+      : selectDefaultPartition(candidates);
 
   const isVisible: PartitionFilter =
-    partition === 'all'
+    resolvedPartition === 'all'
       ? () => true
-      : (platform, timeControl) => partitionKey(platform, timeControl) === partition;
+      : (platform, timeControl) => partitionKey(platform, timeControl) === resolvedPartition;
 
   if (game.metrics.loading && game.metrics.data === null) {
     return <DashboardLoading />;
@@ -292,8 +302,8 @@ export function DashboardGameSection({
         <h2 className={styles.heading}>Game analysis</h2>
         <PartitionSelector
           options={options}
-          value={partition}
-          onChange={setRequestedPartition}
+          value={resolvedPartition}
+          onChange={onPartition}
           testId="dashboard-partition"
         />
       </div>

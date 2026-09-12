@@ -293,9 +293,9 @@ async function readOpenBlock(page: Page): Promise<Record<string, unknown> | unde
   return sets.find((row) => (row.source as { kind?: string }).kind === 'auto');
 }
 
-/** The block id from a `/puzzles/sets/:setId` URL. */
+/** The block id from a `/training/sets/:setId` URL. */
 function blockIdFromUrl(page: Page): string {
-  return new URL(page.url()).pathname.split('/puzzles/sets/')[1]!.split('/')[0]!;
+  return new URL(page.url()).pathname.split('/training/sets/')[1]!.split('/')[0]!;
 }
 
 /**
@@ -342,7 +342,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
   }) => {
     // Fresh boot creates schema v10; with no puzzles the explicit empty state
     // shows and no block is ever formed automatically.
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await expect(page.getByTestId('training-home')).toBeVisible();
     await expect(page.getByTestId('training-home-empty')).toBeVisible();
 
@@ -379,7 +379,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
 
     // Frozen membership: a new, easier pool puzzle does not join the open block.
     await seedIndexedDb(page, { puzzles: [EASIER_PUZZLE] });
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await expect(page.getByTestId('training-block-open-note')).toBeVisible();
     await expect(page.getByTestId(`set-card-count-${blockId}`)).toHaveText('3 puzzles');
     await expect(page.getByTestId('training-pool-count')).toHaveText('1 puzzle ready to train');
@@ -401,10 +401,10 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     ]);
   });
 
-  test('a mastered puzzle leaves the pool, is listed on /puzzles/mastered and is excluded from a block', async ({
+  test('a mastered puzzle leaves the pool, is listed on /training/mastered and is excluded from a block', async ({
     page,
   }) => {
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await expect(page.getByTestId('training-home-empty')).toBeVisible();
 
     // `mate-one` earns mastery across 3 distinct cycles.
@@ -432,7 +432,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     );
 
     // The block form selects only the remaining pool (mastery excluded).
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await page.getByTestId('training-block-create').click();
     await expect(page.getByTestId('set-detail-membership-count')).toHaveText(
       '2 puzzles in this block (fixed).',
@@ -444,7 +444,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
   test('finishing a block returns its still-unmastered members to the pool and allows the next block', async ({
     page,
   }) => {
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await expect(page.getByTestId('training-home-empty')).toBeVisible();
     await seedIndexedDb(page, { puzzles: [MATE_ONE, EXCHANGE_WIN, MATERIAL_COMBINATION] });
     await page.reload();
@@ -465,7 +465,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     expect(closed?.status).toBe('archived');
 
     // Back home the members are pool-eligible again and the create action returns.
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await expect(page.getByTestId('training-pool-count')).toHaveText('3 puzzles ready to train');
     await expect(page.getByTestId('training-block-open-note')).toHaveCount(0);
     await page.getByTestId('training-block-create').click();
@@ -489,7 +489,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
   test('Quick train runs over the pool under the sentinel and writes a real mastery-eligible attempt', async ({
     page,
   }) => {
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await expect(page.getByTestId('training-home-empty')).toBeVisible();
 
     // Two clean credits, not three: `mate-one` is still in the pool.
@@ -543,7 +543,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     expect(attempts.some((attempt) => String(attempt.cycleId).startsWith('practice:'))).toBe(false);
 
     // The real sentinel attempt is the third clean credit → the puzzle is mastered.
-    await page.goto('/puzzles/mastered');
+    await page.goto('/training/mastered');
     await expect(page.getByTestId(`mastered-puzzle-${MATE_ONE_PUZZLE_ID}`)).toBeVisible();
     await expect(page.getByTestId(`mastered-puzzle-cycles-${MATE_ONE_PUZZLE_ID}`)).toHaveText(
       '3 distinct cycles',

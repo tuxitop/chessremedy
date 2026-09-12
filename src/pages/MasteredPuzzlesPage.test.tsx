@@ -36,10 +36,10 @@ async function masterPuzzle(puzzleId: string): Promise<void> {
 function renderPage(): void {
   renderWithProviders(
     <Routes>
-      <Route path="/puzzles/mastered" element={<MasteredPuzzlesPage />} />
-      <Route path="/puzzles" element={<div data-testid="training-home-stub" />} />
+      <Route path="/training/mastered" element={<MasteredPuzzlesPage />} />
+      <Route path="/training" element={<div data-testid="training-home-stub" />} />
     </Routes>,
-    { initialEntries: ['/puzzles/mastered'] },
+    { initialEntries: ['/training/mastered'] },
   );
 }
 
@@ -55,7 +55,7 @@ describe('MasteredPuzzlesPage', () => {
     const empty = screen.getByTestId('mastered-puzzles-empty');
     expect(empty).toHaveTextContent(/No mastered puzzles yet/i);
     expect(empty).toHaveTextContent(/3 different cycles/i);
-    expect(screen.getByTestId('mastered-puzzles-back')).toHaveAttribute('href', '/puzzles');
+    expect(screen.getByTestId('mastered-puzzles-back')).toHaveAttribute('href', '/training');
     expect(screen.queryByTestId('mastered-puzzles-list')).not.toBeInTheDocument();
   });
 

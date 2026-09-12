@@ -136,6 +136,68 @@ describe('Settings page — Puzzles (Feature 012 solve UX)', () => {
   });
 });
 
+describe('Settings page — Puzzle hints default (Feature 017 §7)', () => {
+  beforeEach(async () => {
+    await db.settings.clear();
+  });
+
+  it('renders the hint default row with levels, first level and help copy', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+
+    const row = await screen.findByTestId('settings-row-hints');
+    expect(await within(row).findByTestId('setting-hint-level-1')).toBeChecked();
+    expect(within(row).getByTestId('setting-hint-level-2')).toBeChecked();
+    expect(within(row).getByTestId('setting-hint-level-3')).toBeChecked();
+    expect(within(row).getByTestId('setting-hint-level-4')).toBeChecked();
+    expect(within(row).getByTestId('setting-first-hint-level')).toHaveValue('2');
+
+    expect(within(row).getByTestId('setting-hints-help')).toHaveTextContent(
+      'Level 1 — Relevant piece',
+    );
+    expect(within(row).getByTestId('setting-hints-help')).toHaveTextContent('Level 4 — Move');
+    expect(within(row).getByTestId('setting-hints-help')).toHaveTextContent(
+      'never count as a wrong move',
+    );
+    expect(within(row).getByTestId('setting-targets-help')).toHaveTextContent('informational only');
+
+    // The stale Feature-012 placeholder is gone.
+    expect(screen.queryByText('Hint behaviour')).not.toBeInTheDocument();
+  });
+
+  it('persists level and first-level changes, including an empty (hints off) set', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    const row = await screen.findByTestId('settings-row-hints');
+    const user = userEvent.setup();
+
+    await user.click(await within(row).findByTestId('setting-hint-level-1'));
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.defaultHintConfig)).toEqual({
+        enabledLevels: [2, 3, 4],
+        firstHintLevel: 2,
+      });
+    });
+
+    await user.selectOptions(within(row).getByTestId('setting-first-hint-level'), '4');
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.defaultHintConfig)).toEqual({
+        enabledLevels: [2, 3, 4],
+        firstHintLevel: 4,
+      });
+    });
+
+    // Unchecking every remaining level is a valid "hints off" default.
+    await user.click(within(row).getByTestId('setting-hint-level-2'));
+    await user.click(within(row).getByTestId('setting-hint-level-3'));
+    await user.click(within(row).getByTestId('setting-hint-level-4'));
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.defaultHintConfig)).toEqual({
+        enabledLevels: [],
+        firstHintLevel: 4,
+      });
+    });
+  });
+});
+
 describe('Settings page — Analysis maintenance (orphan-job cleanup)', () => {
   beforeEach(async () => {
     await db.settings.clear();

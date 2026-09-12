@@ -31,7 +31,7 @@ export interface MasteredPuzzlesPageProps {
 }
 
 /**
- * The read-only mastered-puzzles list (`/puzzles/mastered`): every puzzle that
+ * The read-only mastered-puzzles list (`/training/mastered`): every puzzle that
  * has earned mastery (a legitimate first-try solve in 3 distinct cycles) with
  * its provenance, objective, difficulty bucket and qualifying cycle count.
  * Mastery is monotonic, so there is deliberately no un-master action.
@@ -123,7 +123,11 @@ export function MasteredPuzzlesPage({
     <div className={styles.page} data-testid="mastered-puzzles">
       <header className={styles.header}>
         <div>
-          <Link className={styles.backLink} to={ROUTES.puzzles} data-testid="mastered-puzzles-back">
+          <Link
+            className={styles.backLink}
+            to={ROUTES.training}
+            data-testid="mastered-puzzles-back"
+          >
             ← Training
           </Link>
           <h1 className={styles.heading}>Mastered puzzles</h1>
@@ -157,7 +161,7 @@ export function MasteredPuzzlesPage({
           </p>
           <Link
             className={styles.primaryLink}
-            to={ROUTES.puzzles}
+            to={ROUTES.training}
             data-testid="mastered-puzzles-empty-training-link"
           >
             Go to Training

@@ -24,14 +24,14 @@ const NOW = 1_700_000_000_000;
 function renderHome(props: Partial<TrainingHomePageProps> = {}): void {
   renderWithProviders(
     <Routes>
-      <Route path="/puzzles" element={<TrainingHomePage {...props} />} />
-      <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
+      <Route path="/training" element={<TrainingHomePage {...props} />} />
+      <Route path="/training/sets/:setId" element={<div data-testid="set-detail-stub" />} />
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        path="/training/sets/:setId/cycles/:cycleNumber"
         element={<div data-testid="cycle-session-stub" />}
       />
     </Routes>,
-    { initialEntries: ['/puzzles'] },
+    { initialEntries: ['/training'] },
   );
 }
 
@@ -220,7 +220,7 @@ describe('TrainingHomePage', () => {
     expect(screen.getByTestId('set-card-cycle-set-a')).toHaveTextContent('Cycle 2 · In progress');
     expect(screen.getByTestId('set-card-open-set-a')).toHaveAttribute(
       'href',
-      '/puzzles/sets/set-a',
+      '/training/sets/set-a',
     );
     // A custom set is not badged as a block.
     expect(screen.queryByTestId('set-card-badge-set-a')).not.toBeInTheDocument();
@@ -260,7 +260,7 @@ describe('TrainingHomePage', () => {
     expect(screen.getByTestId('training-resume')).toBeInTheDocument();
     expect(screen.getByTestId('training-resume-link')).toHaveAttribute(
       'href',
-      '/puzzles/sets/set-b/cycles/3',
+      '/training/sets/set-b/cycles/3',
     );
   });
 
@@ -317,7 +317,7 @@ describe('TrainingHomePage', () => {
     expect(screen.getByTestId('training-quick-train')).toBeDisabled();
   });
 
-  it('serves /puzzles with the training home, not the removed interim practice host', async () => {
+  it('serves /training with the training home, not the removed interim practice host', async () => {
     renderHome();
     await waitForHome();
 
@@ -332,7 +332,7 @@ describe('TrainingHomePage', () => {
 
     expect(screen.getByTestId('training-mastered-link')).toHaveAttribute(
       'href',
-      '/puzzles/mastered',
+      '/training/mastered',
     );
     expect(screen.getByTestId('training-mastered-link')).toHaveAccessibleName('Mastered puzzles');
     expect(screen.getByTestId('training-new-set')).toHaveAccessibleName('New set');

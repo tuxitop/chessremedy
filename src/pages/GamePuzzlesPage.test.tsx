@@ -103,7 +103,7 @@ function renderPuzzles(analysisService: AnalysisServiceLike | null): void {
         path="/games/:id/puzzles"
         element={<GamePuzzlesPage analysisService={analysisService} />}
       />
-      <Route path="/puzzles/new" element={<LocationProbe />} />
+      <Route path="/training/new" element={<LocationProbe />} />
     </Routes>,
     { initialEntries: [`/games/${GAME.id}/puzzles`] },
   );
@@ -490,7 +490,7 @@ describe('Game Puzzles page (Feature 011, Stage E)', () => {
 
     fireEvent.click(action);
     const stub = await screen.findByTestId('set-editor-stub');
-    expect(stub).toHaveTextContent('/puzzles/new?source=game');
+    expect(stub).toHaveTextContent('/training/new?source=game');
     expect(stub).toHaveTextContent(`gameId=${encodeURIComponent(GAME.id)}`);
   });
 });

@@ -6,28 +6,28 @@ import {
   ProvenanceFooter,
 } from '@/components/dashboard';
 import { useDashboard, type UseDashboardOptions } from '@/hooks/useDashboard';
-import styles from './DashboardPage.module.css';
+import styles from './StatisticsPage.module.css';
 
 /** Injectable dependencies for deterministic tests (defaults are production). */
-export type DashboardPageProps = UseDashboardOptions;
+export type StatisticsPageProps = UseDashboardOptions;
 
 /**
- * The `/dashboard` page: the game-analysis filter bar and section, the
+ * The `/statistics` page: the game-analysis filter bar and section, the
  * set-scoped training section and the ADR-020 provenance footer. It is
  * presentation only — every value comes from the Feature-014 statistics
  * service through `useDashboard`; it starts no engine, touches no network and
  * mutates no data. Each section keeps its own honest loading/empty/error state
  * so one failed read never blanks the page.
  */
-export function DashboardPage(props: DashboardPageProps = {}): React.JSX.Element {
+export function StatisticsPage(props: StatisticsPageProps = {}): React.JSX.Element {
   const dashboard = useDashboard(props);
   const versions = dashboard.game.metrics.data?.versions ?? null;
   const statisticsVersion = dashboard.game.metrics.data?.statisticsVersion ?? null;
 
   return (
-    <div className={styles.page} data-testid="dashboard-page">
+    <div className={styles.page} data-testid="statistics-page">
       <header className={styles.header}>
-        <h1 className={styles.heading}>Dashboard</h1>
+        <h1 className={styles.heading}>Statistics</h1>
         <p className={styles.subtitle}>
           Rating, accuracy, mistakes and training progress. Every value shows its sample size, and
           partitions are never silently combined.
@@ -45,7 +45,12 @@ export function DashboardPage(props: DashboardPageProps = {}): React.JSX.Element
         onFilters={dashboard.updateFilters}
       />
 
-      <DashboardGameSection game={dashboard.game} onRetry={dashboard.reload} />
+      <DashboardGameSection
+        game={dashboard.game}
+        partition={dashboard.partition}
+        onPartition={dashboard.selectPartition}
+        onRetry={dashboard.reload}
+      />
 
       <DashboardTrainingSection
         training={dashboard.training}

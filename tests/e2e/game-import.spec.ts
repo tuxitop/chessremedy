@@ -114,7 +114,7 @@ test.describe('Game Library (Chess.com, mocked)', () => {
     await expect(page.getByTestId('game-row')).toHaveCount(1);
     await page.getByTestId('filter-side').selectOption('white');
     await expect(page.getByTestId('game-row')).toHaveCount(1);
-    await expect(page.getByTestId('library-count')).toHaveText('1 of 2 games');
+    await expect(page.getByTestId('library-count')).toHaveText('Showing 1 of 1 game');
 
     // Search for the other game's opponent and verify no-match, then clear.
     await page.getByTestId('library-search').fill('eagereddie');
@@ -130,7 +130,7 @@ test.describe('Game Library (Chess.com, mocked)', () => {
 
     // Select all (current filtered set = both), then delete with confirmation.
     await page.getByTestId('library-select-all').click();
-    await expect(page.getByTestId('library-selection-bar')).toContainText('Selected: 2');
+    await expect(page.getByTestId('library-clear-selection')).toContainText('Clear selection (2)');
     await page.getByTestId('library-delete').click();
     await page.getByTestId('delete-confirm').click();
     await expect(page.getByTestId('library-empty')).toBeVisible();

@@ -47,14 +47,14 @@ async function seedBlock(): Promise<void> {
 function renderDetail(setId: string = SET_ID): void {
   renderWithProviders(
     <Routes>
-      <Route path="/puzzles/sets/:setId" element={<SetDetailPage />} />
-      <Route path="/puzzles" element={<div data-testid="training-home-stub" />} />
+      <Route path="/training/sets/:setId" element={<SetDetailPage />} />
+      <Route path="/training" element={<div data-testid="training-home-stub" />} />
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        path="/training/sets/:setId/cycles/:cycleNumber"
         element={<div data-testid="cycle-session-stub" />}
       />
     </Routes>,
-    { initialEntries: [`/puzzles/sets/${setId}`] },
+    { initialEntries: [`/training/sets/${setId}`] },
   );
 }
 

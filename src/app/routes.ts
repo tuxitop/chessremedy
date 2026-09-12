@@ -5,34 +5,34 @@ export const ROUTES = {
   games: '/games',
   analysis: '/analysis',
   analysisLive: '/analysis/live',
-  puzzles: '/puzzles',
-  puzzlesNew: '/puzzles/new',
-  puzzlesMastered: '/puzzles/mastered',
-  puzzlesSet: '/puzzles/sets/:setId',
-  puzzlesCycle: '/puzzles/sets/:setId/cycles/:cycleNumber',
-  puzzlesCycleResults: '/puzzles/sets/:setId/cycles/:cycleNumber/results',
-  dashboard: '/dashboard',
+  training: '/training',
+  trainingNew: '/training/new',
+  trainingMastered: '/training/mastered',
+  trainingSet: '/training/sets/:setId',
+  trainingCycle: '/training/sets/:setId/cycles/:cycleNumber',
+  trainingCycleResults: '/training/sets/:setId/cycles/:cycleNumber/results',
+  statistics: '/statistics',
   settings: '/settings',
   playground: '/playground',
 } as const;
 
 export type RoutePath = (typeof ROUTES)[keyof typeof ROUTES];
 
-/** Concrete set-detail path for a set id (`ROUTES.puzzlesSet` with `:setId`). */
-export function puzzlesSetPath(setId: string): string {
-  return `/puzzles/sets/${setId}`;
+/** Concrete set-detail path for a set id (`ROUTES.trainingSet` with `:setId`). */
+export function trainingSetPath(setId: string): string {
+  return `/training/sets/${setId}`;
 }
 
 /**
  * Concrete cycle-session path for a set id and 1-based cycle number (plan R-7).
  */
-export function puzzlesCyclePath(setId: string, cycleNumber: number): string {
-  return `/puzzles/sets/${setId}/cycles/${cycleNumber}`;
+export function trainingCyclePath(setId: string, cycleNumber: number): string {
+  return `/training/sets/${setId}/cycles/${cycleNumber}`;
 }
 
 /** Concrete cycle-results path for a set id and 1-based cycle number (plan R-7). */
-export function puzzlesCycleResultsPath(setId: string, cycleNumber: number): string {
-  return `/puzzles/sets/${setId}/cycles/${cycleNumber}/results`;
+export function trainingCycleResultsPath(setId: string, cycleNumber: number): string {
+  return `/training/sets/${setId}/cycles/${cycleNumber}/results`;
 }
 
 export interface NavItem {
@@ -45,8 +45,8 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { path: ROUTES.home, label: 'Home' },
   { path: ROUTES.games, label: 'Games' },
+  { path: ROUTES.training, label: 'Training' },
+  { path: ROUTES.statistics, label: 'Statistics' },
   { path: ROUTES.analysisLive, label: 'Analysis', glyph: ANALYSIS_GLYPH },
-  { path: ROUTES.puzzles, label: 'Puzzles' },
-  { path: ROUTES.dashboard, label: 'Dashboard' },
   { path: ROUTES.settings, label: 'Settings' },
 ];

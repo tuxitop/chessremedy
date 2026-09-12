@@ -40,6 +40,7 @@ import {
   TrashIcon,
 } from '@/components/ui/icons';
 import { GameLibraryToolbar } from './GameLibraryToolbar';
+import { pageWindow, showingLabel, totalPages as totalPageCount } from './pagination';
 import styles from './GameLibrary.module.css';
 
 const PAGE_SIZES = [25, 50, 100, 250] as const;
@@ -73,10 +74,12 @@ export function GameLibrary({
   const [importOpen, setImportOpen] = useState(false);
 
   const totalCount = library.rows.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const totalPages = totalPageCount(totalCount, pageSize);
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
   const shownRows = library.rows.slice(start, start + pageSize);
+  const shownCount = pageWindow(totalCount, currentPage, pageSize);
+  const countLabel = showingLabel(shownCount, totalCount);
   const selectedCount = library.selected.count;
   const customTimeFrame = isCustomTimeFrame(filters.timeFrame) ? filters.timeFrame : null;
   const timeFrameError = customTimeFrame ? validateTimeFrame(customTimeFrame) : null;
@@ -87,6 +90,46 @@ export function GameLibrary({
     const status = analysis.statuses[id];
     return status === 'completed' || status === 'outdated';
   });
+
+  /** Route every actionable selected game through the analysis queue: a game
+   *  without a current run is analyzed, and a game whose run is
+   *  completed/outdated is force re-analyzed (the per-row Re-analyze behaviour).
+   *  A silent no-op for already-analyzed selections would otherwise drop the
+   *  selection without queueing anything. Games already queued or running in
+   *  this session are left alone. */
+  const analyzeSelection = (): void => {
+    if (!analysis) {
+      return;
+    }
+    const selected = [...library.selected.ids];
+    const reanalyze: string[] = [];
+    const analyze: string[] = [];
+    for (const id of selected) {
+      if (analysis.inQueue.has(id)) {
+        continue;
+      }
+      const status = analysis.statuses[id];
+      if (status === 'completed' || status === 'outdated') {
+        reanalyze.push(id);
+      } else {
+        analyze.push(id);
+      }
+    }
+    if (analyze.length > 0) {
+      analysis.analyze(analyze);
+    }
+    if (reanalyze.length > 0) {
+      analysis.reanalyzeMany(reanalyze);
+    }
+  };
+
+  const reanalyzeSelection = (): void => {
+    if (analysis) {
+      analysis.reanalyzeMany([...library.selected.ids]);
+    }
+  };
+
+  const deleteSelection = (): void => setDeleteTarget([...library.selected.ids]);
 
   // Auto-refresh: a row's insights strip appears as soon as its game's
   // analysis completes (queued/in-progress → completed/outdated) without a
@@ -529,49 +572,10 @@ export function GameLibrary({
         filters={filters}
         timeFrameError={timeFrameError}
         isFiltering={library.isFiltering}
-        selectedCount={selectedCount}
-        analysisEnabled={analysis.enabled}
-        canReanalyze={canReanalyze}
         importOpen={importOpen}
         onFilters={set}
         onClearFilters={() => library.clearAllFilters()}
         onToggleImport={() => setImportOpen((open) => !open)}
-        onAnalyze={() => {
-          if (analysis) {
-            // Route every actionable selected game through the analysis queue:
-            // a game without a current run is analyzed, and a game whose run is
-            // completed/outdated is force re-analyzed (the per-row Re-analyze
-            // behaviour). A silent no-op for already-analyzed selections would
-            // otherwise drop the selection without queueing anything. Games
-            // already queued or running in this session are left alone.
-            const selected = [...library.selected.ids];
-            const reanalyze: string[] = [];
-            const analyze: string[] = [];
-            for (const id of selected) {
-              if (analysis.inQueue.has(id)) {
-                continue;
-              }
-              const status = analysis.statuses[id];
-              if (status === 'completed' || status === 'outdated') {
-                reanalyze.push(id);
-              } else {
-                analyze.push(id);
-              }
-            }
-            if (analyze.length > 0) {
-              analysis.analyze(analyze);
-            }
-            if (reanalyze.length > 0) {
-              analysis.reanalyzeMany(reanalyze);
-            }
-          }
-        }}
-        onReanalyze={() => {
-          if (analysis) {
-            analysis.reanalyzeMany([...library.selected.ids]);
-          }
-        }}
-        onDelete={() => setDeleteTarget([...library.selected.ids])}
       />
 
       {importOpen ? (
@@ -587,22 +591,57 @@ export function GameLibrary({
         </p>
       ) : null}
 
-      <div className={styles.resultsRow}>
-        <span className={styles.count} data-testid="library-count" aria-live="polite">
-          {library.rows.length} of {library.totalStored} games
-        </span>
-        {library.rows.length > 0 ? (
-          <Button
-            variant="ghost"
-            data-testid="library-select-all"
-            onClick={() =>
-              selectedCount === 0 ? library.selectAllVisible() : library.clearSelection()
-            }
-          >
-            {selectedCount === 0 ? 'Select all' : `Clear selection (${selectedCount})`}
-          </Button>
-        ) : null}
-      </div>
+      {totalCount > 0 ? (
+        <div className={styles.resultsRow}>
+          <span className={styles.count} data-testid="library-count" aria-live="polite">
+            {countLabel}
+          </span>
+          <span className={styles.selectionBar} data-testid="library-selection-bar">
+            {selectedCount === 0 ? (
+              <Button
+                variant="ghost"
+                data-testid="library-select-all"
+                onClick={() => library.selectAllVisible()}
+              >
+                Select all
+              </Button>
+            ) : (
+              <>
+                <IconButton
+                  label="Analyze selected games"
+                  dataTestId="library-analyze"
+                  disabled={!analysis.enabled}
+                  onClick={analyzeSelection}
+                >
+                  <span aria-hidden="true">{ANALYSIS_GLYPH}</span>
+                </IconButton>
+                <IconButton
+                  label="Re-analyze selected games"
+                  dataTestId="library-reanalyze"
+                  disabled={!canReanalyze}
+                  onClick={reanalyzeSelection}
+                >
+                  <RefreshIcon />
+                </IconButton>
+                <IconButton
+                  label="Delete selected games"
+                  dataTestId="library-delete"
+                  onClick={deleteSelection}
+                >
+                  <TrashIcon />
+                </IconButton>
+                <Button
+                  variant="ghost"
+                  data-testid="library-clear-selection"
+                  onClick={() => library.clearSelection()}
+                >
+                  Clear selection ({selectedCount})
+                </Button>
+              </>
+            )}
+          </span>
+        </div>
+      ) : null}
 
       {library.totalStored > 0 && library.rows.length === 0 && !library.loading ? (
         <p className={styles.state} data-testid="library-no-match">
@@ -696,7 +735,6 @@ export function GameLibrary({
             onGeneratePuzzles={runGeneration}
           />
           <Pagination
-            totalCount={totalCount}
             pageSize={pageSize}
             page={currentPage}
             totalPages={totalPages}
@@ -1821,7 +1859,6 @@ function RowPuzzleProgressBar({
 }
 
 function Pagination({
-  totalCount,
   pageSize,
   page,
   totalPages,
@@ -1829,7 +1866,6 @@ function Pagination({
   onPrevious,
   onNext,
 }: {
-  totalCount: number;
   pageSize: number;
   page: number;
   totalPages: number;
@@ -1854,7 +1890,7 @@ function Pagination({
         </select>
       </label>
       <span className={styles.paginationStatus} data-testid="library-page-status">
-        Page {page} of {totalPages} · {totalCount} games
+        Page {page} of {totalPages}
       </span>
       <div className={styles.paginationActions}>
         <Button

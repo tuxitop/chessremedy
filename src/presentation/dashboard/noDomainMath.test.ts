@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = process.cwd();
 const COMPONENTS_DIR = join(ROOT, 'src/components/dashboard');
 const PRESENTATION_DIR = join(ROOT, 'src/presentation/dashboard');
-const PAGE_FILE = join(ROOT, 'src/pages/DashboardPage.tsx');
+const PAGE_FILE = join(ROOT, 'src/pages/StatisticsPage.tsx');
 
 /** Value-import specifiers that would re-implement Feature-014 statistics. */
 const FORBIDDEN_IMPORTS: readonly string[] = [

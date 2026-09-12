@@ -89,6 +89,7 @@ export {
   snapshotCycle,
   solveHintConfigOf,
   validateCycleConfig,
+  validateHintConfig,
 } from './cycle';
 export type {
   CycleProgressInput,
@@ -97,6 +98,7 @@ export type {
   ResumeQueue,
   SnapshotCycleInput,
   ValidateCycleConfigResult,
+  ValidateHintConfigResult,
 } from './cycle';
 export {
   compareCycleMetrics,

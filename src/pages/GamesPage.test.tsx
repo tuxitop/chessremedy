@@ -119,7 +119,7 @@ describe('GamesPage (Game Library)', () => {
     renderGames();
 
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
-    expect(screen.getByTestId('library-count')).toHaveTextContent('2 of 2 games');
+    expect(screen.getByTestId('library-count')).toHaveTextContent('Showing 2 of 2 games');
 
     const user = userEvent.setup();
     // Platform filter → Lichess only.
@@ -151,8 +151,13 @@ describe('GamesPage (Game Library)', () => {
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
 
     await user.click(screen.getByTestId(`game-select-${bullet.id}`));
-    expect(screen.getByTestId('library-selection-bar')).toHaveTextContent('Selected: 1');
+    // The bulk actions live in the results-row selection bar, next to a single
+    // count carried by "Clear selection (N)" — never a standalone "Selected: N".
+    expect(screen.getByTestId('library-selection-bar')).toBeInTheDocument();
+    expect(screen.getByTestId('library-clear-selection')).toHaveTextContent('Clear selection (1)');
+    expect(screen.queryByText(/Selected:/)).not.toBeInTheDocument();
     expect(screen.getByTestId('library-analyze')).toBeDisabled();
+    expect(screen.queryByTestId('library-select-all')).not.toBeInTheDocument();
 
     // Cancel keeps the games.
     await user.click(screen.getByTestId('library-delete'));
@@ -175,7 +180,7 @@ describe('GamesPage (Game Library)', () => {
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
 
     await user.click(screen.getByTestId('library-select-all'));
-    expect(screen.getByTestId('library-selection-bar')).toHaveTextContent('Selected: 2');
+    expect(screen.getByTestId('library-clear-selection')).toHaveTextContent('Clear selection (2)');
   });
 
   it('paginates the result set and honours the chosen page size', async () => {
@@ -196,16 +201,19 @@ describe('GamesPage (Game Library)', () => {
 
     const user = userEvent.setup();
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(50));
+    expect(screen.getByTestId('library-count')).toHaveTextContent('Showing 50 of 55 games');
     expect(screen.getByTestId('library-page-status')).toHaveTextContent('Page 1 of 2');
     expect(screen.getByTestId('library-page-prev')).toBeDisabled();
 
     await user.click(screen.getByTestId('library-page-next'));
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(5));
+    expect(screen.getByTestId('library-count')).toHaveTextContent('Showing 5 of 55 games');
     expect(screen.getByTestId('library-page-status')).toHaveTextContent('Page 2 of 2');
     expect(screen.getByTestId('library-page-next')).toBeDisabled();
 
     await user.selectOptions(screen.getByTestId('library-page-size'), '100');
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(55));
+    expect(screen.getByTestId('library-count')).toHaveTextContent('Showing 55 of 55 games');
     expect(screen.getByTestId('library-page-status')).toHaveTextContent('Page 1 of 1');
   });
 
@@ -218,11 +226,15 @@ describe('GamesPage (Game Library)', () => {
     await waitFor(() => expect(screen.getAllByTestId('game-row')).toHaveLength(2));
     await user.click(screen.getByTestId(`game-select-${bullet.id}`));
     expect(screen.getByTestId('library-selection-bar')).toBeInTheDocument();
+    expect(screen.getByTestId('library-clear-selection')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByTestId('filter-side'), 'white');
+    // The selection is cleared: the bar stays (it is the results-row control
+    // area) but returns to "Select all" instead of the bulk actions.
     await waitFor(() =>
-      expect(screen.queryByTestId('library-selection-bar')).not.toBeInTheDocument(),
+      expect(screen.queryByTestId('library-clear-selection')).not.toBeInTheDocument(),
     );
+    expect(screen.getByTestId('library-select-all')).toBeInTheDocument();
   });
 
   it('does not error while a custom range is incomplete and filters once valid', async () => {

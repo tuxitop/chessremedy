@@ -29,7 +29,7 @@ import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import type { PuzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
 import type { PuzzleAttemptsRepository } from '@/infrastructure/db/attempts-repository';
-import { ROUTES, puzzlesCycleResultsPath, puzzlesSetPath } from '@/app/routes';
+import { ROUTES, trainingCycleResultsPath, trainingSetPath } from '@/app/routes';
 import styles from './CycleSessionPage.module.css';
 
 /** Everything the mounted session needs, once loaded. */
@@ -55,7 +55,7 @@ export interface CycleSessionPageProps {
 }
 
 /**
- * The real training-cycle session (`/puzzles/sets/:setId/cycles/:cycleNumber`):
+ * The real training-cycle session (`/training/sets/:setId/cycles/:cycleNumber`):
  * the session chrome (set name, cycle number, "Puzzle X of Y", Exit, Skip when
  * configured) above Feature 012's `SolveScreen`, driven by `useCycleSession`
  * over the persisted attempt rows. Completion navigates to the cycle results;
@@ -168,7 +168,7 @@ export function CycleSessionPage({
         <section className={styles.statePanel} data-testid="cycle-session-missing">
           <h1 className={styles.heading}>Cycle not found</h1>
           <p className={styles.state}>{error ?? 'This cycle could not be found.'}</p>
-          <Link className={styles.backLink} to={ROUTES.puzzles} data-testid="cycle-session-back">
+          <Link className={styles.backLink} to={ROUTES.training} data-testid="cycle-session-back">
             Back to training
           </Link>
         </section>
@@ -251,8 +251,8 @@ function CycleSessionView({
   // returns to the training home on completion/exit; a set-backed cycle lands
   // on its results/set detail as before.
   const resultsPath = isQuickTrain
-    ? ROUTES.puzzles
-    : puzzlesCycleResultsPath(set.id, cycle.cycleNumber);
+    ? ROUTES.training
+    : trainingCycleResultsPath(set.id, cycle.cycleNumber);
 
   // Completion (the queue emptied and the cycle was marked completed, or the
   // cycle was already terminal on load) lands on the results view.
@@ -265,7 +265,7 @@ function CycleSessionView({
   const handleExit = useCallback((): void => {
     // Leave the cycle inProgress and resumable; discard the presentation.
     session.exit();
-    navigate(isQuickTrain ? ROUTES.puzzles : puzzlesSetPath(set.id));
+    navigate(isQuickTrain ? ROUTES.training : trainingSetPath(set.id));
   }, [session, navigate, isQuickTrain, set.id]);
 
   const handleOutcome = useCallback(

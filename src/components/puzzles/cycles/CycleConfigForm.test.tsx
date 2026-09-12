@@ -34,4 +34,17 @@ describe('CycleConfigForm', () => {
     fireEvent.change(screen.getByTestId('cfg-planned-cycles'), { target: { value: '5' } });
     expect(screen.getByTestId('cfg-config-snapshot')).toHaveTextContent('5');
   });
+
+  it('explains the hint levels and the informational (never a gate) targets', () => {
+    renderWithProviders(<Harness />);
+
+    const hintsHelp = screen.getByTestId('cycle-config-hints-help');
+    expect(hintsHelp).toHaveTextContent('Level 1 — Relevant piece');
+    expect(hintsHelp).toHaveTextContent('Level 4 — Full first move in SAN');
+    expect(hintsHelp).toHaveTextContent('never count as a wrong move');
+
+    const targetsHelp = screen.getByTestId('cycle-config-targets-help');
+    expect(targetsHelp).toHaveTextContent('informational only');
+    expect(targetsHelp).toHaveTextContent('never gates');
+  });
 });

@@ -91,6 +91,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -111,23 +112,13 @@
   font-size: var(--font-size-sm);
 }
 
+/* Results-row selection bar: bulk actions next to the matched-count label.
+   Wraps below the count on narrow viewports; no horizontal scroll. */
 .selectionBar {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  padding: var(--space-3);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  position: sticky;
-  top: var(--space-2);
-  z-index: 2;
-}
-
-.selectionCount {
-  margin-right: auto;
-  font-weight: 600;
-  color: var(--color-fg);
 }
 
 .table {
@@ -413,11 +404,6 @@
 
   .cellCheck {
     padding-top: 0;
-  }
-
-  .selectionBar {
-    position: static;
-    flex-wrap: wrap;
   }
 }
 

@@ -5,6 +5,8 @@ import { SetEditorPage } from '@/pages/SetEditorPage';
 import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { trainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
+import { settingsRepository } from '@/infrastructure/db/settings-repository';
+import { SETTINGS_KEYS } from '@/config/app-config';
 import { fixtureGame } from '@/domain/chess/fixtures';
 import { puzzleFixtures, blunderPuzzleFixtures } from '@/domain/puzzle/test-support';
 import type { PuzzleRow } from '@/domain/puzzle';
@@ -32,8 +34,8 @@ async function seedData(): Promise<void> {
 function renderEditor(entry: string): void {
   renderWithProviders(
     <Routes>
-      <Route path="/puzzles/new" element={<SetEditorPage />} />
-      <Route path="/puzzles/sets/:setId" element={<div data-testid="navigated-set" />} />
+      <Route path="/training/new" element={<SetEditorPage />} />
+      <Route path="/training/sets/:setId" element={<div data-testid="navigated-set" />} />
     </Routes>,
     { initialEntries: [entry] },
   );
@@ -46,7 +48,7 @@ async function waitForLoaded(): Promise<void> {
 describe('SetEditorPage', () => {
   it('creates a set from a game and shows the membership before committing', async () => {
     await seedData();
-    renderEditor(`/puzzles/new?source=game&gameId=${GAME.id}`);
+    renderEditor(`/training/new?source=game&gameId=${GAME.id}`);
     await waitForLoaded();
 
     expect(screen.getByTestId('set-editor-preview-count')).toHaveTextContent('3 puzzles');
@@ -65,7 +67,7 @@ describe('SetEditorPage', () => {
 
   it('applies pool filters and target size to the preview', async () => {
     await seedData();
-    renderEditor('/puzzles/new');
+    renderEditor('/training/new');
     await waitForLoaded();
 
     expect(screen.getByTestId('set-editor-preview-count')).toHaveTextContent('3 puzzles');
@@ -79,7 +81,7 @@ describe('SetEditorPage', () => {
 
   it('creates a manual set from a touch multi-selection', async () => {
     await seedData();
-    renderEditor('/puzzles/new?source=manual');
+    renderEditor('/training/new?source=manual');
     await waitForLoaded();
 
     fireEvent.click(screen.getByTestId('set-editor-source-manual'));
@@ -102,7 +104,7 @@ describe('SetEditorPage', () => {
     await trainingSetsRepository.create(
       setFixture({ id: 'set-edit', name: 'Old name', puzzleIds: ['g:1'] }),
     );
-    renderEditor('/puzzles/new?setId=set-edit');
+    renderEditor('/training/new?setId=set-edit');
 
     await waitFor(() => expect(screen.getByTestId('set-editor-name')).toHaveValue('Old name'));
     fireEvent.change(screen.getByTestId('set-editor-name'), { target: { value: 'New name' } });
@@ -111,5 +113,51 @@ describe('SetEditorPage', () => {
     await screen.findByTestId('navigated-set');
     const stored = await trainingSetsRepository.get('set-edit');
     expect(stored?.name).toBe('New name');
+  });
+
+  it('seeds a new set hint config from the stored global default', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.defaultHintConfig, {
+      enabledLevels: [2, 4],
+      firstHintLevel: 4,
+    });
+    await seedData();
+    renderEditor(`/training/new?source=game&gameId=${GAME.id}`);
+    await waitForLoaded();
+
+    expect(screen.getByTestId('set-editor-hint-level-1')).not.toBeChecked();
+    expect(screen.getByTestId('set-editor-hint-level-2')).toBeChecked();
+    expect(screen.getByTestId('set-editor-hint-level-3')).not.toBeChecked();
+    expect(screen.getByTestId('set-editor-hint-level-4')).toBeChecked();
+    expect(screen.getByTestId('set-editor-first-hint')).toHaveValue('4');
+  });
+
+  it('keeps the stored config hints when editing an existing set', async () => {
+    await settingsRepository.set(SETTINGS_KEYS.defaultHintConfig, {
+      enabledLevels: [2, 4],
+      firstHintLevel: 4,
+    });
+    await trainingSetsRepository.create(
+      setFixture({
+        id: 'set-hints-edit',
+        name: 'Stored hints',
+        puzzleIds: ['g:1'],
+        config: {
+          ordering: 'difficultyAsc',
+          retryFailed: 'endOfCycle',
+          hints: { enabledLevels: [1], firstHintLevel: 1 },
+          allowSkip: true,
+          targetAccuracy: null,
+          targetSolvingTimeMs: null,
+          plannedCycles: null,
+          configVersion: 1,
+        },
+      }),
+    );
+    renderEditor('/training/new?setId=set-hints-edit');
+
+    await waitFor(() => expect(screen.getByTestId('set-editor-name')).toHaveValue('Stored hints'));
+    expect(screen.getByTestId('set-editor-hint-level-1')).toBeChecked();
+    expect(screen.getByTestId('set-editor-hint-level-2')).not.toBeChecked();
+    expect(screen.getByTestId('set-editor-first-hint')).toHaveValue('1');
   });
 });

@@ -6,6 +6,9 @@ import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { useBoardAppearance } from '@/hooks/useBoardAppearance';
 import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
 import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
+import { useDefaultHintConfig } from '@/hooks/useDefaultHintConfig';
+import { HINT_LEVELS } from '@/components/puzzles/cycles';
+import type { HintConfig, HintLevel } from '@/domain/training';
 import { getBrowserAnalysisService } from '@/infrastructure/analysis';
 import type { AnalysisServiceLike } from '@/hooks/useGameAnalysis';
 import {
@@ -43,11 +46,6 @@ interface SettingPlaceholder {
 }
 
 const SETTINGS_PLACEHOLDERS: SettingPlaceholder[] = [
-  {
-    title: 'Hint behaviour',
-    description: 'Configure when the four progressive puzzle hints become available.',
-    badge: 'Coming in Feature 012 — Puzzle Training',
-  },
   {
     title: 'Synchronization',
     description: 'Optionally connect Dropbox to sync your library across devices.',
@@ -166,6 +164,89 @@ function GameAnalysisDefaults({
   );
 }
 
+/**
+ * The global default hint configuration (Feature 017 §7): Level 1–4
+ * availability, the first hint level, and the level/target help copy. Every
+ * control has an accessible name and the help is associated via
+ * `aria-describedby` (never tooltip-only).
+ */
+function HintDefaults({
+  hints,
+  error,
+  onSave,
+}: {
+  hints: HintConfig;
+  error: string | null;
+  onSave(next: HintConfig): void;
+}): React.JSX.Element {
+  const toggleLevel = (level: HintLevel, enabled: boolean): void => {
+    const current = new Set(hints.enabledLevels);
+    if (enabled) {
+      current.add(level);
+    } else {
+      current.delete(level);
+    }
+    const enabledLevels = HINT_LEVELS.filter((candidate) => current.has(candidate));
+    onSave({ enabledLevels, firstHintLevel: hints.firstHintLevel });
+  };
+
+  return (
+    <div className={styles.hintForm}>
+      <fieldset className={styles.hintFieldset}>
+        <legend className={styles.rowFieldLabel}>Hint levels</legend>
+        <div className={styles.hintChecks}>
+          {HINT_LEVELS.map((level) => (
+            <label key={level} className={styles.check}>
+              <input
+                type="checkbox"
+                checked={hints.enabledLevels.includes(level)}
+                onChange={(event) => toggleLevel(level, event.target.checked)}
+                data-testid={`setting-hint-level-${level}`}
+                aria-describedby="setting-hints-help"
+              />
+              <span>Level {level}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <label className={styles.rowField}>
+        <span className={styles.rowFieldLabel}>First hint level</span>
+        <select
+          value={hints.firstHintLevel}
+          onChange={(event) =>
+            onSave({ ...hints, firstHintLevel: Number(event.target.value) as HintLevel })
+          }
+          data-testid="setting-first-hint-level"
+          aria-describedby="setting-hints-help"
+        >
+          {HINT_LEVELS.map((level) => (
+            <option key={level} value={level}>
+              Level {level}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p id="setting-hints-help" className={styles.helpText} data-testid="setting-hints-help">
+        <strong>Level 1 — Relevant piece:</strong> shows the piece type that starts the solution
+        (text only). <strong>Level 2 — Piece square:</strong> highlights that piece&apos;s starting
+        square. <strong>Level 3 — Destination:</strong> highlights the destination square of the
+        first solution move. <strong>Level 4 — Move:</strong> shows the full first solution move in
+        SAN. Hints never fail a puzzle and never count as a wrong move; the reveal starts at the
+        configured first level and ascends, skipping disabled levels, capped at Level 4.
+      </p>
+      <p id="setting-targets-help" className={styles.helpText} data-testid="setting-targets-help">
+        Target accuracy and target solving time are informational only — displayed targets, never
+        gates. A cycle is never blocked, failed or completed differently because a target is missed.
+      </p>
+      {error ? (
+        <p role="alert" className={styles.error} data-testid="setting-hints-error">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** Clears interrupted (stuck) analysis runs from earlier sessions. */
 function AnalysisMaintenance({
   service,
@@ -240,6 +321,12 @@ export function SettingsPage({
     isReady: puzzleTimerReady,
     save: savePuzzleTimer,
   } = usePuzzleTimerSetting();
+  const {
+    hints: defaultHints,
+    isReady: hintsReady,
+    error: hintsError,
+    save: saveHints,
+  } = useDefaultHintConfig();
   const [builtService, setBuiltService] = useState<AnalysisServiceLike | null>(null);
   const capabilities = readBrowserCapabilities();
 
@@ -444,6 +531,25 @@ export function SettingsPage({
             </div>
           ) : (
             <p className={styles.engineLoading}>Loading puzzle settings…</p>
+          )}
+        </li>
+
+        <li className={styles.row} data-testid="settings-row-hints">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Puzzle hints</h2>
+            <p className={styles.rowDescription}>
+              Default hint configuration applied to new training sets and Woodpecker blocks. You can
+              still override hints per set; existing sets and cycles are unchanged.
+            </p>
+          </div>
+          {hintsReady ? (
+            <HintDefaults
+              hints={defaultHints}
+              error={hintsError}
+              onSave={(next) => void saveHints(next)}
+            />
+          ) : (
+            <p className={styles.engineLoading}>Loading puzzle hint settings…</p>
           )}
         </li>
 

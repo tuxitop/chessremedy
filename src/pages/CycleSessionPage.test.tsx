@@ -116,16 +116,16 @@ function renderSession(service: CycleService, cycleNumber = 1): void {
   renderWithProviders(
     <Routes>
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        path="/training/sets/:setId/cycles/:cycleNumber"
         element={<CycleSessionPage cycleService={service} now={() => NOW} />}
       />
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber/results"
+        path="/training/sets/:setId/cycles/:cycleNumber/results"
         element={<div data-testid="cycle-results-stub" />}
       />
-      <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
+      <Route path="/training/sets/:setId" element={<div data-testid="set-detail-stub" />} />
     </Routes>,
-    { initialEntries: [`/puzzles/sets/${SET_ID}/cycles/${cycleNumber}`] },
+    { initialEntries: [`/training/sets/${SET_ID}/cycles/${cycleNumber}`] },
   );
 }
 
@@ -138,12 +138,12 @@ function renderQuickTrain(service: CycleService): void {
   renderWithProviders(
     <Routes>
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        path="/training/sets/:setId/cycles/:cycleNumber"
         element={<CycleSessionPage cycleService={service} now={() => NOW} />}
       />
-      <Route path="/puzzles" element={<div data-testid="training-home-stub" />} />
+      <Route path="/training" element={<div data-testid="training-home-stub" />} />
     </Routes>,
-    { initialEntries: [`/puzzles/sets/${QUICK_TRAIN_SET_ID}/cycles/1`] },
+    { initialEntries: [`/training/sets/${QUICK_TRAIN_SET_ID}/cycles/1`] },
   );
 }
 
@@ -186,12 +186,12 @@ function renderBlockSession(service: CycleService): void {
   renderWithProviders(
     <Routes>
       <Route
-        path="/puzzles/sets/:setId/cycles/:cycleNumber"
+        path="/training/sets/:setId/cycles/:cycleNumber"
         element={<CycleSessionPage cycleService={service} now={() => NOW} />}
       />
-      <Route path="/puzzles/sets/:setId" element={<div data-testid="set-detail-stub" />} />
+      <Route path="/training/sets/:setId" element={<div data-testid="set-detail-stub" />} />
     </Routes>,
-    { initialEntries: [`/puzzles/sets/${BLOCK_ID}/cycles/2`] },
+    { initialEntries: [`/training/sets/${BLOCK_ID}/cycles/2`] },
   );
 }
 
@@ -278,13 +278,13 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
   it('shows a missing state when the cycle does not exist', async () => {
     renderWithProviders(
       <Routes>
-        <Route path="/puzzles/sets/:setId/cycles/:cycleNumber" element={<CycleSessionPage />} />
+        <Route path="/training/sets/:setId/cycles/:cycleNumber" element={<CycleSessionPage />} />
       </Routes>,
-      { initialEntries: [`/puzzles/sets/${SET_ID}/cycles/9`] },
+      { initialEntries: [`/training/sets/${SET_ID}/cycles/9`] },
     );
 
     await screen.findByTestId('cycle-session-missing');
-    expect(screen.getByTestId('cycle-session-back')).toHaveAttribute('href', '/puzzles');
+    expect(screen.getByTestId('cycle-session-back')).toHaveAttribute('href', '/training');
   });
 
   it('announces progress and exposes labelled Exit/Skip controls', async () => {

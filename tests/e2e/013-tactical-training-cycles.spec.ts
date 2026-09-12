@@ -227,7 +227,7 @@ test.describe('Tactical training cycles (Feature 013)', () => {
   }) => {
     // Boot the app once so Dexie creates the schema-v10 `chessremedy` database,
     // then seed the deterministic fixtures directly into the live object stores.
-    await page.goto('/puzzles');
+    await page.goto('/training');
     await expect(page.getByTestId('training-home')).toBeVisible();
     await seedIndexedDb(page, {
       puzzles: [EXCHANGE_PUZZLE, MATE_ONE_PUZZLE],

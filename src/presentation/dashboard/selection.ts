@@ -68,6 +68,35 @@ export interface PartitionOption {
 }
 
 /**
+ * A concrete partition candidate for default selection: the selector shape plus
+ * the canonical Feature-014 game count (`metrics.games.total`). The count is
+ * read, never recomputed.
+ */
+export interface PartitionCandidate extends PartitionLike {
+  readonly gameCount: number;
+}
+
+/** Canonical platform order: Lichess, Chess.com, then other real sources. */
+const PLATFORM_RANK: Readonly<Record<PlatformDimension, number>> = {
+  lichess: 0,
+  chesscom: 1,
+  local: 2,
+  fixture: 3,
+  all: 4,
+};
+
+/** ADR-013 time-control category order. */
+const TIME_CONTROL_RANK: Readonly<Record<TimeControlDimension, number>> = {
+  bullet: 0,
+  blitz: 1,
+  rapid: 2,
+  classical: 3,
+  correspondence: 4,
+  unknown: 5,
+  all: 6,
+};
+
+/**
  * Build the concrete partition options for the selector. Every Feature-014
  * partition is preserved as its own option (no merge); the caller prepends the
  * explicit all-partitions choice.
@@ -83,11 +112,41 @@ export function partitionOptions(partitions: readonly PartitionLike[]): readonly
 }
 
 /**
- * The default selector value: the first concrete partition, or `all` when the
- * result has no partitions (A1 — the rendered default is a single partition).
+ * The default selector value (Feature 017 §8): the concrete partition with the
+ * most games, or `all` when none qualifies.
+ *
+ * Only `combined === false` partitions whose platform is not `fixture` are
+ * considered. Ties break by canonical platform order (Lichess, Chess.com, then
+ * other real sources), then ADR-013 time-control order, then partition key
+ * ascending. Deterministic; computes no statistic (the count is read from the
+ * loaded Feature-014 result).
  */
-export function defaultPartitionValue(options: readonly PartitionOption[]): string {
-  return options[0]?.value ?? 'all';
+export function selectDefaultPartition(partitions: readonly PartitionCandidate[]): string {
+  const candidates = partitions.filter(
+    (partition) => !partition.combined && partition.platform !== 'fixture',
+  );
+  if (candidates.length === 0) {
+    return 'all';
+  }
+  const sorted = [...candidates].sort((a, b) => {
+    if (b.gameCount !== a.gameCount) {
+      return b.gameCount - a.gameCount;
+    }
+    const platform = PLATFORM_RANK[a.platform] - PLATFORM_RANK[b.platform];
+    if (platform !== 0) {
+      return platform;
+    }
+    const timeControl = TIME_CONTROL_RANK[a.timeControl] - TIME_CONTROL_RANK[b.timeControl];
+    if (timeControl !== 0) {
+      return timeControl;
+    }
+    return compareText(
+      partitionKey(a.platform, a.timeControl),
+      partitionKey(b.platform, b.timeControl),
+    );
+  });
+  const winner = sorted[0]!;
+  return partitionKey(winner.platform, winner.timeControl);
 }
 
 /** Which phase-metric field the weakest-phase label reads. */

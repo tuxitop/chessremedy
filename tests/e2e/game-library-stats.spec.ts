@@ -195,7 +195,8 @@ test.describe('Game Library analysis stats & filters (Feature 010)', () => {
     // The only imported game is analyzed, so "Not analyzed" matches nothing.
     await page.getByTestId('filter-analysis').selectOption('notAnalyzed');
     await expect(page.getByTestId('library-no-match')).toBeVisible();
-    await expect(page.getByTestId('library-count')).toHaveText('0 of 1 games');
+    // With no matched rows the window label is omitted entirely.
+    await expect(page.getByTestId('library-count')).toHaveCount(0);
 
     // Resetting the filters restores the analyzed row and its strip.
     await page.getByTestId('filter-clear-all').click();

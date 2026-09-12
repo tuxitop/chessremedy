@@ -7,7 +7,7 @@ import {
   MembershipList,
   type MembershipListItem,
 } from '@/components/puzzles/cycles';
-import { ROUTES, puzzlesSetPath } from '@/app/routes';
+import { ROUTES, trainingSetPath } from '@/app/routes';
 import { GAME_SOURCE_LABELS, GAME_SOURCES } from '@/domain/chess/gameSource';
 import { TIME_CONTROL_CATEGORIES } from '@/domain/chess/timeControl';
 import type { GameSource } from '@/domain/chess/gameSource';
@@ -27,6 +27,7 @@ import {
   type SetSource,
 } from '@/domain/training';
 import { TrainingSetsService } from '@/infrastructure/training';
+import { useDefaultHintConfig } from '@/hooks/useDefaultHintConfig';
 import { trainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
 import type { TrainingSetsRepository } from '@/infrastructure/db/training-sets-repository';
 import { trainingCyclesRepository } from '@/infrastructure/db/training-cycles-repository';
@@ -114,8 +115,16 @@ export function SetEditorPage({
   const [manualSelected, setManualSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [ordering, setOrdering] = useState<OrderingPolicy>(DEFAULT_CYCLE_CONFIG.ordering);
   const [targetSize, setTargetSize] = useState(DEFAULT_TARGET_SIZE);
-  const [config, setConfig] = useState<CycleConfig>(DEFAULT_CYCLE_CONFIG);
+  const [configDraft, setConfigDraft] = useState<CycleConfig | null>(null);
   const [storedMembership, setStoredMembership] = useState<readonly string[]>([]);
+  const { hints: defaultHints, isReady: defaultHintsReady } = useDefaultHintConfig();
+  // A **new** set seeds its hint config from the stored global default; editing
+  // an existing set keeps its stored `set.config` (loaded into the draft below).
+  const config: CycleConfig =
+    configDraft ??
+    (editingSetId === null && defaultHintsReady
+      ? { ...DEFAULT_CYCLE_CONFIG, hints: defaultHints }
+      : DEFAULT_CYCLE_CONFIG);
 
   const [loading, setLoading] = useState(editingSetId !== null);
   const [saving, setSaving] = useState(false);
@@ -178,7 +187,7 @@ export function SetEditorPage({
         }
         setOrdering(set.config.ordering);
         setTargetSize(set.targetSize);
-        setConfig(set.config);
+        setConfigDraft(set.config);
         setStoredMembership(set.puzzleIds);
         setLoading(false);
       } catch {
@@ -321,7 +330,7 @@ export function SetEditorPage({
           setError(configErrorMessage(configured));
           return;
         }
-        navigate(puzzlesSetPath(editingSetId));
+        navigate(trainingSetPath(editingSetId));
         return;
       }
 
@@ -361,7 +370,7 @@ export function SetEditorPage({
         return;
       }
       await setsService.updateConfig(result.set.id, config);
-      navigate(puzzlesSetPath(result.set.id));
+      navigate(trainingSetPath(result.set.id));
     } catch {
       setError('Could not save the set. Please try again.');
     } finally {
@@ -384,7 +393,7 @@ export function SetEditorPage({
       <div className={styles.page} data-testid="set-editor">
         <header className={styles.header}>
           <div>
-            <Link className={styles.backLink} to={ROUTES.puzzles} data-testid="set-editor-back">
+            <Link className={styles.backLink} to={ROUTES.training} data-testid="set-editor-back">
               ← Training
             </Link>
             <h1 className={styles.heading}>Auto set</h1>
@@ -398,7 +407,7 @@ export function SetEditorPage({
           </p>
           <Link
             className={styles.primaryLink}
-            to={puzzlesSetPath(editingSetId)}
+            to={trainingSetPath(editingSetId)}
             data-testid="set-editor-auto-view"
           >
             View set
@@ -417,7 +426,7 @@ export function SetEditorPage({
     <div className={styles.page} data-testid="set-editor">
       <header className={styles.header}>
         <div>
-          <Link className={styles.backLink} to={ROUTES.puzzles} data-testid="set-editor-back">
+          <Link className={styles.backLink} to={ROUTES.training} data-testid="set-editor-back">
             ← Training
           </Link>
           <h1 className={styles.heading}>{editing ? 'Edit set' : 'New training set'}</h1>
@@ -574,7 +583,7 @@ export function SetEditorPage({
         <h2 className={styles.sectionTitle} id="set-editor-config-title">
           Cycle configuration
         </h2>
-        <CycleConfigForm config={config} onChange={setConfig} idPrefix="set-editor" />
+        <CycleConfigForm config={config} onChange={setConfigDraft} idPrefix="set-editor" />
       </section>
 
       {!editing && sourceKind === 'manual' ? (
@@ -613,7 +622,7 @@ export function SetEditorPage({
       </section>
 
       <div className={styles.actions}>
-        <Link className={styles.cancelLink} to={ROUTES.puzzles} data-testid="set-editor-cancel">
+        <Link className={styles.cancelLink} to={ROUTES.training} data-testid="set-editor-cancel">
           Cancel
         </Link>
         <Button

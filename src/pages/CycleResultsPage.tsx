@@ -24,7 +24,7 @@ import type { TrainingCyclesRepository } from '@/infrastructure/db/training-cycl
 import { puzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import type { PuzzlesRepository } from '@/infrastructure/db/puzzles-repository';
 import { attemptsRepository } from '@/infrastructure/db/attempts-repository';
-import { ROUTES, puzzlesCyclePath, puzzlesSetPath } from '@/app/routes';
+import { ROUTES, trainingCyclePath, trainingSetPath } from '@/app/routes';
 import styles from './CycleResultsPage.module.css';
 
 interface ResultsData {
@@ -154,7 +154,7 @@ export function CycleResultsPage({
           );
           return;
         }
-        navigate(puzzlesCyclePath(setId, started.cycle.cycleNumber));
+        navigate(trainingCyclePath(setId, started.cycle.cycleNumber));
       } catch {
         setError('Could not start the next cycle.');
       } finally {
@@ -179,7 +179,7 @@ export function CycleResultsPage({
         <section className={styles.statePanel} data-testid="cycle-results-missing">
           <h1 className={styles.heading}>Cycle results unavailable</h1>
           <p className={styles.state}>{error ?? 'This cycle could not be found.'}</p>
-          <Link className={styles.backLink} to={ROUTES.puzzles} data-testid="cycle-results-back">
+          <Link className={styles.backLink} to={ROUTES.training} data-testid="cycle-results-back">
             Back to training
           </Link>
         </section>
@@ -205,7 +205,7 @@ export function CycleResultsPage({
         <div>
           <Link
             className={styles.backLink}
-            to={puzzlesSetPath(set.id)}
+            to={trainingSetPath(set.id)}
             data-testid="cycle-results-set-back"
           >
             ← {set.name}
@@ -222,7 +222,7 @@ export function CycleResultsPage({
           {cycle.status === 'inProgress' ? (
             <Link
               className={styles.primaryLink}
-              to={puzzlesCyclePath(set.id, cycle.cycleNumber)}
+              to={trainingCyclePath(set.id, cycle.cycleNumber)}
               data-testid="cycle-results-resume"
             >
               Resume cycle

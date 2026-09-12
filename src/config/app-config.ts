@@ -20,6 +20,7 @@ export const SETTINGS_KEYS = {
   chessComFilters: 'import.chesscom.filters',
   lichessFilters: 'import.lichess.filters',
   puzzleTimer: 'puzzle.timer',
+  defaultHintConfig: 'training.hints',
 } as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS];
 

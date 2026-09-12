@@ -67,7 +67,7 @@ export function DashboardNoTraining(): React.JSX.Element {
         categories.
       </p>
       <p className={styles.links}>
-        <Link to="/puzzles">Go to Puzzles</Link>
+        <Link to="/training">Go to Training</Link>
       </p>
     </div>
   );

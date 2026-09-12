@@ -10,7 +10,7 @@
 import { createElement, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { DEFAULT_LIBRARY_FILTERS } from '@/domain/gameLibrary';
 import { DASHBOARD_TREND_METRICS, useDashboard } from './useDashboard';
 import {
@@ -24,7 +24,7 @@ import {
   type DashboardScenario,
 } from '@/test/fixtures/dashboard/scenarios';
 
-function setup(scenario: DashboardScenario, initialEntry = '/dashboard') {
+function setup(scenario: DashboardScenario, initialEntry = '/statistics') {
   const source = new FakeStatisticsSource(scenario.data);
   const sets = new FakeTrainingSetsSource(
     scenario.activeSets,
@@ -39,6 +39,23 @@ function setup(scenario: DashboardScenario, initialEntry = '/dashboard') {
 
 const DEFAULT_SET_ID = 'fixture:dashboard-set';
 const ARCHIVED_SET_ID = 'fixture:dashboard-archived';
+
+/** Like `setup`, but also exposes the router location so URL writes are assertable. */
+function setupWithLocation(scenario: DashboardScenario, initialEntry = '/statistics') {
+  const source = new FakeStatisticsSource(scenario.data);
+  const sets = new FakeTrainingSetsSource(
+    scenario.activeSets,
+    scenario.archivedSets,
+    scenario.openBlock,
+  );
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(MemoryRouter, { initialEntries: [initialEntry] }, children);
+  const view = renderHook(
+    () => ({ dashboard: useDashboard({ source, sets }), location: useLocation() }),
+    { wrapper },
+  );
+  return { source, sets, ...view };
+}
 
 describe('useDashboard', () => {
   it('reads only the Feature-014 methods with side/result all and no combine/backfill', async () => {
@@ -166,5 +183,88 @@ describe('useDashboard', () => {
     expect(result.current.training.selectedSetId).toBeNull();
     expect(result.current.training.sets).toEqual([]);
     expect(result.current.training.stats.data).toBeNull();
+  });
+
+  it('defaults the partition to the most-games concrete partition and persists it', async () => {
+    const { result } = setupWithLocation(richDashboardScenario());
+
+    await waitFor(() => expect(result.current.dashboard.game.metrics.data).not.toBeNull());
+    await waitFor(() => expect(result.current.dashboard.partition).toBe('lichess:rapid'));
+    await waitFor(() =>
+      expect(new URLSearchParams(result.current.location.search).get('partition')).toBe(
+        'lichess:rapid',
+      ),
+    );
+  });
+
+  it('preserves an explicit all partition param without replacing it', async () => {
+    const { result } = setupWithLocation(richDashboardScenario(), '/statistics?partition=all');
+
+    await waitFor(() => expect(result.current.dashboard.game.metrics.data).not.toBeNull());
+    await waitFor(() => expect(result.current.dashboard.partition).toBe('all'));
+    expect(new URLSearchParams(result.current.location.search).get('partition')).toBe('all');
+  });
+
+  it('restores a valid concrete partition from the URL', async () => {
+    const { result } = setupWithLocation(
+      richDashboardScenario(),
+      '/statistics?partition=chesscom:blitz',
+    );
+
+    await waitFor(() => expect(result.current.dashboard.game.metrics.data).not.toBeNull());
+    await waitFor(() => expect(result.current.dashboard.partition).toBe('chesscom:blitz'));
+    expect(new URLSearchParams(result.current.location.search).get('partition')).toBe(
+      'chesscom:blitz',
+    );
+  });
+
+  it('falls back safely and rewrites a stale/invalid partition param', async () => {
+    const { result } = setupWithLocation(
+      richDashboardScenario(),
+      '/statistics?partition=lichess:classical',
+    );
+
+    await waitFor(() => expect(result.current.dashboard.game.metrics.data).not.toBeNull());
+    await waitFor(() => expect(result.current.dashboard.partition).toBe('lichess:rapid'));
+    await waitFor(() =>
+      expect(new URLSearchParams(result.current.location.search).get('partition')).toBe(
+        'lichess:rapid',
+      ),
+    );
+  });
+
+  it('selects a partition and coexists with the set and filter params', async () => {
+    const { result } = setupWithLocation(richDashboardScenario());
+
+    await waitFor(() =>
+      expect(result.current.dashboard.training.selectedSetId).toBe(DEFAULT_SET_ID),
+    );
+    await waitFor(() => expect(result.current.dashboard.partition).toBe('lichess:rapid'));
+
+    act(() => result.current.dashboard.selectPartition('chesscom:blitz'));
+    await waitFor(() => expect(result.current.dashboard.partition).toBe('chesscom:blitz'));
+    let params = new URLSearchParams(result.current.location.search);
+    expect(params.get('partition')).toBe('chesscom:blitz');
+    expect(params.get('set')).toBe(DEFAULT_SET_ID);
+
+    // A filter write keeps the selected partition and set.
+    act(() =>
+      result.current.dashboard.updateFilters({ ...DEFAULT_LIBRARY_FILTERS, platform: 'lichess' }),
+    );
+    await waitFor(() =>
+      expect(new URLSearchParams(result.current.location.search).get('pl')).toBe('lichess'),
+    );
+    params = new URLSearchParams(result.current.location.search);
+    expect(params.get('partition')).toBe('chesscom:blitz');
+    expect(params.get('set')).toBe(DEFAULT_SET_ID);
+
+    // A set write keeps the selected partition and filters.
+    act(() => result.current.dashboard.selectSet(ARCHIVED_SET_ID));
+    await waitFor(() =>
+      expect(new URLSearchParams(result.current.location.search).get('set')).toBe(ARCHIVED_SET_ID),
+    );
+    params = new URLSearchParams(result.current.location.search);
+    expect(params.get('partition')).toBe('chesscom:blitz');
+    expect(params.get('pl')).toBe('lichess');
   });
 });

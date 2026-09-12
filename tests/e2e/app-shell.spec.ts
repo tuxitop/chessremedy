@@ -6,7 +6,7 @@ test.describe('App shell (production build)', () => {
     await expect(page).toHaveTitle(/ChessRemedy/);
     await expect(page.getByRole('heading', { name: 'ChessRemedy' })).toBeVisible();
     await expect(page.getByTestId('app-shell')).toBeVisible();
-    for (const label of ['Home', 'Games', 'Analysis', 'Puzzles', 'Dashboard', 'Settings']) {
+    for (const label of ['Home', 'Games', 'Training', 'Statistics', 'Analysis', 'Settings']) {
       await expect(page.getByTestId(`nav-${label.toLowerCase()}`)).toBeVisible();
     }
   });

@@ -66,19 +66,6 @@
   font-size: var(--font-size-sm);
 }
 
-.selectionCluster {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
-}
-
-.selectionCount {
-  font-weight: 600;
-  color: var(--color-fg);
-  font-size: var(--font-size-sm);
-}
-
 .searchRow {
   display: flex;
   align-items: center;

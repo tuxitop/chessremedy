@@ -18,6 +18,7 @@ import {
   CYCLE_CONFIG_VERSION,
   CYCLE_METRICS_VERSION,
   type CycleConfig,
+  type HintConfig,
   type OrderingPolicy,
   type RetryFailed,
   type TacticalTrainingSetRow,
@@ -358,11 +359,19 @@ function isHintLevel(value: unknown): value is 1 | 2 | 3 | 4 {
   return value === 1 || value === 2 || value === 3 || value === 4;
 }
 
-type HintValidation =
-  | { readonly ok: true; readonly config: CycleConfig['hints'] }
+/** Result of `validateHintConfig`. */
+export type ValidateHintConfigResult =
+  | { readonly ok: true; readonly config: HintConfig }
   | { readonly ok: false; readonly message: string };
 
-function validateHintConfig(raw: unknown): HintValidation {
+/**
+ * Validate an untyped persisted `HintConfig` (levels subset of `1..4`,
+ * `firstHintLevel` in `1..4`; an empty `enabledLevels` is a valid "hints off").
+ * Never coerces or defaults a value; extra keys are dropped. Exported so the
+ * global default-hint settings hook can validate the stored value without
+ * synthesizing a whole `CycleConfig`.
+ */
+export function validateHintConfig(raw: unknown): ValidateHintConfigResult {
   if (typeof raw !== 'object' || raw === null) {
     return { ok: false, message: 'hints must be an object.' };
   }

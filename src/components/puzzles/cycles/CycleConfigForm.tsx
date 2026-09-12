@@ -150,6 +150,15 @@ export function CycleConfigForm({
           />
         </label>
 
+        <p
+          className={`${styles.helpText} ${styles.targetsHelp}`}
+          data-testid="cycle-config-targets-help"
+        >
+          Target accuracy and target solving time are informational only — displayed targets, never
+          gates. A cycle is never blocked, failed or completed differently because a target is
+          missed.
+        </p>
+
         <label className={styles.field}>
           <span className={styles.label}>Planned cycles</span>
           <input
@@ -191,6 +200,12 @@ export function CycleConfigForm({
             <span>Allow skipping puzzles</span>
           </label>
         </div>
+        <p className={styles.helpText} data-testid="cycle-config-hints-help">
+          Level 1 — Relevant piece (text only). Level 2 — Piece square highlight. Level 3 —
+          Destination square of the first solution move. Level 4 — Full first move in SAN. Hints
+          never fail a puzzle and never count as a wrong move; the reveal starts at the first level
+          and ascends, skipping disabled levels, capped at Level 4.
+        </p>
       </fieldset>
 
       <section className={styles.snapshot} aria-labelledby={`${idPrefix}-snapshot-title`}>

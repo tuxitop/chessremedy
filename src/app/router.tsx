@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { ROUTES } from './routes';
+import { legacyRedirectRoutes } from './redirects';
 import { AppShell } from '@/components/layout/AppShell';
 import { HomePage } from '@/pages/HomePage';
 import { GamesPage } from '@/pages/GamesPage';
@@ -45,15 +46,15 @@ const CycleSessionPage = lazy(() =>
   import('@/pages/CycleSessionPage').then((m) => ({ default: m.CycleSessionPage })),
 );
 
-// The dashboard pulls in the Recharts bundle; keep it out of the initial
+// The statistics page pulls in the Recharts bundle; keep it out of the initial
 // bundle alongside the other heavy pages.
-const DashboardPage = lazy(() =>
-  import('@/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })),
+const StatisticsPage = lazy(() =>
+  import('@/pages/StatisticsPage').then((m) => ({ default: m.StatisticsPage })),
 );
 
 // react-router-dom@7 enables v7 future flags by default; no `future` option
 // is needed (and the option is no longer accepted in v7).
-export const router = createBrowserRouter([
+export const appRoutes: RouteObject[] = [
   {
     path: ROUTES.home,
     element: <AppShell />,
@@ -85,24 +86,27 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
-      { path: 'puzzles', element: <TrainingHomePage /> },
-      { path: 'puzzles/new', element: <SetEditorPage /> },
-      { path: 'puzzles/mastered', element: <MasteredPuzzlesPage /> },
-      { path: 'puzzles/sets/:setId', element: <SetDetailPage /> },
+      { path: 'training', element: <TrainingHomePage /> },
+      { path: 'training/new', element: <SetEditorPage /> },
+      { path: 'training/mastered', element: <MasteredPuzzlesPage /> },
+      { path: 'training/sets/:setId', element: <SetDetailPage /> },
       {
-        path: 'puzzles/sets/:setId/cycles/:cycleNumber',
+        path: 'training/sets/:setId/cycles/:cycleNumber',
         element: (
           <Suspense fallback={null}>
             <CycleSessionPage />
           </Suspense>
         ),
       },
-      { path: 'puzzles/sets/:setId/cycles/:cycleNumber/results', element: <CycleResultsPage /> },
       {
-        path: 'dashboard',
+        path: 'training/sets/:setId/cycles/:cycleNumber/results',
+        element: <CycleResultsPage />,
+      },
+      {
+        path: 'statistics',
         element: (
           <Suspense fallback={null}>
-            <DashboardPage />
+            <StatisticsPage />
           </Suspense>
         ),
       },
@@ -115,7 +119,10 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
+      ...legacyRedirectRoutes,
       { path: '*', element: <NotFoundPage /> },
     ],
   },
-]);
+];
+
+export const router = createBrowserRouter(appRoutes);
