@@ -28,7 +28,12 @@ import {
   WOODPECKER_PLAN_CYCLES,
   type TacticalTrainingSetRow,
 } from '@/domain/training';
-import { cycleFixture, legitimateFirstTryRows } from '@/domain/training/test-support';
+import {
+  cycleAttemptFixture,
+  cycleFixture,
+  legacyAutoSetFixture,
+  legitimateFirstTryRows,
+} from '@/domain/training/test-support';
 import { TrainingSetsService } from './training-sets-service';
 
 const NOW = 1_700_000_000_000;
@@ -406,7 +411,7 @@ describe('TrainingSetsService', () => {
     expect(stored?.completedAt).toBeNull();
   });
 
-  it('refuses every mutation of a Woodpecker block except closeBlock', async () => {
+  it('refuses every mutation of a Woodpecker block except closeBlock and delete', async () => {
     const service = makeService();
     await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
     const block = await createBlock(service, 200);
@@ -427,14 +432,79 @@ describe('TrainingSetsService', () => {
       ok: false,
       reason: 'auto-set-immutable',
     });
-    expect(await service.delete(block.id)).toEqual({
-      ok: false,
-      reason: 'auto-set-immutable',
-    });
 
     const stored = await service.getOpenBlock();
     expect(stored?.id).toBe(block.id);
     expect(stored?.status).toBe('active');
+  });
+
+  it('deletes an open block with an in-progress cycle, cascading cycles/attempts and freeing the slot', async () => {
+    const service = makeService();
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
+    const block = await createBlock(service, 200);
+    const cycle = cycleFixture({
+      id: 'cycle:open',
+      trainingSetId: block.id,
+      cycleNumber: 1,
+      status: 'inProgress',
+      puzzleIds: block.puzzleIds,
+    });
+    await trainingCyclesRepository.create(cycle);
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: cycle.id,
+        trainingSetId: block.id,
+        puzzleId: block.puzzleIds[0]!,
+      }),
+    );
+
+    expect(await service.delete(block.id)).toEqual({ ok: true });
+
+    expect(await trainingSetsRepository.get(block.id)).toBeUndefined();
+    expect(await trainingCyclesRepository.get(cycle.id)).toBeUndefined();
+    expect(await attemptsRepository.listForCycle(cycle.id)).toEqual([]);
+    expect(await service.getOpenBlock()).toBeUndefined();
+    // Puzzles remain and the freed slot accepts a fresh block.
+    expect(await puzzlesRepository.countForGame('game:pool-1')).toBe(1);
+    const next = await service.createWoodpeckerBlock({ size: 200 });
+    expect(next.ok).toBe(true);
+  });
+
+  it('deletes a closed block', async () => {
+    const service = makeService();
+    await puzzlesRepository.addIfAbsent([poolPuzzle(1, 10)]);
+    const block = await createBlock(service, 200);
+    await service.closeBlock(block.id);
+
+    expect(await service.delete(block.id)).toEqual({ ok: true });
+    expect(await trainingSetsRepository.get(block.id)).toBeUndefined();
+    expect(await service.list({ status: 'archived' })).toEqual([]);
+  });
+
+  it('does not treat a legacy active auto row as a block and can delete it', async () => {
+    const service = makeService();
+    const pool = [poolPuzzle(1, 10)];
+    await puzzlesRepository.addIfAbsent(pool);
+    await trainingSetsRepository.create(
+      legacyAutoSetFixture('auto:all-puzzles', { puzzleIds: [idOf(pool[0]!)] }),
+    );
+
+    // The legacy row is ignored as the open block, so its members are still pool.
+    expect(await service.getOpenBlock()).toBeUndefined();
+    expect((await service.listPool()).map(idOf)).toEqual([idOf(pool[0]!)]);
+
+    // A real block can still be created (the legacy row does not occupy the slot).
+    const block = await createBlock(service, 200);
+    expect(block.puzzleIds).toEqual([idOf(pool[0]!)]);
+
+    // The legacy row is deletable like any set.
+    expect(await service.delete('auto:all-puzzles')).toEqual({ ok: true });
+    expect(await trainingSetsRepository.get('auto:all-puzzles')).toBeUndefined();
+  });
+
+  it('exposes no ensureAutoSets (no auto-create path)', () => {
+    const service = makeService();
+    expect('ensureAutoSets' in service).toBe(false);
   });
 
   it('seeds a new set and block from the stored global hint default', async () => {

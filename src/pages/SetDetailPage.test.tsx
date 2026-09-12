@@ -211,17 +211,72 @@ describe('SetDetailPage', () => {
       '2 puzzles in this block (fixed)',
     );
 
-    // No rename, config editing, archive or delete for a block.
+    // No rename, config editing or archive for a block, and its own delete
+    // control (distinct from the custom-set delete).
     expect(screen.queryByTestId('set-detail-name-input')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-save-name')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-save-config')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-archive')).not.toBeInTheDocument();
     expect(screen.queryByTestId('set-detail-delete')).not.toBeInTheDocument();
+    expect(screen.getByTestId('set-detail-delete-block')).toBeInTheDocument();
 
     // Finish/Abandon and starting a cycle are available.
     expect(screen.getByTestId('set-detail-finish-block')).toBeInTheDocument();
     expect(screen.getByTestId('set-detail-abandon-block')).toBeInTheDocument();
     expect(screen.getByTestId('set-detail-start-cycle')).toBeEnabled();
+  });
+
+  it('deletes an open block after a confirmation naming it and its cycle/attempt counts', async () => {
+    await seedBlock();
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'block-cycle-1',
+        trainingSetId: BLOCK_ID,
+        cycleNumber: 1,
+        status: 'completed',
+        puzzleIds: PUZZLE_IDS,
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'block-cycle-1',
+        trainingSetId: BLOCK_ID,
+        puzzleId: PUZZLE_IDS[0]!,
+      }),
+    );
+
+    renderDetail(BLOCK_ID);
+    await waitForDetail();
+
+    fireEvent.click(screen.getByTestId('set-detail-delete-block'));
+    const dialog = screen.getByTestId('set-detail-delete-block-dialog');
+    expect(dialog).toHaveTextContent('Delete “Woodpecker block”?');
+    expect(screen.getByTestId('set-detail-delete-block-dialog-details')).toHaveTextContent(
+      '1 cycle',
+    );
+    expect(screen.getByTestId('set-detail-delete-block-dialog-details')).toHaveTextContent(
+      '1 recorded attempt',
+    );
+
+    fireEvent.click(screen.getByTestId('set-detail-delete-block-dialog-confirm'));
+    await screen.findByTestId('training-home-stub');
+    expect(await trainingSetsRepository.get(BLOCK_ID)).toBeUndefined();
+  });
+
+  it('deletes a closed block', async () => {
+    await seedBlock();
+    renderDetail(BLOCK_ID);
+    await waitForDetail();
+
+    fireEvent.click(screen.getByTestId('set-detail-finish-block'));
+    fireEvent.click(screen.getByTestId('set-detail-close-dialog-confirm'));
+    await screen.findByTestId('set-detail-block-closed');
+
+    fireEvent.click(screen.getByTestId('set-detail-delete-block'));
+    fireEvent.click(screen.getByTestId('set-detail-delete-block-dialog-confirm'));
+
+    await screen.findByTestId('training-home-stub');
+    expect(await trainingSetsRepository.get(BLOCK_ID)).toBeUndefined();
   });
 
   it('finishes a block after a confirmation naming it and closes it', async () => {

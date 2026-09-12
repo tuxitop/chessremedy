@@ -20,6 +20,7 @@
 
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { PuzzleRow } from '@/domain/puzzle/types';
+import type { BlockRecipe, TacticalTrainingSetRow } from './cycleTypes';
 
 /** Default one-click Woodpecker block size (`domain/tactical-training.md`). */
 export const DEFAULT_BLOCK_SIZE = 200;
@@ -49,6 +50,25 @@ export const QUICK_TRAIN_SET_ID = '__quick_train__';
  * stored rows (Feature 013 §12).
  */
 export const BLOCK_RECIPE_VERSION = 1;
+
+/**
+ * A training-set row narrowed to a one-click **Woodpecker block**: an `auto`
+ * source carrying the `woodpeckerBlock` recipe.
+ */
+export type WoodpeckerBlockSet = TacticalTrainingSetRow & {
+  readonly source: { readonly kind: 'auto'; readonly recipe: BlockRecipe };
+};
+
+/**
+ * Whether a set is a one-click **Woodpecker block**: `source.kind === 'auto'`
+ * **and** `source.recipe.kind === 'woodpeckerBlock'` (spec §1). The recipe check
+ * is deliberately defensive — persisted rows are untrusted, so a pre-block-model
+ * legacy `{ kind: 'auto' }` row without a usable recipe returns `false` and can
+ * never be read as the open block even if the startup cleanup has not run.
+ */
+export function isWoodpeckerBlock(set: TacticalTrainingSetRow): set is WoodpeckerBlockSet {
+  return set.source.kind === 'auto' && set.source.recipe?.kind === 'woodpeckerBlock';
+}
 
 /** Inputs to `derivePool`. */
 export interface DerivePoolInput {

@@ -71,8 +71,9 @@ export {
   WOODPECKER_PLAN_CYCLES,
   derivePool,
   formWoodpeckerBlock,
+  isWoodpeckerBlock,
 } from './autoSet';
-export type { DerivePoolInput, FormWoodpeckerBlockInput } from './autoSet';
+export type { DerivePoolInput, FormWoodpeckerBlockInput, WoodpeckerBlockSet } from './autoSet';
 export {
   MASTERY_REQUIRED_CYCLES,
   MASTERY_VERSION,

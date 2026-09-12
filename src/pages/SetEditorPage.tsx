@@ -19,6 +19,7 @@ import type { TacticalObjective } from '@/domain/tactics';
 import {
   DEFAULT_CYCLE_CONFIG,
   DEFAULT_TARGET_SIZE,
+  isWoodpeckerBlock,
   resolveSetMembership,
   type CycleConfig,
   type OrderingPolicy,
@@ -174,7 +175,7 @@ export function SetEditorPage({
           setLoading(false);
           return;
         }
-        if (set.source.kind === 'auto') {
+        if (isWoodpeckerBlock(set)) {
           setEditingAuto(true);
           setName(set.name);
           setLoading(false);

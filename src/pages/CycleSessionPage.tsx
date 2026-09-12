@@ -10,6 +10,7 @@ import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
   QUICK_TRAIN_SET_ID,
+  isWoodpeckerBlock,
   spacingNudgeFor,
   type CycleSpacingNudge,
   type PresentationOutcome,
@@ -133,10 +134,9 @@ export function CycleSessionPage({
         const map = new Map(rows.map((row) => [puzzleIdOf(row.sourceGameId, row.sourcePly), row]));
         // The spacing nudge is a block rule (spec §4): find the previous cycle of
         // this block and nudge when it ended less than ~1 day before this one.
-        const spacing =
-          resolvedSet.source.kind === 'auto'
-            ? spacingNudgeFor(await cyclesRepo.listForSet(setId), cycle)
-            : null;
+        const spacing = isWoodpeckerBlock(resolvedSet)
+          ? spacingNudgeFor(await cyclesRepo.listForSet(setId), cycle)
+          : null;
         setData({ set: resolvedSet, cycle, puzzles: map, spacing });
         setError(null);
         setLoading(false);

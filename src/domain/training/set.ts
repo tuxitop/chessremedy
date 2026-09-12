@@ -194,7 +194,8 @@ export function setSourceLabel(source: SetSource): string {
     return `Game ${source.gameId}`;
   }
   if (source.kind === 'auto') {
-    return `Woodpecker block (${source.recipe.size})`;
+    const size = source.recipe?.size;
+    return size === undefined ? 'Woodpecker block' : `Woodpecker block (${size})`;
   }
   const parts = poolFilterLabels(source.filters);
   return parts.length === 0 ? 'Puzzle pool' : `Puzzle pool (${parts.join(', ')})`;

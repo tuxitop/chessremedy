@@ -439,6 +439,23 @@ export function blockSetFixture(overrides: SetFixtureOverrides = {}): TacticalTr
 }
 
 /**
+ * A deterministic **legacy** auto-set row: `source.kind === 'auto'` with no
+ * `recipe` — the untrusted pre-block-model shape the startup cleanup removes.
+ * The `source` is cast because the current `SetSource` union requires a recipe
+ * for `auto`; the fixture deliberately documents the persisted legacy shape.
+ */
+export function legacyAutoSetFixture(
+  id: string,
+  overrides: SetFixtureOverrides = {},
+): TacticalTrainingSetRow {
+  return setFixture({
+    id,
+    source: { kind: 'auto' } as unknown as SetSource,
+    ...overrides,
+  });
+}
+
+/**
  * A synthetic pool row for block/pool derivation: provenance/difficulty only,
  * all other fields copied from the `mate-one` fixture.
  */

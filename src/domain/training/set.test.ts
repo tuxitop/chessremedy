@@ -221,4 +221,11 @@ describe('block sources', () => {
       }),
     ).toEqual([]);
   });
+
+  it('labels a legacy/malformed auto source without a size instead of throwing', () => {
+    expect(setSourceLabel({ kind: 'auto' } as unknown as SetSource)).toBe('Woodpecker block');
+    expect(setSourceLabel({ kind: 'auto', recipe: {} } as unknown as SetSource)).toBe(
+      'Woodpecker block',
+    );
+  });
 });

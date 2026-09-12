@@ -1,6 +1,10 @@
 import type * as React from 'react';
 import { Link } from 'react-router-dom';
-import type { TacticalTrainingSetRow, TrainingCycleRow } from '@/domain/training';
+import {
+  isWoodpeckerBlock,
+  type TacticalTrainingSetRow,
+  type TrainingCycleRow,
+} from '@/domain/training';
 import { cycleStatusLabel, formatTimestamp } from './labels';
 import styles from './SetCard.module.css';
 
@@ -25,8 +29,8 @@ export interface SetCardProps {
  * One training-set card for the training home. Deliberate card layout (not a
  * shrunk table); absent data is stated in words — a set with no puzzles, no
  * cycles or no activity never renders a bare `0`. A one-click Woodpecker block
- * (`source.kind === 'auto'`) is badged and shows its fixed recipe size; custom
- * sets render without the block badge.
+ * (`isWoodpeckerBlock`) is badged and shows its fixed recipe size; custom sets
+ * and legacy `auto` rows without the block recipe render without the badge.
  */
 export function SetCard({
   set,
@@ -37,8 +41,8 @@ export function SetCard({
   emptyCountLabel,
 }: SetCardProps): React.JSX.Element {
   const activity = formatTimestamp(lastActivityAt);
-  const isBlock = set.source.kind === 'auto';
-  const blockSize = set.source.kind === 'auto' ? set.source.recipe.size : null;
+  const isBlock = isWoodpeckerBlock(set);
+  const blockSize = isBlock && set.source.kind === 'auto' ? set.source.recipe.size : null;
   return (
     <article className={styles.card} data-testid={`set-card-${set.id}`}>
       <h2 className={styles.title}>

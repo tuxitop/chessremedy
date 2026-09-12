@@ -14,6 +14,7 @@ import { ROUTES, trainingCyclePath, trainingCycleResultsPath } from '@/app/route
 import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
+  isWoodpeckerBlock,
   setSourceLabel,
   type CycleConfig,
   type TacticalTrainingSetRow,
@@ -50,10 +51,11 @@ export interface SetDetailPageProps {
 }
 
 /**
- * One training set's detail. A **Woodpecker block** is read-only: its fixed
- * recipe/size and frozen membership are shown, with Finish/Abandon (both close
- * it and return its still-unmastered members to the pool) and Start/Continue
- * cycle; there is no rename, config editing or delete. A custom set keeps
+ * One training set's detail. A **Woodpecker block** is read-only apart from its
+ * lifecycle: its fixed recipe/size and frozen membership are shown, with
+ * Finish/Abandon (both close it and return its still-unmastered members to the
+ * pool), **Delete block** (discards the block and its history), and
+ * Start/Continue cycle; there is no rename or config editing. A custom set keeps
  * rename, config editing, membership, archive/unarchive and delete (with a
  * confirmation naming the set and its cycle/attempt counts).
  */
@@ -315,8 +317,8 @@ export function SetDetailPage({
     );
   }
 
-  const isBlock = set.source.kind === 'auto';
-  const blockRecipe = set.source.kind === 'auto' ? set.source.recipe : null;
+  const isBlock = isWoodpeckerBlock(set);
+  const blockRecipe = isBlock && set.source.kind === 'auto' ? set.source.recipe : null;
   const empty = data.membership.length === 0;
 
   return (
@@ -533,6 +535,15 @@ export function SetDetailPage({
               This block is closed. Its still-unmastered puzzles are back in the pool.
             </p>
           )}
+          <div className={styles.inlineActions}>
+            <Button
+              data-testid="set-detail-delete-block"
+              disabled={busy}
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete block
+            </Button>
+          </div>
         </section>
       ) : (
         <section aria-labelledby="set-detail-manage-title">
@@ -560,18 +571,33 @@ export function SetDetailPage({
       )}
 
       {confirmDelete ? (
-        <ConfirmDialog
-          testId="set-detail-delete-dialog"
-          title={`Delete “${set.name}”?`}
-          message="This permanently removes the set, its cycles and their recorded attempts from your local library. The puzzles themselves are kept. This cannot be undone."
-          details={[
-            `${data.cycles.length} ${data.cycles.length === 1 ? 'cycle' : 'cycles'}`,
-            `${data.attemptCount} recorded ${data.attemptCount === 1 ? 'attempt' : 'attempts'}`,
-          ]}
-          confirmLabel="Delete set"
-          onConfirm={confirmDeletion}
-          onCancel={() => setConfirmDelete(false)}
-        />
+        isBlock ? (
+          <ConfirmDialog
+            testId="set-detail-delete-block-dialog"
+            title={`Delete “${set.name}”?`}
+            message="This permanently removes the block, its cycles and their recorded attempts from your local library. The puzzles themselves are kept and return to the pool. This cannot be undone."
+            details={[
+              `${data.cycles.length} ${data.cycles.length === 1 ? 'cycle' : 'cycles'}`,
+              `${data.attemptCount} recorded ${data.attemptCount === 1 ? 'attempt' : 'attempts'}`,
+            ]}
+            confirmLabel="Delete block"
+            onConfirm={confirmDeletion}
+            onCancel={() => setConfirmDelete(false)}
+          />
+        ) : (
+          <ConfirmDialog
+            testId="set-detail-delete-dialog"
+            title={`Delete “${set.name}”?`}
+            message="This permanently removes the set, its cycles and their recorded attempts from your local library. The puzzles themselves are kept. This cannot be undone."
+            details={[
+              `${data.cycles.length} ${data.cycles.length === 1 ? 'cycle' : 'cycles'}`,
+              `${data.attemptCount} recorded ${data.attemptCount === 1 ? 'attempt' : 'attempts'}`,
+            ]}
+            confirmLabel="Delete set"
+            onConfirm={confirmDeletion}
+            onCancel={() => setConfirmDelete(false)}
+          />
+        )
       ) : null}
 
       {closeReason !== null ? (

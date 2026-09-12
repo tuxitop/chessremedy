@@ -29,6 +29,7 @@ import {
   WOODPECKER_PLAN_CYCLES,
   derivePool,
   formWoodpeckerBlock,
+  isWoodpeckerBlock,
   masteredPuzzleIds,
   resolveSetMembership,
   validateCycleConfig,
@@ -152,7 +153,8 @@ export interface SetNotFound {
 /**
  * A mutation was refused because the set is a one-click Woodpecker block: a
  * block has no rename, no membership editing and no per-cycle refresh; it
- * closes via `closeBlock` (Finish/Abandon) only.
+ * closes via `closeBlock` (Finish/Abandon) only. Deletion is **allowed** for a
+ * block (open or closed) and is not refused with this result.
  */
 export interface AutoSetImmutable {
   readonly ok: false;
@@ -180,7 +182,7 @@ export type SetMutationResult =
   | NotABlock;
 
 /** Result of a set deletion: success or a typed rejection. */
-export type SetDeleteResult = { readonly ok: true } | SetNotFound | AutoSetImmutable;
+export type SetDeleteResult = { readonly ok: true } | SetNotFound;
 
 /** Constructor options for `TrainingSetsService`. */
 export interface TrainingSetsServiceOptions {
@@ -387,7 +389,7 @@ export class TrainingSetsService {
     if (existing === undefined) {
       return { ok: false, reason: 'not-found' };
     }
-    if (!isBlock(existing)) {
+    if (!isWoodpeckerBlock(existing)) {
       return { ok: false, reason: 'not-a-block' };
     }
     if (existing.status === 'archived') {
@@ -436,18 +438,16 @@ export class TrainingSetsService {
   }
 
   /**
-   * Delete a set and everything it owns (its cycles and their attempt rows, in
-   * the repository's transaction). Puzzles are untouched. Idempotent result
-   * reporting: an absent id is `not-found`; a Woodpecker block is refused
-   * (`auto-set-immutable`) — a block is closed, never deleted.
+   * Delete a set or a Woodpecker block (open or closed) and everything it owns
+   * (its cycles and their attempt rows, in the repository's transaction).
+   * Puzzles are untouched. Idempotent result reporting: an absent id is
+   * `not-found`; delete is **kind-agnostic** and never refused for a block —
+   * Finish/Abandon archive and preserve history, while delete discards it.
    */
   async delete(id: string): Promise<SetDeleteResult> {
     const existing = await this.sets.get(id);
     if (existing === undefined) {
       return { ok: false, reason: 'not-found' };
-    }
-    if (isBlock(existing)) {
-      return { ok: false, reason: 'auto-set-immutable' };
     }
     await this.sets.delete(id);
     return { ok: true };
@@ -498,7 +498,7 @@ export class TrainingSetsService {
     if (existing === undefined) {
       return { ok: false, reason: 'not-found' };
     }
-    if (isBlock(existing)) {
+    if (isWoodpeckerBlock(existing)) {
       return { ok: false, reason: 'auto-set-immutable' };
     }
     const updated = await this.sets.update(id, patch);
@@ -507,11 +507,6 @@ export class TrainingSetsService {
     }
     return { ok: true, set: updated };
   }
-}
-
-/** Whether a set is a one-click Woodpecker block (`source.kind === 'auto'`). */
-function isBlock(set: TacticalTrainingSetRow): boolean {
-  return set.source.kind === 'auto';
 }
 
 /** The default cycle config with the requested ordering and global hints. */

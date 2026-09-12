@@ -9,6 +9,7 @@ import {
   blockSetFixture,
   cycleAttemptFixture,
   cycleFixture,
+  legacyAutoSetFixture,
   setFixture,
 } from '@/domain/training/test-support';
 
@@ -158,6 +159,10 @@ describe('training sets repository', () => {
     await trainingSetsRepository.create(
       blockSetFixture({ id: 'block:archived', status: 'archived', createdAt: 3, updatedAt: 3 }),
     );
+    // A legacy active auto row (no recipe) must never be read as the open block.
+    await trainingSetsRepository.create(
+      legacyAutoSetFixture('auto:all-puzzles', { createdAt: 4, updatedAt: 4, puzzleIds: ['p1'] }),
+    );
 
     expect(await trainingSetsRepository.getOpenBlock()).toEqual(block);
 
@@ -167,5 +172,67 @@ describe('training sets repository', () => {
     expect(closed?.puzzleIds).toEqual(['p1']);
     expect(await trainingSetsRepository.getOpenBlock()).toBeUndefined();
     expect(await trainingSetsRepository.closeBlock('missing', 999)).toBeUndefined();
+  });
+
+  it('delete cascades a Woodpecker block, its cycles and attempts, leaving puzzles and siblings', async () => {
+    const block = blockSetFixture({
+      id: 'block:del',
+      puzzleIds: ['fixture:mate-one:6', 'fixture:mate-two:10'],
+    });
+    const sibling = setFixture({ id: 'set:sibling', puzzleIds: ['fixture:mate-one:6'] });
+    await trainingSetsRepository.create(block);
+    await trainingSetsRepository.create(sibling);
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'block:del:c1', trainingSetId: 'block:del', cycleNumber: 1 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'block:del:c2', trainingSetId: 'block:del', cycleNumber: 2 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'sibling:c1', trainingSetId: 'set:sibling', cycleNumber: 1 }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'block:del:c1',
+        trainingSetId: 'block:del',
+        puzzleId: 'fixture:mate-one:6',
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'block:del:c2',
+        trainingSetId: 'block:del',
+        puzzleId: 'fixture:mate-two:10',
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'sibling:c1',
+        trainingSetId: 'set:sibling',
+        puzzleId: 'fixture:mate-one:6',
+      }),
+    );
+    await puzzlesRepository.addIfAbsent([
+      puzzleRowFixture('mate-one'),
+      puzzleRowFixture('mate-two'),
+    ]);
+
+    await trainingSetsRepository.delete('block:del');
+
+    // The block, its two cycles and both attempts are gone.
+    expect(await trainingSetsRepository.get('block:del')).toBeUndefined();
+    expect(await trainingCyclesRepository.listForSet('block:del')).toEqual([]);
+    expect(await attemptsRepository.listForCycle('block:del:c1')).toEqual([]);
+    expect(await attemptsRepository.listForCycle('block:del:c2')).toEqual([]);
+    expect(await trainingSetsRepository.getOpenBlock()).toBeUndefined();
+
+    // The sibling set and its cycle/attempt are untouched.
+    expect(await trainingSetsRepository.get('set:sibling')).toEqual(sibling);
+    expect(await trainingCyclesRepository.listForSet('set:sibling')).toHaveLength(1);
+    expect(await attemptsRepository.listForCycle('sibling:c1')).toHaveLength(1);
+
+    // Puzzles are never touched by a block deletion.
+    expect(await puzzlesRepository.countForGame('fixture:mate-one')).toBe(1);
+    expect(await puzzlesRepository.countForGame('fixture:mate-two')).toBe(1);
   });
 });

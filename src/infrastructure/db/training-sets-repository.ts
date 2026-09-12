@@ -16,6 +16,7 @@
  */
 
 import type { TacticalTrainingSetRow, TrainingSetStatus } from '@/domain/training';
+import { isWoodpeckerBlock } from '@/domain/training';
 import { db, type ChessRemedyDatabase } from './database';
 import { DexiePuzzleAttemptsRepository } from './attempts-repository';
 
@@ -47,15 +48,18 @@ export interface TrainingSetsRepository {
    */
   update(id: string, patch: TrainingSetUpdate): Promise<TrainingSetsRow | undefined>;
   /**
-   * Delete one set and everything it owns in one transaction: the set row, its
-   * cycles (via the `trainingSetId` index) and its attempt rows (via
-   * `deleteForTrainingSetIds`). Puzzles are deliberately untouched.
+   * Delete one set or Woodpecker block (open or closed) and everything it owns
+   * in one transaction: the set row, its cycles (via the `trainingSetId`
+   * index) and its attempt rows (via `deleteForTrainingSetIds`). Puzzles are
+   * deliberately untouched.
    */
   delete(id: string): Promise<void>;
   /**
    * The single open **Woodpecker block**: the `active` set with
-   * `source.kind === 'auto'`, or `undefined` when none is open (spec §1/§3a).
-   * At most one may be open; the earliest `createdAt` wins defensively.
+   * `source.kind === 'auto'` **and** `source.recipe.kind === 'woodpeckerBlock'`,
+   * or `undefined` when none is open (spec §1/§3a). A pre-block-model legacy
+   * `auto` row without a recipe is ignored. At most one may be open; the
+   * earliest `createdAt` wins defensively.
    */
   getOpenBlock(): Promise<TrainingSetsRow | undefined>;
   /**
@@ -100,7 +104,7 @@ export class DexieTrainingSetsRepository implements TrainingSetsRepository {
 
   async getOpenBlock(): Promise<TrainingSetsRow | undefined> {
     const active = await this.database.trainingSets.where('status').equals('active').toArray();
-    return active.filter(isBlockSet).sort(compareSetRows)[0];
+    return active.filter(isWoodpeckerBlock).sort(compareSetRows)[0];
   }
 
   async closeBlock(id: string, now: number): Promise<TrainingSetsRow | undefined> {
@@ -163,11 +167,6 @@ export class DexieTrainingSetsRepository implements TrainingSetsRepository {
 /** Deterministic listing order: `createdAt` ascending, ties by id. */
 function compareSetRows(a: TrainingSetsRow, b: TrainingSetsRow): number {
   return a.createdAt - b.createdAt || a.id.localeCompare(b.id);
-}
-
-/** Whether a set is a one-click Woodpecker block (`source.kind === 'auto'`). */
-function isBlockSet(row: TrainingSetsRow): boolean {
-  return row.source.kind === 'auto';
 }
 
 export const trainingSetsRepository: TrainingSetsRepository = new DexieTrainingSetsRepository();

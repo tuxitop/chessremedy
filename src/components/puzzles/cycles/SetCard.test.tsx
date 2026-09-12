@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { screen } from '@testing-library/react';
 import { SetCard } from './SetCard';
-import { blockSetFixture, cycleFixture, setFixture } from '@/domain/training/test-support';
+import {
+  blockSetFixture,
+  cycleFixture,
+  legacyAutoSetFixture,
+  setFixture,
+} from '@/domain/training/test-support';
 import { renderWithProviders } from '@/test/test-utils';
 
 describe('SetCard', () => {
@@ -72,5 +77,22 @@ describe('SetCard', () => {
 
     expect(screen.getByTestId('set-card-count-block-empty')).toHaveTextContent('No puzzles yet');
     expect(screen.getByTestId('set-card-count-block-empty')).not.toHaveTextContent('0');
+  });
+
+  it('renders a legacy auto row without a recipe without a block badge or crash', () => {
+    renderWithProviders(
+      <SetCard
+        set={legacyAutoSetFixture('auto:all-puzzles', { name: 'All puzzles' })}
+        puzzleCount={3}
+        cycle={null}
+        lastActivityAt={null}
+        to="/training/sets/auto:all-puzzles"
+      />,
+    );
+
+    expect(screen.getByTestId('set-card-count-auto:all-puzzles')).toHaveTextContent('3 puzzles');
+    expect(screen.queryByTestId('set-card-badge-auto:all-puzzles')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('set-card-block-size-auto:all-puzzles')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('set-card-note-auto:all-puzzles')).not.toBeInTheDocument();
   });
 });

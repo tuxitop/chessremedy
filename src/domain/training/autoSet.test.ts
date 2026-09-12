@@ -11,7 +11,9 @@ import {
   WOODPECKER_PLAN_CYCLES,
   derivePool,
   formWoodpeckerBlock,
+  isWoodpeckerBlock,
 } from './autoSet';
+import { blockSetFixture, legacyAutoSetFixture, setFixture } from './test-support';
 
 const baseRow = puzzleRowFixture('mate-one');
 
@@ -36,6 +38,38 @@ describe('block vocabulary', () => {
     expect(WOODPECKER_PLAN_CYCLES).toBe(6);
     expect(QUICK_TRAIN_SET_ID).toBe('__quick_train__');
     expect(BLOCK_RECIPE_VERSION).toBe(1);
+  });
+});
+
+describe('isWoodpeckerBlock', () => {
+  it('accepts a real Woodpecker block', () => {
+    expect(isWoodpeckerBlock(blockSetFixture())).toBe(true);
+    expect(
+      isWoodpeckerBlock(
+        blockSetFixture({
+          source: { kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: 100 } },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects manual, game and pool sources', () => {
+    expect(isWoodpeckerBlock(setFixture({ source: { kind: 'manual' } }))).toBe(false);
+    expect(isWoodpeckerBlock(setFixture({ source: { kind: 'game', gameId: 'g' } }))).toBe(false);
+    expect(isWoodpeckerBlock(setFixture({ source: { kind: 'pool', filters: {} } }))).toBe(false);
+  });
+
+  it('rejects a legacy auto row without a recipe (untrusted persisted shape)', () => {
+    expect(isWoodpeckerBlock(legacyAutoSetFixture('auto:all-puzzles'))).toBe(false);
+    expect(isWoodpeckerBlock(legacyAutoSetFixture('auto:woodpecker-random'))).toBe(false);
+  });
+
+  it('rejects an auto row carrying an unknown recipe kind', () => {
+    const unknownRecipe = {
+      kind: 'auto',
+      recipe: { kind: 'notWoodpecker', size: 200 },
+    } as unknown as Parameters<typeof isWoodpeckerBlock>[0]['source'];
+    expect(isWoodpeckerBlock(setFixture({ source: unknownRecipe }))).toBe(false);
   });
 });
 

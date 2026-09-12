@@ -25,6 +25,14 @@ const MATERIAL_COMBINATION_PUZZLE_ID = 'fixture:material-combination:8';
 const QUICK_TRAIN_SET_ID = '__quick_train__';
 const MASTERY_SET_ID = 'e2e:mastery-set';
 
+// Feature-013 W4: the deterministic pre-block-model auto-set ids the one-time
+// startup cleanup removes, its settings guard, and the unrelated data the tests
+// assert survives the delete/cleanup cascades.
+const LEGACY_AUTO_SET_IDS = ['auto:all-puzzles', 'auto:woodpecker-random'] as const;
+const LEGACY_CLEANUP_MARKER_KEY = 'training.legacyAutoSetsCleaned';
+const OTHER_SET_ID = 'e2e:other-set';
+const KEEP_BLOCK_ID = 'e2e:keep-block';
+
 const PUZZLE_FIXTURE_NOW = 1_700_000_000_000;
 const PUZZLE_GENERATOR_VERSION = 2;
 const DETECTION_VERSION = 10;
@@ -78,6 +86,25 @@ interface SeedCycle {
   readonly puzzleIds: readonly string[];
   readonly config: typeof MASTERY_CONFIG;
   readonly cycleMetricsVersion: number;
+}
+
+// The persisted `source` variants the raw-IDB seeding needs: a custom set
+// (`manual`), a real Woodpecker block (`auto` + `woodpeckerBlock` recipe) and
+// the untrusted pre-block-model legacy row (`auto` with no recipe).
+type SeedSetSource =
+  | { readonly kind: 'manual' }
+  | { readonly kind: 'auto'; readonly recipe?: { readonly kind: string; readonly size: number } };
+
+interface SeedSet {
+  readonly id: string;
+  readonly name: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly status: 'active' | 'archived';
+  readonly source: SeedSetSource;
+  readonly puzzleIds: readonly string[];
+  readonly targetSize: number;
+  readonly config: typeof MASTERY_CONFIG;
 }
 
 // A valid persisted cycle config, mirroring `DEFAULT_CYCLE_CONFIG`. The seeded
@@ -226,6 +253,55 @@ function masteryCycles(puzzleId: string, cycleIds: readonly string[]): SeedCycle
   }));
 }
 
+/** A deterministic completed cycle row for a set's first cycle. */
+function completedCycle(
+  id: string,
+  trainingSetId: string,
+  puzzleIds: readonly string[],
+  offset = 0,
+): SeedCycle {
+  const startedAt = PUZZLE_FIXTURE_NOW + offset;
+  return {
+    id,
+    trainingSetId,
+    cycleNumber: 1,
+    status: 'completed',
+    startedAt,
+    completedAt: startedAt + 5_000,
+    abandonedAt: null,
+    puzzleIds: [...puzzleIds],
+    config: MASTERY_CONFIG,
+    cycleMetricsVersion: 1,
+  };
+}
+
+/** A deterministic clean first-try attempt row for a puzzle under a set/cycle. */
+function cleanAttempt(
+  puzzleId: string,
+  trainingSetId: string,
+  cycleId: string,
+  offset = 0,
+): SeedAttempt {
+  const startedAt = PUZZLE_FIXTURE_NOW + offset;
+  return {
+    puzzleId,
+    trainingSetId,
+    cycleId,
+    presentationIndex: 1,
+    startedAt,
+    endedAt: startedAt + 5_000,
+    result: 'solvedFirstTry',
+    solvingTimeMs: 5_000,
+    wrongMoveCount: 0,
+    hintCount: 0,
+    highestHintLevel: null,
+    restartCount: 0,
+    solved: true,
+    puzzleGeneratorVersion: PUZZLE_GENERATOR_VERSION,
+    origin: 'tactical',
+  };
+}
+
 /** Open the live `chessremedy` database and write the seed rows. */
 async function seedIndexedDb(
   page: Page,
@@ -233,6 +309,13 @@ async function seedIndexedDb(
     readonly puzzles?: readonly SeedPuzzle[];
     readonly attempts?: readonly SeedAttempt[];
     readonly cycles?: readonly SeedCycle[];
+    readonly sets?: readonly SeedSet[];
+    /**
+     * Remove the `training.legacyAutoSetsCleaned` settings marker in the same
+     * transaction. A fresh boot writes the marker, so the legacy-cleanup test
+     * clears it to simulate an upgrade that already holds legacy rows.
+     */
+    readonly removeLegacyAutoSetsMarker?: boolean;
   },
 ): Promise<void> {
   await page.evaluate(async (data) => {
@@ -243,13 +326,17 @@ async function seedIndexedDb(
     });
     try {
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(['puzzles', 'puzzleAttempts', 'trainingCycles'], 'readwrite');
+        const tx = db.transaction(
+          ['puzzles', 'puzzleAttempts', 'trainingCycles', 'trainingSets', 'settings'],
+          'readwrite',
+        );
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error);
         const puzzles = tx.objectStore('puzzles');
         const attempts = tx.objectStore('puzzleAttempts');
         const cycles = tx.objectStore('trainingCycles');
+        const sets = tx.objectStore('trainingSets');
         for (const row of data.puzzles ?? []) {
           puzzles.put(row);
         }
@@ -258,6 +345,12 @@ async function seedIndexedDb(
         }
         for (const row of data.cycles ?? []) {
           cycles.put(row);
+        }
+        for (const row of data.sets ?? []) {
+          sets.put(row);
+        }
+        if (data.removeLegacyAutoSetsMarker) {
+          tx.objectStore('settings').delete('training.legacyAutoSetsCleaned');
         }
       });
     } finally {
@@ -548,5 +641,172 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     await expect(page.getByTestId(`mastered-puzzle-cycles-${MATE_ONE_PUZZLE_ID}`)).toHaveText(
       '3 distinct cycles',
     );
+  });
+
+  test('deletes an open block from its detail page and frees the slot', async ({ page }) => {
+    await page.goto('/training');
+    await expect(page.getByTestId('training-home-empty')).toBeVisible();
+
+    // An unrelated custom set (with its own attempt) proves the cascade is
+    // scoped to the deleted block.
+    const otherSet: SeedSet = {
+      id: OTHER_SET_ID,
+      name: 'Other set',
+      createdAt: PUZZLE_FIXTURE_NOW,
+      updatedAt: PUZZLE_FIXTURE_NOW,
+      status: 'active',
+      source: { kind: 'manual' },
+      puzzleIds: [MATERIAL_COMBINATION_PUZZLE_ID],
+      targetSize: 10,
+      config: MASTERY_CONFIG,
+    };
+    await seedIndexedDb(page, {
+      puzzles: [MATE_ONE, EXCHANGE_WIN, MATERIAL_COMBINATION],
+      sets: [otherSet],
+    });
+    await page.reload();
+
+    // Create the block through the real one-click action.
+    await page.getByTestId('training-block-create').click();
+    await expect(page.getByTestId('set-detail-block-badge')).toHaveText('Woodpecker block');
+    const blockId = blockIdFromUrl(page);
+
+    // Seed a real cycle + attempt under the created block so the confirmation
+    // has counts and the delete has a cascade to perform.
+    const blockCycle = completedCycle('e2e:block-cycle', blockId, [MATE_ONE_PUZZLE_ID]);
+    await seedIndexedDb(page, {
+      cycles: [blockCycle],
+      attempts: [
+        cleanAttempt(MATE_ONE_PUZZLE_ID, blockId, blockCycle.id),
+        cleanAttempt(MATERIAL_COMBINATION_PUZZLE_ID, OTHER_SET_ID, 'e2e:other-cycle'),
+      ],
+    });
+
+    await page.goto(`/training/sets/${blockId}`);
+    await expect(page.getByTestId('set-detail-block-badge')).toHaveText('Woodpecker block');
+
+    await page.getByTestId('set-detail-delete-block').click();
+    const dialog = page.getByTestId('set-detail-delete-block-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Woodpecker block');
+    const details = page.getByTestId('set-detail-delete-block-dialog-details');
+    await expect(details).toContainText('1 cycle');
+    await expect(details).toContainText('1 recorded attempt');
+    await page.getByTestId('set-detail-delete-block-dialog-confirm').click();
+
+    // Delete navigates home and frees the single open-block slot. (Finish and
+    // Abandon are asserted to archive — not delete — by the earlier
+    // "finishing a block returns its still-unmastered members" test.)
+    await expect(page.getByTestId('training-home')).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/training');
+    await expect(page.getByTestId('training-block-create')).toBeVisible();
+
+    // Raw IDB: the block row, its cycle and its attempt are gone.
+    const sets = await readStore(page, 'trainingSets');
+    expect(sets.some((row) => row.id === blockId)).toBe(false);
+    const cycles = await readStore(page, 'trainingCycles');
+    expect(cycles.some((row) => row.trainingSetId === blockId)).toBe(false);
+    const attempts = await readStore(page, 'puzzleAttempts');
+    expect(attempts.some((row) => row.trainingSetId === blockId)).toBe(false);
+
+    // The other set, its attempt and every puzzle survive untouched.
+    expect(sets.some((row) => row.id === OTHER_SET_ID)).toBe(true);
+    expect(attempts.some((row) => row.trainingSetId === OTHER_SET_ID)).toBe(true);
+    expect((await readStore(page, 'puzzles')).length).toBe(3);
+  });
+
+  test('removes seeded legacy auto sets on reload before the training home renders', async ({
+    page,
+  }) => {
+    // A fresh boot writes the cleanup marker; the test then clears it to
+    // simulate an upgrade that already holds legacy rows.
+    await page.goto('/training');
+    await expect(page.getByTestId('training-home-empty')).toBeVisible();
+
+    const legacySets: SeedSet[] = LEGACY_AUTO_SET_IDS.map((id, index) => ({
+      id,
+      name: `Legacy auto set ${index + 1}`,
+      createdAt: PUZZLE_FIXTURE_NOW,
+      updatedAt: PUZZLE_FIXTURE_NOW,
+      status: 'active',
+      source: { kind: 'auto' },
+      puzzleIds: [MATE_ONE_PUZZLE_ID],
+      targetSize: 10,
+      config: MASTERY_CONFIG,
+    }));
+    const keepSet: SeedSet = {
+      id: OTHER_SET_ID,
+      name: 'Kept set',
+      createdAt: PUZZLE_FIXTURE_NOW,
+      updatedAt: PUZZLE_FIXTURE_NOW,
+      status: 'active',
+      source: { kind: 'manual' },
+      puzzleIds: [EXCHANGE_PUZZLE_ID],
+      targetSize: 10,
+      config: MASTERY_CONFIG,
+    };
+    const keepBlock: SeedSet = {
+      id: KEEP_BLOCK_ID,
+      name: 'Kept block',
+      createdAt: PUZZLE_FIXTURE_NOW,
+      updatedAt: PUZZLE_FIXTURE_NOW,
+      status: 'active',
+      source: { kind: 'auto', recipe: { kind: 'woodpeckerBlock', size: 200 } },
+      puzzleIds: [MATE_ONE_PUZZLE_ID],
+      targetSize: 200,
+      config: MASTERY_CONFIG,
+    };
+    const legacyCycles = LEGACY_AUTO_SET_IDS.map((id, index) =>
+      completedCycle(`e2e:legacy-cycle-${index}`, id, [MATE_ONE_PUZZLE_ID], index * 10_000),
+    );
+    const legacyAttempts = LEGACY_AUTO_SET_IDS.map((id, index) =>
+      cleanAttempt(MATE_ONE_PUZZLE_ID, id, `e2e:legacy-cycle-${index}`, index * 10_000),
+    );
+    const keepCycle = completedCycle('e2e:keep-cycle', OTHER_SET_ID, [EXCHANGE_PUZZLE_ID]);
+
+    await seedIndexedDb(page, {
+      puzzles: [MATE_ONE, EXCHANGE_WIN, MATERIAL_COMBINATION],
+      sets: [...legacySets, keepSet, keepBlock],
+      cycles: [...legacyCycles, keepCycle],
+      attempts: [...legacyAttempts, cleanAttempt(EXCHANGE_PUZZLE_ID, OTHER_SET_ID, keepCycle.id)],
+      removeLegacyAutoSetsMarker: true,
+    });
+
+    // Sanity: the legacy rows are present before the reload.
+    const before = await readStore(page, 'trainingSets');
+    for (const id of LEGACY_AUTO_SET_IDS) {
+      expect(before.some((row) => row.id === id)).toBe(true);
+    }
+
+    await page.reload();
+
+    // The cleanup ran before the home rendered: the real open block is visible.
+    await expect(page.getByTestId('training-home')).toBeVisible();
+    await expect(page.getByTestId('training-block-open-note')).toBeVisible();
+
+    // The two legacy rows and their dependents are gone.
+    const sets = await readStore(page, 'trainingSets');
+    for (const id of LEGACY_AUTO_SET_IDS) {
+      expect(sets.some((row) => row.id === id)).toBe(false);
+    }
+    const cycles = await readStore(page, 'trainingCycles');
+    for (const id of LEGACY_AUTO_SET_IDS) {
+      expect(cycles.some((row) => row.trainingSetId === id)).toBe(false);
+    }
+    const attempts = await readStore(page, 'puzzleAttempts');
+    for (const id of LEGACY_AUTO_SET_IDS) {
+      expect(attempts.some((row) => row.trainingSetId === id)).toBe(false);
+    }
+
+    // Unrelated sets, cycles, attempts and puzzles survive.
+    expect(sets.some((row) => row.id === OTHER_SET_ID)).toBe(true);
+    expect(sets.some((row) => row.id === KEEP_BLOCK_ID)).toBe(true);
+    expect(cycles.some((row) => row.trainingSetId === OTHER_SET_ID)).toBe(true);
+    expect(attempts.some((row) => row.trainingSetId === OTHER_SET_ID)).toBe(true);
+    expect((await readStore(page, 'puzzles')).length).toBe(3);
+
+    // The guard marker is written after the successful cleanup.
+    const settings = await readStore(page, 'settings');
+    expect(settings.find((row) => row.key === LEGACY_CLEANUP_MARKER_KEY)?.value).toBe(true);
   });
 });

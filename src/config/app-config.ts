@@ -21,6 +21,7 @@ export const SETTINGS_KEYS = {
   lichessFilters: 'import.lichess.filters',
   puzzleTimer: 'puzzle.timer',
   defaultHintConfig: 'training.hints',
+  legacyAutoSetsCleaned: 'training.legacyAutoSetsCleaned',
 } as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS];
 

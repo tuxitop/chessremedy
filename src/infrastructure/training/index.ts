@@ -78,3 +78,11 @@ export type {
   TrainingResult,
 } from '@/domain/training';
 export type { OutcomeTrigger } from '@/domain/training';
+
+// Feature 013 — one-time legacy auto-set cleanup (guarded, idempotent,
+// best-effort) run from the application bootstrap before the first render.
+export { LEGACY_AUTO_SET_IDS, runLegacyAutoSetCleanup } from './legacy-auto-set-cleanup';
+export type {
+  LegacyAutoSetCleanupDeps,
+  LegacyAutoSetCleanupResult,
+} from './legacy-auto-set-cleanup';
