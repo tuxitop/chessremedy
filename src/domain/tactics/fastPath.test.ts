@@ -31,6 +31,7 @@ function rawCandidate(fen: string): RawCandidate {
     evalCpAfterUserMove: -10,
     candidateGenerationVersion: 1,
     createdAt: 1,
+    updatedAt: 1,
   };
 }
 

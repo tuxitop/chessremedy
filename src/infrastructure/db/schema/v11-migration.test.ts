@@ -121,6 +121,9 @@ const TABLE_LIST = [
   'puzzleAttempts',
   'trainingSets',
   'trainingCycles',
+  'syncState',
+  'syncTombstones',
+  'syncBackups',
 ] as const;
 
 describe('v10 → v11 schema migration (platform time-control re-normalization)', () => {
@@ -131,7 +134,7 @@ describe('v10 → v11 schema migration (platform time-control re-normalization)'
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(11);
+      expect(migrated.verno).toBe(12);
       // Data-only version: the table list is unchanged.
       expect(migrated.tables.map((t) => t.name)).toEqual([...TABLE_LIST]);
 

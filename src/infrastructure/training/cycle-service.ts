@@ -282,12 +282,14 @@ export class CycleService {
       return { ok: false, reason: 'empty-pool' };
     }
     const cycleNumber = nextCycleNumber(existing.map((cycle) => cycle.cycleNumber));
+    const startedAt = this.now();
     const cycle: TrainingCycleRow = {
       id: this.newId(),
       trainingSetId: QUICK_TRAIN_SET_ID,
       cycleNumber,
       status: 'inProgress',
-      startedAt: this.now(),
+      startedAt,
+      updatedAt: startedAt,
       completedAt: null,
       abandonedAt: null,
       puzzleIds: [...puzzleIds],

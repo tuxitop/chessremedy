@@ -107,7 +107,9 @@ export class DexiePuzzleCandidatesRepository implements PuzzleCandidatesReposito
     if (rows.length === 0) {
       return;
     }
-    await this.database.puzzleCandidates.bulkPut([...rows]);
+    await this.database.puzzleCandidates.bulkPut(
+      rows.map((row) => ({ ...row, updatedAt: row.updatedAt ?? row.createdAt })),
+    );
   }
 
   async listForGameAndAnalysis(
@@ -138,6 +140,7 @@ export class DexiePuzzleCandidatesRepository implements PuzzleCandidatesReposito
   ): Promise<void> {
     await this.database.puzzleCandidates.update([analysisId, sourcePly], {
       verificationStatus: status,
+      updatedAt: Date.now(),
     });
   }
 
@@ -150,6 +153,7 @@ export class DexiePuzzleCandidatesRepository implements PuzzleCandidatesReposito
     await this.database.puzzleCandidates.update([analysisId, sourcePly], {
       verificationStatus: 'failed',
       rejectionReason: reason,
+      updatedAt: Date.now(),
       ...(line !== undefined ? { verificationTopLine: line } : {}),
     });
   }

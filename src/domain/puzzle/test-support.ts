@@ -159,6 +159,7 @@ function specFor(kind: PuzzleFixtureKind): VerifiedTacticalCandidate {
     evalCpAfterUserMove: -220,
     candidateGenerationVersion: 2,
     createdAt: PUZZLE_FIXTURE_NOW - 1_000,
+    updatedAt: PUZZLE_FIXTURE_NOW - 1_000,
     tacticalObjective: spec.tacticalObjective,
     candidateSolutionLength: spec.bestPv.length,
     verificationMetadata: metadataFor(kind),

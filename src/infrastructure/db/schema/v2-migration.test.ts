@@ -26,7 +26,7 @@ describe('v1 → v2 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(11);
+      expect(migrated.verno).toBe(12);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -40,6 +40,9 @@ describe('v1 → v2 schema migration', () => {
         'puzzleAttempts',
         'trainingSets',
         'trainingCycles',
+        'syncState',
+        'syncTombstones',
+        'syncBackups',
       ]);
 
       const theme = await migrated.settings.get('theme');
@@ -73,7 +76,7 @@ describe('games survive close/reopen (restart proxy)', () => {
     const second = new ChessRemedyDatabase(name);
     try {
       await second.open();
-      expect(second.verno).toBe(11);
+      expect(second.verno).toBe(12);
       const secondRepo = new DexieGamesRepository(second);
 
       expect(await second.games.count()).toBe(games.length);

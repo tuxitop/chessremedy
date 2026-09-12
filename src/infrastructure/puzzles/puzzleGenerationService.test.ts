@@ -258,6 +258,7 @@ function rawCandidate(): RawCandidate {
     evalCpAfterUserMove: null,
     candidateGenerationVersion: 2,
     createdAt: NOW - 1000,
+    updatedAt: NOW - 1000,
   };
 }
 

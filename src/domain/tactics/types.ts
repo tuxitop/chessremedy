@@ -118,6 +118,12 @@ export interface RawCandidate {
   readonly candidateGenerationVersion: number;
   /** Candidate creation, Unix epoch millis. */
   readonly createdAt: number;
+  /**
+   * Epoch millis of the last content change (schema v12). Equals `createdAt` on
+   * insert and is bumped whenever the row's status/verification changes; it is
+   * the ADR-017 last-write-wins timestamp for the `puzzleCandidates` collection.
+   */
+  readonly updatedAt: number;
 }
 
 /** Engine identity + conditions of a Stage-2 verification (research §10). */

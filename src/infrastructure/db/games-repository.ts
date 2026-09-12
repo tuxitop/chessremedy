@@ -26,8 +26,10 @@ import type { GameSource } from '@/domain/chess/gameSource';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { Color } from 'chessops/types';
+import { makeTombstone } from '@/domain/sync';
 import { DexiePuzzleAttemptsRepository } from './attempts-repository';
 import { DexieTrainingSetsRepository } from './training-sets-repository';
+import { DexieSyncStateRepository } from './sync-state-repository';
 import { db, type ChessRemedyDatabase } from './database';
 
 /** Persisted row — scalar Game metadata (authoritative) + verbatim PGN. */
@@ -267,8 +269,19 @@ export class DexieGamesRepository implements GamesRepository {
         this.database.puzzles,
         this.database.puzzleAttempts,
         this.database.trainingSets,
+        this.database.syncState,
+        this.database.syncTombstones,
       ],
       async () => {
+        // Deletion propagation (Feature 016): one `game` tombstone per deleted
+        // id, written with the cascade so a later sync carries the deletion to
+        // every device. The device id is lazily minted; this works even when
+        // sync is unconfigured (a later connection still propagates it).
+        const deviceId = await new DexieSyncStateRepository(this.database).getOrCreateDeviceId();
+        const deletedAt = Date.now();
+        await this.database.syncTombstones.bulkPut(
+          gameIds.map((id) => makeTombstone('game', id, deletedAt, deviceId)),
+        );
         await this.database.games.bulkDelete(gameIds);
         await this.database.analyses.where('gameId').anyOf(gameIds).delete();
         await this.database.analysisJobs.where('gameId').anyOf(gameIds).delete();

@@ -48,6 +48,7 @@ function makeCandidate(overrides: Partial<RawCandidate> = {}): RawCandidate {
     evalCpAfterUserMove: -180,
     candidateGenerationVersion: CANDIDATE_GENERATION_VERSION,
     createdAt: NOW,
+    updatedAt: NOW,
     ...overrides,
   };
 }

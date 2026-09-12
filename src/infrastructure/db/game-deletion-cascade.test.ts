@@ -23,6 +23,7 @@ import {
   setFixture,
 } from '@/domain/training/test-support';
 import { CANDIDATE_GENERATION_VERSION, DETECTION_VERSION } from '@/domain/tactics';
+import { tombstoneId } from '@/domain/sync';
 
 function candidateRow(gameId: string, analysisId: string, sourcePly: number) {
   return {
@@ -39,6 +40,7 @@ function candidateRow(gameId: string, analysisId: string, sourcePly: number) {
     evalCpAfterUserMove: -180,
     candidateGenerationVersion: CANDIDATE_GENERATION_VERSION,
     createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_000,
     tacticalObjective: 'winning_material',
     candidateSolutionLength: 3,
     verificationMetadata: {
@@ -77,6 +79,8 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     await db.puzzleAttempts.clear();
     await db.trainingSets.clear();
     await db.trainingCycles.clear();
+    await db.syncState.clear();
+    await db.syncTombstones.clear();
   });
 
   it('removes game-scoped MoveAnalysis, jobs, summaries, candidates, puzzles and attempts but retains the engine cache', async () => {
@@ -191,6 +195,16 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     });
 
     await gamesRepository.deleteGames([game.id]);
+
+    // A `game` tombstone is written with the cascade so a later sync
+    // propagates the deletion, keyed by the deterministic `<kind>:<recordId>`.
+    const tombstones = await db.syncTombstones.toArray();
+    expect(tombstones).toHaveLength(1);
+    expect(tombstones[0]?.id).toBe(tombstoneId('game', game.id));
+    expect(tombstones[0]?.kind).toBe('game');
+    expect(tombstones[0]?.recordId).toBe(game.id);
+    expect(typeof tombstones[0]?.deviceId).toBe('string');
+    expect(tombstones[0]!.deviceId.length).toBeGreaterThan(0);
 
     expect(await db.games.count()).toBe(1);
     expect(await analysesRepository.countForGame(game.id)).toBe(0);

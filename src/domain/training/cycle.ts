@@ -118,6 +118,7 @@ export function snapshotCycle(input: SnapshotCycleInput): TrainingCycleRow {
     cycleNumber: input.cycleNumber,
     status: 'inProgress',
     startedAt: input.now,
+    updatedAt: input.now,
     completedAt: null,
     abandonedAt: null,
     puzzleIds: [...input.puzzleIds],

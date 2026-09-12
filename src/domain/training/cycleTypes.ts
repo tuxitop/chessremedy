@@ -158,6 +158,12 @@ export interface TrainingCycleRow {
   readonly cycleNumber: number;
   readonly status: TrainingCycleStatus;
   readonly startedAt: number;
+  /**
+   * Epoch millis of the last lifecycle change (schema v12). Equals `startedAt`
+   * on create and is bumped by `updateStatus`; it is the ADR-017
+   * last-write-wins timestamp for the `trainingCycles` collection.
+   */
+  readonly updatedAt: number;
   readonly completedAt: number | null;
   readonly abandonedAt: number | null;
   /** Ordered membership snapshot at cycle start (immutable). */

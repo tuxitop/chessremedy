@@ -611,6 +611,7 @@ function cycleAttemptSeedCycle(overrides: { readonly config: CycleConfig }): Tra
     cycleNumber: 1,
     status: 'inProgress',
     startedAt: NOW,
+    updatedAt: NOW,
     completedAt: null,
     abandonedAt: null,
     puzzleIds: [],

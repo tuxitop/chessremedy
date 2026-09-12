@@ -44,21 +44,8 @@ import {
 import type { AnalysisProfile } from '@/domain/chess';
 import { ANALYSIS_PROFILE_ORDER } from '@/infrastructure/engine/engineProfiles';
 import { BOARD_THEMES, PIECE_SETS } from '@/components/chessboard/themes';
+import { SyncSettingsPanel } from '@/components/sync';
 import styles from './SettingsPage.module.css';
-
-interface SettingPlaceholder {
-  title: string;
-  description: string;
-  badge: string;
-}
-
-const SETTINGS_PLACEHOLDERS: SettingPlaceholder[] = [
-  {
-    title: 'Synchronization',
-    description: 'Optionally connect Dropbox to sync your library across devices.',
-    badge: 'Coming in Feature 016 — Synchronization',
-  },
-];
 
 interface GameAnalysisDefaultsProps {
   settings: GameAnalysisSettings;
@@ -608,19 +595,16 @@ export function SettingsPage({
           )}
         </li>
 
-        {SETTINGS_PLACEHOLDERS.map((setting) => (
-          <li
-            key={setting.title}
-            className={styles.row}
-            data-testid={`settings-row-${setting.title.toLowerCase().replace(/\s+/g, '-')}`}
-          >
-            <div className={styles.rowText}>
-              <h2 className={styles.rowTitle}>{setting.title}</h2>
-              <p className={styles.rowDescription}>{setting.description}</p>
-            </div>
-            <span className={styles.badge}>{setting.badge}</span>
-          </li>
-        ))}
+        <li className={styles.row} data-testid="settings-row-synchronization">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Synchronization</h2>
+            <p className={styles.rowDescription}>
+              Optionally connect Dropbox to sync your library across devices, or use local export
+              and import to back up and restore your data without a provider.
+            </p>
+          </div>
+          <SyncSettingsPanel />
+        </li>
       </ul>
     </div>
   );

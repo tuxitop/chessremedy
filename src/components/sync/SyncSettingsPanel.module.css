@@ -1,0 +1,126 @@
+.panel {
+  flex-shrink: 0;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.connection {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.help {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  line-height: var(--line-height-normal);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.backupList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.backupItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg-sunken);
+}
+
+.backupMeta {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.backupActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.fileLabel {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.fileLabelText {
+  cursor: pointer;
+}
+
+.fileInput {
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg);
+}
+
+.fileInput::file-selector-button {
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-3);
+  margin-right: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  cursor: pointer;
+}
+
+.fileInput:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.success {
+  font-size: var(--font-size-sm);
+  color: var(--color-success, #1a7f37);
+}
+
+.error {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger, #cf222e);
+}
+
+@media (max-width: 720px) {
+  .panel {
+    width: 100%;
+  }
+}

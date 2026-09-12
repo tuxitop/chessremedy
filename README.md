@@ -86,6 +86,21 @@ The four layers defined in `.opencode/specs/ARCHITECTURE.md` map as:
 
 See `.opencode/specs/decisions/` for the full set of accepted ADRs.
 
+## Optional: Dropbox sync
+
+Feature 016 can back up and sync your data across devices through your own
+Dropbox account. Sync is **optional** — the app is fully usable without it.
+
+1. Create a Dropbox app (Scoped access, **App folder** access).
+2. Copy the app's **App key** into `.env.local` as `VITE_DROPBOX_APP_KEY`
+   (see `.env.example`). The app key is public; PKCE means no client secret is
+   ever needed or stored.
+3. Register the OAuth redirect URI as `<your-origin>/settings`.
+4. In the app, open **Settings → Synchronization** and connect Dropbox.
+
+The same panel also offers provider-free **Export backup** / **Import backup**
+using the gzipped sync envelope (ADR-016).
+
 ## Forbidden dependencies
 
 Foundation must not install `chess.js`, `@lichess-org/chessground`,

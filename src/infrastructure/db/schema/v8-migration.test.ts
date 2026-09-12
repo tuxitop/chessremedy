@@ -93,7 +93,7 @@ describe('v7 → v8 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(11);
+      expect(migrated.verno).toBe(12);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -107,6 +107,9 @@ describe('v7 → v8 schema migration', () => {
         'puzzleAttempts',
         'trainingSets',
         'trainingCycles',
+        'syncState',
+        'syncTombstones',
+        'syncBackups',
       ]);
 
       // Pre-v8 rows (settings, game, analyses, summaries, candidates) are

@@ -1,6 +1,7 @@
 import type * as React from 'react';
 import { Link, Outlet } from 'react-router-dom';
 import { APP_NAME } from '@/config/app-config';
+import { SyncStatusIndicator } from '@/components/sync';
 import { useHeaderVisibility } from '@/hooks/useHeaderVisibility';
 import { Navigation } from './Navigation';
 import { ThemeToggle } from './ThemeToggle';
@@ -33,6 +34,7 @@ export function AppShell({ headerSurfaceOpen = false }: AppShellProps = {}): Rea
         </Link>
         <Navigation />
         <span className={styles.spacer} />
+        <SyncStatusIndicator />
         <ThemeToggle />
       </header>
       <main className={styles.main} id="main-content">

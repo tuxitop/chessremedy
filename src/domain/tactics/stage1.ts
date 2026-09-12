@@ -231,6 +231,7 @@ export function generateCandidates(
         evalCpAfterUserMove: record.evalAfter.cp,
         candidateGenerationVersion: CANDIDATE_GENERATION_VERSION,
         createdAt: now,
+        updatedAt: now,
       },
       swing,
     });

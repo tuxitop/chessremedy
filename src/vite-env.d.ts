@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly BASE_URL: string;
   readonly DEV: boolean;
   readonly PROD: boolean;
+  /** Public Dropbox app key (never a secret; PKCE has no client secret). */
+  readonly VITE_DROPBOX_APP_KEY?: string;
 }
 
 interface ImportMeta {

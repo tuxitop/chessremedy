@@ -7,8 +7,10 @@ export const APP_VERSION = '0.1.0';
 // v6 moveCount/termination backfill; v7 analysisSummaries/puzzleCandidates
 // (Feature 010); v8 puzzles (Feature 011); v9 puzzleAttempts (Feature 012);
 // v10 trainingSets/trainingCycles (Feature 013); v11 re-normalizes the
-// platform-specific time control (ADR-013 revision).
-export const PERSISTENCE_SCHEMA_VERSION = 11;
+// platform-specific time control (ADR-013 revision); v12 adds the Feature-016
+// sync tables (syncState/syncTombstones/syncBackups) and backfills the
+// mutable-row `updatedAt` merge timestamps (additive).
+export const PERSISTENCE_SCHEMA_VERSION = 12;
 export const DEFAULT_THEME: 'light' | 'dark' = 'light';
 
 export const SETTINGS_KEYS = {

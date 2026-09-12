@@ -81,6 +81,7 @@ interface SeedCycle {
   readonly cycleNumber: number;
   readonly status: string;
   readonly startedAt: number;
+  readonly updatedAt: number;
   readonly completedAt: number | null;
   readonly abandonedAt: number | null;
   readonly puzzleIds: readonly string[];
@@ -239,18 +240,22 @@ function masteryAttempts(puzzleId: string, cycleIds: readonly string[]): SeedAtt
  * per supplied id, so each credit is anchored to a persisted cycle (spec §3b).
  */
 function masteryCycles(puzzleId: string, cycleIds: readonly string[]): SeedCycle[] {
-  return cycleIds.map((id, index) => ({
-    id,
-    trainingSetId: MASTERY_SET_ID,
-    cycleNumber: index + 1,
-    status: 'completed',
-    startedAt: PUZZLE_FIXTURE_NOW + index * 10_000,
-    completedAt: PUZZLE_FIXTURE_NOW + index * 10_000 + 5_000,
-    abandonedAt: null,
-    puzzleIds: [puzzleId],
-    config: MASTERY_CONFIG,
-    cycleMetricsVersion: 1,
-  }));
+  return cycleIds.map((id, index) => {
+    const startedAt = PUZZLE_FIXTURE_NOW + index * 10_000;
+    return {
+      id,
+      trainingSetId: MASTERY_SET_ID,
+      cycleNumber: index + 1,
+      status: 'completed',
+      startedAt,
+      updatedAt: startedAt,
+      completedAt: startedAt + 5_000,
+      abandonedAt: null,
+      puzzleIds: [puzzleId],
+      config: MASTERY_CONFIG,
+      cycleMetricsVersion: 1,
+    };
+  });
 }
 
 /** A deterministic completed cycle row for a set's first cycle. */
@@ -267,6 +272,7 @@ function completedCycle(
     cycleNumber: 1,
     status: 'completed',
     startedAt,
+    updatedAt: startedAt,
     completedAt: startedAt + 5_000,
     abandonedAt: null,
     puzzleIds: [...puzzleIds],

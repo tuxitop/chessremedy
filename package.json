@@ -28,6 +28,7 @@
     "@lichess-org/chessground": "^10.1.1",
     "chessops": "^0.15.1",
     "dexie": "^4.0.0",
+    "dropbox": "^10.46.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.3",

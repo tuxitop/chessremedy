@@ -270,6 +270,7 @@ export interface CycleFixtureOverrides {
   readonly cycleNumber?: number;
   readonly status?: TrainingCycleStatus;
   readonly startedAt?: number;
+  readonly updatedAt?: number;
   readonly completedAt?: number | null;
   readonly abandonedAt?: number | null;
   readonly puzzleIds?: readonly string[];
@@ -288,6 +289,7 @@ export function cycleFixture(overrides: CycleFixtureOverrides = {}): TrainingCyc
     cycleNumber: overrides.cycleNumber ?? 1,
     status: overrides.status ?? 'inProgress',
     startedAt: overrides.startedAt ?? PUZZLE_FIXTURE_NOW,
+    updatedAt: overrides.updatedAt ?? overrides.startedAt ?? PUZZLE_FIXTURE_NOW,
     completedAt: overrides.completedAt ?? null,
     abandonedAt: overrides.abandonedAt ?? null,
     puzzleIds: [...(overrides.puzzleIds ?? [])],

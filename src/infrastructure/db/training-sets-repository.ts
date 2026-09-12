@@ -17,8 +17,10 @@
 
 import type { TacticalTrainingSetRow, TrainingSetStatus } from '@/domain/training';
 import { isWoodpeckerBlock } from '@/domain/training';
+import { makeTombstone } from '@/domain/sync';
 import { db, type ChessRemedyDatabase } from './database';
 import { DexiePuzzleAttemptsRepository } from './attempts-repository';
+import { DexieSyncStateRepository } from './sync-state-repository';
 
 /**
  * Persisted training-set row: the domain `TacticalTrainingSetRow`, stored as-is
@@ -130,8 +132,21 @@ export class DexieTrainingSetsRepository implements TrainingSetsRepository {
   async delete(id: string): Promise<void> {
     await this.database.transaction(
       'rw',
-      [this.database.trainingSets, this.database.trainingCycles, this.database.puzzleAttempts],
+      [
+        this.database.trainingSets,
+        this.database.trainingCycles,
+        this.database.puzzleAttempts,
+        this.database.syncState,
+        this.database.syncTombstones,
+      ],
       async () => {
+        // Deletion propagation (Feature 016): one `trainingSet` tombstone with
+        // the cascade, so the deletion reaches every device. Works even when
+        // sync is unconfigured (the device id is lazily minted).
+        const deviceId = await new DexieSyncStateRepository(this.database).getOrCreateDeviceId();
+        await this.database.syncTombstones.put(
+          makeTombstone('trainingSet', id, Date.now(), deviceId),
+        );
         await this.database.trainingSets.delete(id);
         await this.database.trainingCycles.where('trainingSetId').equals(id).delete();
         await new DexiePuzzleAttemptsRepository(this.database).deleteForTrainingSetIds([id]);

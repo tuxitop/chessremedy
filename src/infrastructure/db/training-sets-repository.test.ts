@@ -12,6 +12,7 @@ import {
   legacyAutoSetFixture,
   setFixture,
 } from '@/domain/training/test-support';
+import { tombstoneId } from '@/domain/sync';
 
 describe('training sets repository', () => {
   beforeEach(async () => {
@@ -19,6 +20,8 @@ describe('training sets repository', () => {
     await db.trainingCycles.clear();
     await db.puzzleAttempts.clear();
     await db.puzzles.clear();
+    await db.syncState.clear();
+    await db.syncTombstones.clear();
   });
 
   it('creates, gets and lists sets filtered by status (default active) in createdAt order', async () => {
@@ -87,6 +90,14 @@ describe('training sets repository', () => {
     await puzzlesRepository.addIfAbsent([puzzleRowFixture('mate-one')]);
 
     await trainingSetsRepository.delete('set:a');
+
+    // A `trainingSet` tombstone is written with the cascade so a later sync
+    // propagates the deletion.
+    const tombstones = await db.syncTombstones.toArray();
+    expect(tombstones).toHaveLength(1);
+    expect(tombstones[0]?.id).toBe(tombstoneId('trainingSet', 'set:a'));
+    expect(tombstones[0]?.kind).toBe('trainingSet');
+    expect(tombstones[0]?.recordId).toBe('set:a');
 
     // The set, its cycles and its attempts are gone.
     expect(await trainingSetsRepository.get('set:a')).toBeUndefined();

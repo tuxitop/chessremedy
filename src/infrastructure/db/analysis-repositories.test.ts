@@ -161,6 +161,7 @@ function verifiedRow(
     evalCpAfterUserMove: -180,
     candidateGenerationVersion: CANDIDATE_GENERATION_VERSION,
     createdAt: NOW,
+    updatedAt: NOW,
     tacticalObjective: 'winning_material',
     candidateSolutionLength: 3,
     verificationMetadata: {
@@ -199,6 +200,7 @@ function unverifiedRow(
     evalCpAfterUserMove: -240,
     candidateGenerationVersion: CANDIDATE_GENERATION_VERSION,
     createdAt: NOW,
+    updatedAt: NOW,
     verificationStatus: status,
     ...overrides,
   };

@@ -11,6 +11,7 @@ import {
   applyV9Schema,
   applyV10Schema,
   applyV11Schema,
+  applyV12Schema,
 } from './schema';
 import type { GameRow } from './games-repository';
 import type { AnalysisJob } from '@/domain/analysis';
@@ -22,6 +23,9 @@ import type { PuzzlesRow } from './puzzles-repository';
 import type { PuzzleAttemptsRow } from './attempts-repository';
 import type { TrainingSetsRow } from './training-sets-repository';
 import type { TrainingCyclesRow } from './training-cycles-repository';
+import type { SyncStateRow } from './sync-state-repository';
+import type { SyncTombstoneRow } from './tombstones-repository';
+import type { SyncBackupRow } from './sync-backups-repository';
 import { PERSISTENCE_SCHEMA_VERSION } from '@/config/app-config';
 import type { ImportJob } from '@/domain/import/job';
 
@@ -53,6 +57,12 @@ export class ChessRemedyDatabase extends Dexie {
   trainingSets!: Table<TrainingSetsRow, string>;
   /** Feature-013 training cycles (schema v10), keyed by id. */
   trainingCycles!: Table<TrainingCyclesRow, string>;
+  /** Feature-016 non-synced sync bookkeeping (schema v12), keyed by `key`. */
+  syncState!: Table<SyncStateRow, string>;
+  /** Feature-016 deletion tombstones (schema v12), keyed by deterministic id. */
+  syncTombstones!: Table<SyncTombstoneRow, string>;
+  /** Feature-016 non-synced recovery payloads (schema v12), keyed by id. */
+  syncBackups!: Table<SyncBackupRow, string>;
 
   constructor(name = 'chessremedy') {
     super(name);
@@ -68,14 +78,15 @@ export class ChessRemedyDatabase extends Dexie {
     applyV9Schema(this);
     applyV10Schema(this);
     applyV11Schema(this);
+    applyV12Schema(this);
   }
 }
 
 export const db = new ChessRemedyDatabase();
 
-if (PERSISTENCE_SCHEMA_VERSION !== 11) {
+if (PERSISTENCE_SCHEMA_VERSION !== 12) {
   throw new Error(
-    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v11. ` +
+    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v12. ` +
       `Bump PERSISTENCE_SCHEMA_VERSION in app-config.ts and add a new schema module ` +
       `when extending the database.`,
   );

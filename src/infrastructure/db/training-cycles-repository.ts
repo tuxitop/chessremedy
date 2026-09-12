@@ -98,7 +98,7 @@ export class DexieTrainingCyclesRepository implements TrainingCyclesRepository {
   }
 
   async create(row: TrainingCyclesRow): Promise<void> {
-    await this.database.trainingCycles.put(row);
+    await this.database.trainingCycles.put({ ...row, updatedAt: row.updatedAt ?? row.startedAt });
   }
 
   async createQuickTrain(row: TrainingCyclesRow): Promise<void> {
@@ -107,7 +107,7 @@ export class DexieTrainingCyclesRepository implements TrainingCyclesRepository {
         `createQuickTrain requires the ${QUICK_TRAIN_SET_ID} sentinel trainingSetId.`,
       );
     }
-    await this.database.trainingCycles.put(row);
+    await this.database.trainingCycles.put({ ...row, updatedAt: row.updatedAt ?? row.startedAt });
   }
 
   async updateStatus(
@@ -121,6 +121,7 @@ export class DexieTrainingCyclesRepository implements TrainingCyclesRepository {
     const updated: TrainingCyclesRow = {
       ...existing,
       status: patch.status,
+      updatedAt: Date.now(),
       completedAt: patch.completedAt === undefined ? existing.completedAt : patch.completedAt,
       abandonedAt: patch.abandonedAt === undefined ? existing.abandonedAt : patch.abandonedAt,
     };
