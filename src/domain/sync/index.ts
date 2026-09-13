@@ -52,6 +52,8 @@ export {
 
 export { makeTombstone, tombstoneId } from './tombstone';
 
+export { normalizeTrainingCycleNumbers } from './cycleNumbers';
+
 export { DROPBOX_BLOCK_SIZE, dropboxContentHash, type DigestFn } from './contentHash';
 
 export {

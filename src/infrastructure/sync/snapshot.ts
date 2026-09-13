@@ -29,6 +29,7 @@ import {
   mergeCollection,
   mergeSettings,
   mergeTombstones,
+  normalizeTrainingCycleNumbers,
   selectSyncedSettings,
   type DeviceId,
   type SyncCollectionSpec,
@@ -151,10 +152,12 @@ export class DexieSyncCollectionsGateway implements SyncCollectionsGateway {
       envelope.collections.trainingSets,
       SYNC_COLLECTION_BY_NAME.trainingSets,
     );
-    const trainingCycles = merge(
-      local.trainingCycles,
-      envelope.collections.trainingCycles,
-      SYNC_COLLECTION_BY_NAME.trainingCycles,
+    const trainingCycles = normalizeTrainingCycleNumbers(
+      merge(
+        local.trainingCycles,
+        envelope.collections.trainingCycles,
+        SYNC_COLLECTION_BY_NAME.trainingCycles,
+      ),
     );
     const puzzleAttempts = merge(
       local.puzzleAttempts,
@@ -202,6 +205,14 @@ export class DexieSyncCollectionsGateway implements SyncCollectionsGateway {
         await putAll(this.database.puzzleCandidates, puzzleCandidates);
         await putAll(this.database.puzzles, puzzles);
         await putAll(this.database.trainingSets, trainingSets);
+        // `trainingCycles` has a unique `[trainingSetId+cycleNumber]` index, so
+        // an in-place upsert can transiently collide with an existing row that
+        // is about to be renumbered (or with a same-numbered cycle from the
+        // other device). The merged set is the complete post-merge state, so
+        // replace the local rows atomically instead of upserting one by one.
+        await this.database.trainingCycles.bulkDelete(
+          local.trainingCycles.map((cycle) => cycle.id),
+        );
         await putAll(this.database.trainingCycles, trainingCycles);
         await putAll(this.database.puzzleAttempts, puzzleAttempts);
         await putAll(this.database.settings, settings);

@@ -139,6 +139,33 @@ describe('DexieSyncCollectionsGateway', () => {
     expect(await db.settings.get('sync.refreshToken')).toBeUndefined();
   });
 
+  it('renumbers a merged training cycle that collides on the unique [trainingSetId+cycleNumber] index', async () => {
+    const set = setFixture({ id: 'set-1', updatedAt: 5 });
+    await trainingSetsRepository.create(set);
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'local-cycle', trainingSetId: set.id, cycleNumber: 1, updatedAt: 10 }),
+    );
+
+    // A second device independently started "cycle 1" for the same set.
+    const remoteCycle = cycleFixture({
+      id: 'remote-cycle',
+      trainingSetId: set.id,
+      cycleNumber: 1,
+      updatedAt: 20,
+    });
+    const envelope = makeEnvelope({ trainingCycles: [remoteCycle] });
+
+    // Before the fix this rejected with a ConstraintError from `bulkPut`.
+    await expect(gateway.applyEnvelope(envelope)).resolves.toBeUndefined();
+
+    const rows = await trainingCyclesRepository.listForSet(set.id);
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((row) => row.cycleNumber)).size).toBe(2);
+    // The newer row keeps the contested number; the older is renumbered.
+    expect(rows.find((row) => row.cycleNumber === 1)?.id).toBe('remote-cycle');
+    expect(rows.find((row) => row.id === 'local-cycle')?.cycleNumber).toBe(2);
+  });
+
   it('never includes the engine cache, syncState or syncBackups in the envelope', async () => {
     await db.positionAnalysisCache.put({
       key: 'fen-key',
