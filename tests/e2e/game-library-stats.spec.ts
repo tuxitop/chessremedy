@@ -137,6 +137,7 @@ test.describe('Game Library analysis stats & filters (Feature 010)', () => {
     await page.getByTestId('import-username-chesscom').fill(USERNAME);
     await page.getByTestId('import-run-chesscom').click();
     await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await page.getByTestId('import-dialog-close').click();
     await expect(page.getByTestId('game-row')).toHaveCount(1);
 
     // Use the fast profile for bulk analysis (set the engine default).
@@ -220,6 +221,7 @@ test.describe('Game Library queue (Feature 008/010)', () => {
     await page.getByTestId('import-username-chesscom').fill(USERNAME);
     await page.getByTestId('import-run-chesscom').click();
     await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await page.getByTestId('import-dialog-close').click();
     await expect(page.getByTestId('game-row')).toHaveCount(2);
 
     // Fast profile keeps the batch short but the two tiny games still serialize.

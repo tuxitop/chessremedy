@@ -105,6 +105,7 @@ test.describe('Game Library (Chess.com, mocked)', () => {
     await page.getByTestId('import-username-chesscom').fill(USERNAME);
     await page.getByTestId('import-run-chesscom').click();
     await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await page.getByTestId('import-dialog-close').click();
     await expect(page.getByTestId('game-row')).toHaveCount(2);
 
     // Filter by platform, time control and side; results narrow (AND).

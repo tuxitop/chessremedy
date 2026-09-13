@@ -4,10 +4,18 @@
   gap: var(--space-3);
 }
 
-.imports {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+.libraryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.heading {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  color: var(--color-fg);
 }
 
 .cancelInline {
@@ -189,17 +197,6 @@
 .playerRating {
   color: var(--color-fg-muted);
   font-variant-numeric: tabular-nums;
-}
-
-.youChip {
-  flex: 0 0 auto;
-  font-size: 0.7rem;
-  font-weight: 700;
-  line-height: 1.2;
-  padding: 1px 6px;
-  border-radius: 999px;
-  color: #fff;
-  background: var(--color-accent, #1f6feb);
 }
 
 .resultChip {
@@ -408,7 +405,7 @@
 }
 
 .reviewLink {
-  color: var(--color-accent, #1f6feb);
+  color: var(--color-accent, #01b681);
   font-weight: 600;
   text-decoration: none;
 }
@@ -435,7 +432,7 @@
   justify-content: center;
   width: 1.75rem;
   height: 1.75rem;
-  color: var(--color-accent, #1f6feb);
+  color: var(--color-accent, #01b681);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 6px);
   text-decoration: none;
@@ -460,7 +457,7 @@
 }
 
 .analyzing {
-  color: var(--color-accent, #1f6feb);
+  color: var(--color-accent, #01b681);
   font-style: italic;
 }
 
@@ -501,7 +498,7 @@
 }
 
 .statusBadgeaccent {
-  background: var(--color-accent, #1f6feb);
+  background: var(--color-accent, #01b681);
 }
 
 .statusBadgewarning {
@@ -567,7 +564,7 @@
 .rowProgressFill {
   display: block;
   height: 100%;
-  background: var(--color-accent, #1f6feb);
+  background: var(--color-accent, #01b681);
   transition: width var(--duration-fast, 120ms) var(--easing-standard, ease-out);
 }
 

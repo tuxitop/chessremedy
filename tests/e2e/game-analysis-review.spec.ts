@@ -128,6 +128,7 @@ test.describe('Game analysis & review (Feature 008)', () => {
     await page.getByTestId('import-username-chesscom').fill(USERNAME);
     await page.getByTestId('import-run-chesscom').click();
     await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await page.getByTestId('import-dialog-close').click();
     await expect(page.getByTestId('game-row')).toHaveCount(1);
 
     // Use the fast profile for bulk analysis (set the engine default).
@@ -293,6 +294,7 @@ test.describe('Missed-tactic surface proof (Feature 010 / plan 011 P7)', () => {
     await page.getByTestId('import-username-chesscom').fill(USERNAME);
     await page.getByTestId('import-run-chesscom').click();
     await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await page.getByTestId('import-dialog-close').click();
     await expect(page.getByTestId('game-row')).toHaveCount(1);
 
     // Fast Game-analysis profile keeps the run short (depth 10).

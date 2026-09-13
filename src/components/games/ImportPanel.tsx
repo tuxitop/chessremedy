@@ -24,6 +24,8 @@ interface ImportPanelProps {
   readonly service: ImportServiceLike;
   /** Called after an import run finishes so the page can refresh its list. */
   readonly onImported: () => void;
+  /** When false the panel omits its own heading (the host supplies a title). */
+  readonly showHeading?: boolean;
 }
 
 function keysFor(provider: ImportProvider): {
@@ -60,6 +62,7 @@ export function ImportPanel({
   provider,
   service,
   onImported,
+  showHeading = true,
 }: ImportPanelProps): React.JSX.Element {
   const label = GAME_SOURCE_LABELS[provider];
   const keys = useMemo(() => keysFor(provider), [provider]);
@@ -132,12 +135,14 @@ export function ImportPanel({
 
   return (
     <section className={styles.panel} data-testid={`import-panel-${provider}`}>
-      <div className={styles.header}>
-        <h2 className={styles.heading}>{label}</h2>
-        <p className={styles.blurb}>
-          Import public {label} games by username. No engine analysis runs during an import.
-        </p>
-      </div>
+      {showHeading ? (
+        <div className={styles.header}>
+          <h2 className={styles.heading}>{label}</h2>
+          <p className={styles.blurb}>
+            Import public {label} games by username. No engine analysis runs during an import.
+          </p>
+        </div>
+      ) : null}
 
       <form
         className={styles.form}

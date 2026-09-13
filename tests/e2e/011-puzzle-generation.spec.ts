@@ -84,6 +84,7 @@ test.describe('Puzzle generation (Feature 011)', () => {
     await page.getByTestId('import-username-chesscom').fill(USERNAME);
     await page.getByTestId('import-run-chesscom').click();
     await expect(page.getByTestId('import-status-chesscom')).toContainText('Done');
+    await page.getByTestId('import-dialog-close').click();
     await expect(page.getByTestId('game-row')).toHaveCount(1);
 
     // Fast Game-analysis profile keeps the engine run short (depth 10).

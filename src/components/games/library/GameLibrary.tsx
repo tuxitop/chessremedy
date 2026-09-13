@@ -35,6 +35,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import {
   ANALYSIS_GLYPH,
   CloseIcon,
+  PlusIcon,
   PUZZLES_GLYPH,
   RefreshIcon,
   REVIEW_GLYPH,
@@ -49,19 +50,25 @@ const DEFAULT_PAGE_SIZE = 50;
 
 interface GameLibraryProps {
   readonly refreshKey: number;
+  /** Page heading rendered next to the Import action. */
+  readonly title?: string;
   /**
    * Feature-008 analysis service. When `null` the Analysis column is hidden
    * and the bulk Analyze action stays disabled (analysis unavailable).
    */
   readonly analysisService?: AnalysisServiceLike | null;
-  /** Import panels shown when the toolbar Import action is opened. */
-  readonly importPanels?: React.ReactNode;
+  /** Whether the host's import dialog is open (drives the trigger's aria state). */
+  readonly importOpen?: boolean;
+  /** Opens the host's import dialog. */
+  onImport?(): void;
 }
 
 export function GameLibrary({
   refreshKey,
+  title = 'Game Library',
   analysisService = null,
-  importPanels,
+  importOpen = false,
+  onImport,
 }: GameLibraryProps): React.JSX.Element {
   const library = useGameLibrary(refreshKey);
   const analysis = useLibraryAnalysis(
@@ -77,7 +84,6 @@ export function GameLibrary({
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<readonly string[] | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
 
   const totalCount = library.rows.length;
   const totalPages = totalPageCount(totalCount, pageSize);
@@ -576,21 +582,25 @@ export function GameLibrary({
 
   return (
     <section className={styles.library} data-testid="game-library">
+      <div className={styles.libraryHeader}>
+        <h1 className={styles.heading}>{title}</h1>
+        <Button
+          variant="secondary"
+          data-testid="import-toggle"
+          aria-expanded={importOpen}
+          onClick={onImport}
+        >
+          <PlusIcon /> Import games
+        </Button>
+      </div>
+
       <GameLibraryToolbar
         filters={filters}
         timeFrameError={timeFrameError}
         isFiltering={library.isFiltering}
-        importOpen={importOpen}
         onFilters={set}
         onClearFilters={() => library.clearAllFilters()}
-        onToggleImport={() => setImportOpen((open) => !open)}
       />
-
-      {importOpen ? (
-        <div className={styles.imports} data-testid="games-imports">
-          {importPanels}
-        </div>
-      ) : null}
 
       {library.totalStored === 0 && !library.loading ? (
         <p className={styles.state} data-testid="library-empty">
@@ -840,21 +850,11 @@ function GameRows({
           {/* Lichess-style card body: players + result line, then the meta line. */}
           <span role="cell" className={styles.rowBody}>
             <span className={styles.playersLine}>
-              <PlayerName
-                name={row.whiteName}
-                rating={row.whiteRating}
-                isYou={row.userColor === 'white'}
-                testId="game-white"
-              />
+              <PlayerName name={row.whiteName} rating={row.whiteRating} testId="game-white" />
               <span aria-hidden="true" className={styles.vsToken}>
                 vs
               </span>
-              <PlayerName
-                name={row.blackName}
-                rating={row.blackRating}
-                isYou={row.userColor === 'black'}
-                testId="game-black"
-              />
+              <PlayerName name={row.blackName} rating={row.blackRating} testId="game-black" />
               <span data-testid="game-result" className={styles.resultCell}>
                 <ResultChip result={row.result} userColor={row.userColor} />
               </span>
@@ -921,16 +921,14 @@ function GameRows({
   );
 }
 
-/** Player cell: name + rating, with a "You" marker on the user's side. */
+/** Player cell: name + rating. */
 function PlayerName({
   name,
   rating,
-  isYou,
   testId,
 }: {
   name: string;
   rating: number | null;
-  isYou: boolean;
   testId?: string;
 }): React.JSX.Element {
   return (
@@ -939,11 +937,6 @@ function PlayerName({
         {name}
         {rating !== null ? <span className={styles.playerRating}> {rating}</span> : null}
       </span>
-      {isYou ? (
-        <span className={styles.youChip} data-testid="game-you">
-          You
-        </span>
-      ) : null}
     </span>
   );
 }

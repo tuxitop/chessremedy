@@ -10,8 +10,7 @@ import {
 import { TIME_CONTROL_CATEGORIES } from '@/domain/chess/timeControl';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
 import { Button } from '@/components/ui/Button';
-import { IconButton } from '@/components/ui/IconButton';
-import { PlusIcon, SearchIcon } from '@/components/ui/icons';
+import { SearchIcon } from '@/components/ui/icons';
 import styles from './GameLibraryToolbar.module.css';
 
 const TIME_FRAME_LABELS: Readonly<Record<string, string>> = {
@@ -38,10 +37,8 @@ export interface GameLibraryToolbarProps {
   readonly filters: GameLibraryFilters;
   readonly timeFrameError: string | null;
   readonly isFiltering: boolean;
-  readonly importOpen: boolean;
   onFilters(patch: Partial<GameLibraryFilters>, replace?: boolean): void;
   onClearFilters(): void;
-  onToggleImport(): void;
 }
 
 function capitalize(value: string): string {
@@ -57,10 +54,8 @@ export function GameLibraryToolbar({
   filters,
   timeFrameError,
   isFiltering,
-  importOpen,
   onFilters,
   onClearFilters,
-  onToggleImport,
 }: GameLibraryToolbarProps): React.JSX.Element {
   const custom = isCustomTimeFrame(filters.timeFrame) ? filters.timeFrame : null;
 
@@ -256,15 +251,6 @@ export function GameLibraryToolbar({
             Reset filters
           </Button>
         ) : null}
-        <IconButton
-          label="Import games…"
-          dataTestId="import-toggle"
-          ariaExpanded={importOpen}
-          className={styles.importButton!}
-          onClick={onToggleImport}
-        >
-          <PlusIcon />
-        </IconButton>
       </div>
     </div>
   );
