@@ -82,6 +82,7 @@ export {
   masteryOf,
 } from './mastery';
 export {
+  activeCycleOf,
   isCycleComplete,
   isPuzzleTerminal,
   nextCycleNumber,

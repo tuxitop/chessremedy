@@ -15,6 +15,7 @@ import { ROUTES, trainingCyclePath, trainingCycleResultsPath } from '@/app/route
 import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
+  activeCycleOf,
   computeCycleMetrics,
   isWoodpeckerBlock,
   setSourceLabel,
@@ -101,6 +102,7 @@ export function SetDetailPage({
   const attemptsRepo = providedAttempts ?? attemptsRepository;
 
   const [loading, setLoading] = useState(true);
+  const [activeCycleId, setActiveCycleId] = useState<string | null>(null);
   const [data, setData] = useState<DetailData>({
     set: null,
     membership: [],
@@ -151,6 +153,8 @@ export function SetDetailPage({
         if (cancelled) {
           return;
         }
+        const active = activeCycleOf(cycles, attemptRows.flat());
+        setActiveCycleId(active === null ? null : active.id);
         const progressByCycleId = new Map<string, CycleHistoryProgress>();
         cycles.forEach((cycle, index) => {
           const metrics = computeCycleMetrics({
@@ -188,14 +192,11 @@ export function SetDetailPage({
   const membershipItems = useMemo(() => membershipItemsOf(data.membership), [data.membership]);
 
   const inProgress = useMemo(() => {
-    let found: TrainingCycleRow | null = null;
-    for (const cycle of data.cycles) {
-      if (cycle.status === 'inProgress') {
-        found = cycle;
-      }
+    if (activeCycleId === null) {
+      return null;
     }
-    return found;
-  }, [data.cycles]);
+    return data.cycles.find((cycle) => cycle.id === activeCycleId) ?? null;
+  }, [data.cycles, activeCycleId]);
 
   const inProgressProgress =
     inProgress === null ? null : (data.progressByCycleId.get(inProgress.id) ?? null);

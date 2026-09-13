@@ -107,6 +107,51 @@ export function nextCycleNumber(existingNumbers: readonly number[]): number {
 }
 
 /**
+ * The cycle a set is actually being worked through.
+ *
+ * A set should have a single in-progress pass, but historical bugs (and
+ * interrupted starts) can leave several. Picking the highest cycle number is
+ * wrong in that case: a stray later pass would shadow the one the user is on.
+ * Prefer the in-progress cycle with the most recent attempt activity, then the
+ * latest start, then the lowest cycle number. Returns `null` when none is
+ * in progress.
+ */
+export function activeCycleOf(
+  cycles: readonly TrainingCycleRow[],
+  attempts: readonly PuzzleAttemptRow[],
+): TrainingCycleRow | null {
+  const inProgress = cycles.filter((cycle) => cycle.status === 'inProgress');
+  if (inProgress.length === 0) {
+    return null;
+  }
+  const latestActivity = new Map<string, number>();
+  for (const attempt of attempts) {
+    const current = latestActivity.get(attempt.cycleId);
+    if (current === undefined || attempt.endedAt > current) {
+      latestActivity.set(attempt.cycleId, attempt.endedAt);
+    }
+  }
+  let best = inProgress[0]!;
+  const better = (candidate: TrainingCycleRow, incumbent: TrainingCycleRow): boolean => {
+    const candidateActivity = latestActivity.get(candidate.id) ?? 0;
+    const incumbentActivity = latestActivity.get(incumbent.id) ?? 0;
+    if (candidateActivity !== incumbentActivity) {
+      return candidateActivity > incumbentActivity;
+    }
+    if (candidate.startedAt !== incumbent.startedAt) {
+      return candidate.startedAt > incumbent.startedAt;
+    }
+    return candidate.cycleNumber < incumbent.cycleNumber;
+  };
+  for (const cycle of inProgress.slice(1)) {
+    if (better(cycle, best)) {
+      best = cycle;
+    }
+  }
+  return best;
+}
+
+/**
  * Build the immutable cycle snapshot: status `inProgress`, null completion
  * timestamps, the current metrics version, and deep copies of the membership
  * and config so later mutation of the inputs cannot alter the stored snapshot.

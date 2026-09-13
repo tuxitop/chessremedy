@@ -19,7 +19,7 @@
 import { parsePuzzleId, puzzleIdOf } from '@/domain/puzzle/id';
 import type { PuzzleRow } from '@/domain/puzzle/types';
 import type { TacticalObjective } from '@/domain/tactics';
-import { resolvePuzzleCycle, type CycleResolution } from '@/domain/training/cycle';
+import { activeCycleOf, resolvePuzzleCycle, type CycleResolution } from '@/domain/training/cycle';
 import { compareCycleMetrics, computeCycleMetrics } from '@/domain/training/cycleMetrics';
 import type { CycleComparison, CycleMetrics } from '@/domain/training/cycleMetrics';
 import type {
@@ -154,10 +154,11 @@ function groupByPuzzle(attempts: readonly PuzzleAttemptRow[]): Map<string, Puzzl
 
 /**
  * Set-level training statistics. `cycles` are ordered by cycle number
- * ascending; `currentCycle` is the highest-numbered cycle (the set's most
- * recent pass). Completed, in-progress and abandoned cycles are also exposed
- * separately so a consumer never conflates an abandoned partial pass with a
- * completed one.
+ * ascending; `currentCycle` is the cycle the user is actually working through:
+ * an `inProgress` pass when one exists, otherwise the highest-numbered cycle
+ * (a stray higher-numbered completed/abandoned pass never shadows the running
+ * one). Completed, in-progress and abandoned cycles are also exposed separately
+ * so a consumer never conflates an abandoned partial pass with a completed one.
  */
 export interface TrainingSetStats {
   readonly setId: string;
@@ -191,21 +192,34 @@ export interface TrainingSetStatsInput {
 
 /** Set-level statistics over one training set's cycles and attempts. */
 export function setStatsFor(input: TrainingSetStatsInput): TrainingSetStats {
-  const cycles = input.cycles
+  const setCycles = input.cycles
     .filter((cycle) => cycle.trainingSetId === input.set.id)
     .slice()
-    .sort((a, b) => a.cycleNumber - b.cycleNumber || compareText(a.id, b.id))
-    .map((cycle) => {
-      const missingPuzzleIds = input.missingPuzzleIdsByCycle?.get(cycle.id);
-      return cycleStatsFor({
-        cycle,
-        attempts: input.attempts,
-        ...(missingPuzzleIds === undefined ? {} : { missingPuzzleIds }),
-      });
+    .sort((a, b) => a.cycleNumber - b.cycleNumber || compareText(a.id, b.id));
+  const cycles = setCycles.map((cycle) => {
+    const missingPuzzleIds = input.missingPuzzleIdsByCycle?.get(cycle.id);
+    return cycleStatsFor({
+      cycle,
+      attempts: input.attempts,
+      ...(missingPuzzleIds === undefined ? {} : { missingPuzzleIds }),
     });
+  });
 
   const last = cycles[cycles.length - 1] ?? null;
-  const previous = cycles[cycles.length - 2] ?? null;
+  const inProgressCycles = cycles.filter((cycle) => cycle.status === 'inProgress');
+  // The "current" cycle is the one being worked through. Prefer the in-progress
+  // pass with the most recent attempt activity so a stray later in-progress
+  // cycle never shadows the one the user is actually solving.
+  const active = activeCycleOf(setCycles, input.attempts);
+  let current: CycleStats | null = null;
+  if (active !== null) {
+    current = cycles.find((cycle) => cycle.cycleId === active.id) ?? null;
+  }
+  if (current === null) {
+    current = last;
+  }
+  const currentIndex = current === null ? -1 : cycles.indexOf(current);
+  const previous = currentIndex > 0 ? cycles[currentIndex - 1]! : null;
 
   return {
     setId: input.set.id,
@@ -213,13 +227,13 @@ export function setStatsFor(input: TrainingSetStatsInput): TrainingSetStats {
     status: input.set.status,
     puzzleCount: input.set.puzzleIds.length,
     cycles,
-    currentCycle: last,
+    currentCycle: current,
     completedCycles: cycles.filter((cycle) => cycle.status === 'completed'),
-    inProgressCycles: cycles.filter((cycle) => cycle.status === 'inProgress'),
+    inProgressCycles,
     abandonedCycles: cycles.filter((cycle) => cycle.status === 'abandoned'),
     crossCycleComparison:
-      last !== null && previous !== null
-        ? compareCycleMetrics(last.metrics, previous.metrics)
+      current !== null && previous !== null
+        ? compareCycleMetrics(current.metrics, previous.metrics)
         : null,
   };
 }

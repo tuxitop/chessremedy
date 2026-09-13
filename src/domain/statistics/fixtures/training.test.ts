@@ -278,11 +278,12 @@ describe('setStatsFor', () => {
     }),
   ];
 
-  it('orders cycles, separates statuses and compares the two most recent cycles', () => {
+  it('orders cycles, separates statuses and compares the in-progress cycle to its predecessor', () => {
     const stats = setStatsFor({ set, cycles: [c3, c1, foreign, c4, c2], attempts });
 
     expect(stats.cycles.map((cycle) => cycle.cycleId)).toEqual(['c1', 'c2', 'c3', 'c4']);
-    expect(stats.currentCycle?.cycleId).toBe('c4');
+    // The in-progress cycle is "current" even though c4 has a higher number.
+    expect(stats.currentCycle?.cycleId).toBe('c3');
     expect(stats.completedCycles.map((cycle) => cycle.cycleId)).toEqual(['c1', 'c2']);
     expect(stats.inProgressCycles.map((cycle) => cycle.cycleId)).toEqual(['c3']);
     expect(stats.abandonedCycles.map((cycle) => cycle.cycleId)).toEqual(['c4']);
@@ -292,10 +293,17 @@ describe('setStatsFor', () => {
 
     const comparison = stats.crossCycleComparison;
     expect(comparison).not.toBeNull();
-    expect(comparison?.current).toBe(stats.cycles[3]!.metrics);
-    expect(comparison?.previous).toBe(stats.cycles[2]!.metrics);
-    expect(comparison?.absoluteDelta.solveRate).toBe(-1);
-    expect(comparison?.relativeDelta.solveRate).toBe(-1);
+    expect(comparison?.current).toBe(stats.cycles[2]!.metrics);
+    expect(comparison?.previous).toBe(stats.cycles[1]!.metrics);
+    expect(comparison?.absoluteDelta.solveRate).toBe(0);
+    expect(comparison?.relativeDelta.solveRate).toBe(0);
+  });
+
+  it('falls back to the highest-numbered cycle when none is in progress', () => {
+    const stats = setStatsFor({ set, cycles: [c1, c2, c4], attempts });
+
+    expect(stats.currentCycle?.cycleId).toBe('c4');
+    expect(stats.inProgressCycles).toEqual([]);
   });
 
   it('reports an archived set with no cycles without fabricating a comparison', () => {

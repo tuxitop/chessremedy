@@ -5,6 +5,7 @@ import { SetCard, formatPercent } from '@/components/puzzles/cycles';
 import { Button } from '@/components/ui/Button';
 import { ROUTES, trainingCyclePath, trainingSetPath } from '@/app/routes';
 import {
+  activeCycleOf,
   BLOCK_SIZE_OPTIONS,
   DEFAULT_BLOCK_SIZE,
   QUICK_TRAIN_SET_ID,
@@ -533,15 +534,15 @@ async function loadHome(
   });
 
   let resumeCandidate: { set: TacticalTrainingSetRow; cycle: TrainingCycleRow } | null = null;
+  let resumeStartedAt = Number.NEGATIVE_INFINITY;
   for (let index = 0; index < summarySets.length; index += 1) {
     const set = summarySets[index]!;
-    for (const cycle of cyclesBySet[index]!) {
-      if (
-        cycle.status === 'inProgress' &&
-        (resumeCandidate === null || cycle.startedAt > resumeCandidate.cycle.startedAt)
-      ) {
-        resumeCandidate = { set, cycle };
-      }
+    // Prefer the in-progress pass with the most recent attempt activity so a
+    // stray later in-progress cycle never shadows the one being solved.
+    const active = activeCycleOf(cyclesBySet[index]!, attempts);
+    if (active !== null && active.startedAt > resumeStartedAt) {
+      resumeStartedAt = active.startedAt;
+      resumeCandidate = { set, cycle: active };
     }
   }
 

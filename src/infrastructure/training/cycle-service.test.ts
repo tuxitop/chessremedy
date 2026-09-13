@@ -130,6 +130,20 @@ describe('CycleService', () => {
     expect(await trainingCyclesRepository.get(result.cycle.id)).toEqual(result.cycle);
   });
 
+  it('start resumes an existing in-progress cycle instead of creating a duplicate', async () => {
+    const set = await seedSet([puzzleFor('game:one', 6)]);
+    const service = makeService();
+
+    const first = await service.start(set.id);
+    if (!first.ok) throw new Error('expected start to succeed');
+    const second = await service.start(set.id);
+
+    if (!second.ok) throw new Error('expected second start to succeed');
+    expect(second.cycle.id).toBe(first.cycle.id);
+    expect(second.cycle.cycleNumber).toBe(1);
+    expect(await trainingCyclesRepository.listForSet(set.id)).toHaveLength(1);
+  });
+
   it('start rejects an empty set (no puzzle row) and creates no cycle', async () => {
     const empty = await seedSet([]);
     expect(await makeService().start(empty.id)).toEqual({ ok: false, reason: 'empty-set' });

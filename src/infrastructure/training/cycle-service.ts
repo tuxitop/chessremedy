@@ -34,6 +34,7 @@ import {
   CYCLE_METRICS_VERSION,
   DEFAULT_CYCLE_CONFIG,
   QUICK_TRAIN_SET_ID,
+  activeCycleOf,
   computeCycleMetrics,
   derivePool,
   formWoodpeckerBlock,
@@ -217,6 +218,14 @@ export class CycleService {
       return { ok: false, reason: 'empty-set' };
     }
     const existing = await this.cycles.listForSet(setId);
+    const active = activeCycleOf(existing, await this.attempts.listAll());
+    if (active !== null) {
+      // Never create a second in-progress pass for the same set: starting an
+      // already-running set resumes the pass being worked through instead (a
+      // duplicate cycle would shadow the real one in the UI). The UI resumes
+      // first; this guards races.
+      return { ok: true, cycle: active, missingPuzzleIds };
+    }
     const cycleNumber = nextCycleNumber(existing.map((cycle) => cycle.cycleNumber));
     const cycle = snapshotCycle({
       id: this.newId(),
