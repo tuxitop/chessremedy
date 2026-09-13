@@ -53,6 +53,13 @@ export function AppShell({ headerSurfaceOpen = false }: AppShellProps = {}): Rea
         data-hidden={hidden ? 'true' : 'false'}
       >
         <Link to="/" className={styles.brand} aria-label={`${APP_NAME} home`}>
+          <img
+            className={styles.brandIcon}
+            src={`${import.meta.env.BASE_URL}chess-remedy.svg`}
+            alt=""
+            aria-hidden="true"
+            data-testid="brand-icon"
+          />
           <span>{APP_NAME}</span>
           <span className={styles.brandTagline}>v0.1.0</span>
         </Link>

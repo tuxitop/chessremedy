@@ -4,7 +4,11 @@
   overflow-x: auto;
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
-  flex: 1;
+  /* Size to the links and let the header `.spacer` absorb the remaining width.
+     `flex: 1` here would split the free space with the spacer, forcing the nav
+     into a horizontal scroll even when the header has room. `0 1 auto` keeps
+     `overflow-x` as a genuine fallback for narrow viewports. */
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -49,7 +53,7 @@
    toggled from the header menu button. The panel is absolutely positioned
    under the (sticky) header so it overlays content instead of squeezing the
    links into an unreadable horizontal scroll strip. */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .nav {
     position: absolute;
     top: 100%;

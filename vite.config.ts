@@ -18,7 +18,7 @@ export default defineConfig({
       devOptions: {
         enabled: false,
       },
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['chess-remedy.svg'],
       manifest: {
         name: 'ChessRemedy',
         short_name: 'ChessRemedy',
