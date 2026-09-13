@@ -2,7 +2,7 @@ import type * as React from 'react';
 import { Link } from 'react-router-dom';
 import { ROUTES } from '@/app/routes';
 import { cycleStatusLabel } from '@/components/puzzles/cycles/labels';
-import type { GameMetricsPartition } from '@/domain/statistics';
+import type { Aggregate, GameMetricsPartition } from '@/domain/statistics';
 import type {
   HomeBlockData,
   HomeGameData,
@@ -14,10 +14,15 @@ import {
   aggregateDisplay,
   formatAccuracyDisplay,
   formatCount,
+  partitionKey,
   partitionLabel,
   type AggregateValueFormatter,
 } from '@/presentation/dashboard';
-import { HOME_STATS_WINDOW_LABEL, selectPrimaryPartition } from '@/presentation/home';
+import {
+  HOME_PREVIOUS_WINDOW_LABEL,
+  HOME_STATS_WINDOW_LABEL,
+  selectPrimaryPartition,
+} from '@/presentation/home';
 import { HomeEmptyState } from './HomeEmptyState';
 import { HomeStatCard } from './HomeStatCard';
 import styles from './HomeStatsGrid.module.css';
@@ -47,34 +52,53 @@ export function HomeStatsGrid({
   onRetry,
 }: HomeStatsGridProps): React.JSX.Element {
   const partition = game.data === null ? null : selectPrimaryPartition(game.data.partitions);
+  const previousPartition =
+    partition === null || game.data === null
+      ? null
+      : (game.data.previousPartitions.find(
+          (candidate) =>
+            partitionKey(candidate.platform, candidate.timeControl) ===
+            partitionKey(partition.platform, partition.timeControl),
+        ) ?? null);
   const firstRun = game.data !== null && game.data.totalGames === 0;
 
   return (
-    <section className={styles.section} aria-label="At a glance" data-testid="home-stats">
-      <h2 className={styles.heading}>At a glance</h2>
+    <section className={styles.section} aria-label="Training vitals" data-testid="home-stats">
+      <h2 className={styles.heading}>Training vitals</h2>
       {firstRun ? (
         <HomeEmptyState />
       ) : (
-        <dl className={styles.grid}>
-          <GamesAnalyzedCard game={game} partition={partition} onRetry={onRetry} />
-          <AccuracyCard game={game} partition={partition} onRetry={onRetry} />
-          <MasteryCard mastery={mastery} onRetry={onRetry} />
-          <BlockCard training={training} block={block} onRetry={onRetry} />
+        <div className={styles.groups}>
+          <dl className={styles.grid}>
+            <GamesAnalyzedCard game={game} partition={partition} onRetry={onRetry} />
+            <AccuracyCard
+              game={game}
+              partition={partition}
+              previous={previousPartition}
+              onRetry={onRetry}
+            />
+            <MasteryCard mastery={mastery} onRetry={onRetry} />
+            <BlockCard training={training} block={block} onRetry={onRetry} />
+          </dl>
           {partition !== null ? (
-            <>
+            <dl className={styles.rates}>
               <RateCard
                 label="Blunders per game"
                 aggregate={partition.metrics.classification.blundersPerGame}
+                previous={previousPartition?.metrics.classification.blundersPerGame ?? null}
+                higherIsBetter={false}
                 testId="home-stat-blunders"
               />
               <RateCard
                 label="Missed tactics per game"
                 aggregate={partition.metrics.missedTactics.missedTacticsPerGame}
+                previous={previousPartition?.metrics.missedTactics.missedTacticsPerGame ?? null}
+                higherIsBetter={false}
                 testId="home-stat-missed-tactics"
               />
-            </>
+            </dl>
           ) : null}
-        </dl>
+        </div>
       )}
     </section>
   );
@@ -136,10 +160,12 @@ function GamesAnalyzedCard({
 function AccuracyCard({
   game,
   partition,
+  previous,
   onRetry,
 }: {
   readonly game: HomeSlice<HomeGameData>;
   readonly partition: GameMetricsPartition | null;
+  readonly previous: GameMetricsPartition | null;
   readonly onRetry: () => void;
 }): React.JSX.Element {
   if (game.loading) {
@@ -179,6 +205,12 @@ function AccuracyCard({
           <span className={styles.sample} data-testid="home-stat-accuracy-sample">
             {display.sampleLabel}
           </span>
+          <Delta
+            current={partition.metrics.accuracy}
+            previous={previous?.metrics.accuracy ?? null}
+            higherIsBetter
+            testId="home-stat-accuracy-delta"
+          />
         </>
       )}
     </HomeStatCard>
@@ -299,10 +331,14 @@ function BlockCard({
 function RateCard({
   label,
   aggregate,
+  previous,
+  higherIsBetter,
   testId,
 }: {
   readonly label: string;
   readonly aggregate: Parameters<typeof aggregateDisplay>[0];
+  readonly previous: Aggregate | null;
+  readonly higherIsBetter: boolean;
   readonly testId: string;
 }): React.JSX.Element {
   const display = aggregateDisplay(aggregate, formatPerGame);
@@ -320,8 +356,58 @@ function RateCard({
           <span className={styles.sample} data-testid={`${testId}-sample`}>
             {display.sampleLabel}
           </span>
+          <Delta
+            current={aggregate}
+            previous={previous}
+            higherIsBetter={higherIsBetter}
+            testId={`${testId}-delta`}
+          />
         </>
       )}
     </HomeStatCard>
+  );
+}
+
+/**
+ * A week-over-week delta between two `ok` aggregates. Renders nothing unless
+ * both sides have a usable `ok` value, so a short/missing previous sample never
+ * shows a misleading change; a negligible difference reads as "no change".
+ */
+function Delta({
+  current,
+  previous,
+  higherIsBetter,
+  testId,
+}: {
+  readonly current: Aggregate;
+  readonly previous: Aggregate | null;
+  readonly higherIsBetter: boolean;
+  readonly testId: string;
+}): React.JSX.Element | null {
+  if (current.state !== 'ok' || previous === null || previous.state !== 'ok') {
+    return null;
+  }
+  const currentValue = current.value;
+  const previousValue = previous.value;
+  if (currentValue === null || previousValue === null) {
+    return null;
+  }
+  const diff = currentValue - previousValue;
+  if (Math.abs(diff) < 0.05) {
+    return (
+      <span className={styles.delta} data-testid={testId}>
+        No change vs {HOME_PREVIOUS_WINDOW_LABEL}
+      </span>
+    );
+  }
+  const improved = higherIsBetter ? diff > 0 : diff < 0;
+  return (
+    <span
+      className={`${styles.delta} ${improved ? styles.deltaGood : styles.deltaBad}`}
+      data-testid={testId}
+    >
+      {diff > 0 ? '+' : '−'}
+      {Math.abs(diff).toFixed(1)} vs {HOME_PREVIOUS_WINDOW_LABEL}
+    </span>
   );
 }

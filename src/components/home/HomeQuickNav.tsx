@@ -1,25 +1,47 @@
 import type * as React from 'react';
 import { Link } from 'react-router-dom';
 import { ROUTES } from '@/app/routes';
-import { ANALYSIS_GLYPH } from '@/components/ui/icons';
+import { ANALYSIS_GLYPH, PUZZLES_GLYPH } from '@/components/ui/icons';
 import styles from './HomeQuickNav.module.css';
 
 interface QuickLink {
   readonly to: string;
   readonly label: string;
-  readonly glyph?: string;
+  readonly description: string;
+  readonly glyph: string;
 }
 
 const QUICK_LINKS: readonly QuickLink[] = [
-  { to: ROUTES.games, label: 'Games' },
-  { to: ROUTES.training, label: 'Training' },
-  { to: ROUTES.statistics, label: 'Statistics' },
-  { to: ROUTES.analysisLive, label: 'Analysis', glyph: ANALYSIS_GLYPH },
+  {
+    to: ROUTES.games,
+    label: 'Games',
+    description: 'Import and review your games.',
+    glyph: '\u265F',
+  },
+  {
+    to: ROUTES.training,
+    label: 'Training',
+    description: 'Train tactics from your own games.',
+    glyph: PUZZLES_GLYPH,
+  },
+  {
+    to: ROUTES.statistics,
+    label: 'Insights',
+    description: 'Track accuracy, errors and trends.',
+    glyph: '\u{1F4C8}',
+  },
+  {
+    to: ROUTES.analysisLive,
+    label: 'Analysis',
+    description: 'Analyse any position with Stockfish.',
+    glyph: ANALYSIS_GLYPH,
+  },
 ];
 
 /**
- * Quick navigation to the four primary surfaces. Real anchors with visible
- * text labels; the optional glyph is decorative and never the only label.
+ * Quick navigation to the four primary surfaces, rendered as descriptive cards
+ * (icon + label + one-line hint). Real anchors with visible text labels; the
+ * glyph is decorative and never the only label.
  */
 export function HomeQuickNav(): React.JSX.Element {
   return (
@@ -28,9 +50,14 @@ export function HomeQuickNav(): React.JSX.Element {
       <ul className={styles.list}>
         {QUICK_LINKS.map((link) => (
           <li key={link.to} className={styles.item}>
-            <Link className={styles.link} to={link.to}>
-              {link.glyph !== undefined ? <span aria-hidden="true">{link.glyph}</span> : null}
-              <span>{link.label}</span>
+            <Link className={styles.card} to={link.to}>
+              <span className={styles.icon} aria-hidden="true">
+                {link.glyph}
+              </span>
+              <span className={styles.text}>
+                <span className={styles.label}>{link.label}</span>
+                <span className={styles.description}>{link.description}</span>
+              </span>
             </Link>
           </li>
         ))}

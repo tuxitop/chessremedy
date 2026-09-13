@@ -10,6 +10,7 @@
  */
 
 import type { TrainingSetStats } from '@/domain/statistics';
+import type { PuzzleRow } from '@/domain/puzzle';
 import type {
   TacticalTrainingSetRow,
   TrainingCycleRow,
@@ -60,6 +61,8 @@ export interface HomeDataSource {
   ): Promise<StatisticsResult<TrainingSetStats>>;
   /** Canonical Feature-013 mastery size plus the persisted puzzle count. */
   masterySummary(): Promise<HomeMasteryData>;
+  /** The most recently created puzzle (Home preview), or `undefined`. */
+  latestPuzzle(): Promise<PuzzleRow | undefined>;
 }
 
 /** The production browser data source (repositories + dynamic statistics service). */
@@ -84,6 +87,16 @@ export function createBrowserHomeDataSource(): HomeDataSource {
         trainingCyclesRepository.listAll(),
       ]);
       return { mastered: masteredPuzzleIds(attempts, cycles).size, total: puzzles.length };
+    },
+    async latestPuzzle() {
+      const puzzles = await puzzlesRepository.listAll();
+      let latest: PuzzleRow | undefined;
+      for (const puzzle of puzzles) {
+        if (latest === undefined || puzzle.createdAt > latest.createdAt) {
+          latest = puzzle;
+        }
+      }
+      return latest;
     },
   };
 }

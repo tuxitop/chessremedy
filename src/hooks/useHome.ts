@@ -13,11 +13,12 @@
  */
 
 import { useEffect, useId, useState } from 'react';
+import type { PuzzleRow } from '@/domain/puzzle';
 import type { GameMetricsPartition, TrainingSetStats } from '@/domain/statistics';
 import type { TacticalTrainingSetRow, TrainingCycleRow } from '@/domain/training/cycleTypes';
 import type { HomeDataSource, HomeMasteryData } from '@/infrastructure/home/home-data-source';
 import type { StatisticsServiceQuery } from '@/infrastructure/statistics';
-import { HOME_STATS_WINDOW } from '@/presentation/home';
+import { HOME_STATS_WINDOW, homePreviousWindow } from '@/presentation/home';
 
 export type { HomeDataSource, HomeMasteryData } from '@/infrastructure/home/home-data-source';
 
@@ -28,6 +29,8 @@ export const HOME_LOAD_ERROR = 'Could not load statistics.';
 export interface HomeGameData {
   readonly totalGames: number;
   readonly partitions: readonly GameMetricsPartition[];
+  /** The same partitions over the immediately preceding window (week-over-week). */
+  readonly previousPartitions: readonly GameMetricsPartition[];
 }
 
 /** The training slice payload (Feature 013 sets/block/cycles). */
@@ -55,6 +58,8 @@ export interface UseHome {
   readonly training: HomeSlice<HomeTrainingData>;
   readonly mastery: HomeSlice<HomeMasteryData>;
   readonly block: HomeSlice<HomeBlockData>;
+  /** The most recent puzzle for the Home preview (idle when none exist). */
+  readonly preview: HomeSlice<PuzzleRow>;
   readonly dataVersionKey: string;
   reload(): void;
 }
@@ -80,18 +85,24 @@ function errorSlice<T>(): HomeSlice<T> {
 async function loadGame(
   source: HomeDataSource,
   query: StatisticsServiceQuery,
+  previousQuery: StatisticsServiceQuery,
   dataVersionKey: string,
 ): Promise<HomeSlice<HomeGameData>> {
   try {
-    const [totalGames, result] = await Promise.all([
+    const [totalGames, result, previous] = await Promise.all([
       source.countGames(),
       source.gameMetrics(query, { dataVersionKey }),
+      source.gameMetrics(previousQuery, { dataVersionKey }),
     ]);
     if (!result.ok) {
       return { data: null, loading: false, error: result.message ?? HOME_LOAD_ERROR };
     }
     return {
-      data: { totalGames, partitions: result.result.partitions },
+      data: {
+        totalGames,
+        partitions: result.result.partitions,
+        previousPartitions: previous.ok ? previous.result.partitions : [],
+      },
       loading: false,
       error: null,
     };
@@ -126,6 +137,16 @@ async function loadMastery(source: HomeDataSource): Promise<HomeSlice<HomeMaster
   }
 }
 
+/** The preview is a nicety: a missing/failed read stays idle, never an error. */
+async function loadPreview(source: HomeDataSource): Promise<HomeSlice<PuzzleRow>> {
+  try {
+    const puzzle = await source.latestPuzzle();
+    return puzzle === undefined ? idleSlice() : { data: puzzle, loading: false, error: null };
+  } catch {
+    return idleSlice();
+  }
+}
+
 async function loadBlock(
   source: HomeDataSource,
   setId: string,
@@ -155,6 +176,7 @@ export function useHome(options: UseHomeOptions = {}): UseHome {
   const [training, setTraining] = useState<HomeSlice<HomeTrainingData>>(() => initialSlice());
   const [mastery, setMastery] = useState<HomeSlice<HomeMasteryData>>(() => initialSlice());
   const [block, setBlock] = useState<HomeSlice<HomeBlockData>>(() => initialSlice());
+  const [preview, setPreview] = useState<HomeSlice<PuzzleRow>>(() => initialSlice());
 
   // Resolve the data source: injected for tests, else a lazily-imported browser
   // adapter (the statistics service never enters the initial chunk).
@@ -175,6 +197,7 @@ export function useHome(options: UseHomeOptions = {}): UseHome {
           setTraining(errorSlice());
           setMastery(errorSlice());
           setBlock(errorSlice());
+          setPreview(idleSlice());
         }
       }
     })();
@@ -199,7 +222,11 @@ export function useHome(options: UseHomeOptions = {}): UseHome {
         dateRange: HOME_STATS_WINDOW,
         now,
       };
-      const slice = await loadGame(source, query, dataVersionKey);
+      const previousQuery: StatisticsServiceQuery = {
+        ...query,
+        dateRange: homePreviousWindow(now),
+      };
+      const slice = await loadGame(source, query, previousQuery, dataVersionKey);
       if (!cancelled) {
         setGame(slice);
       }
@@ -273,10 +300,28 @@ export function useHome(options: UseHomeOptions = {}): UseHome {
     };
   }, [source, openBlockId, training.loading, dataVersionKey]);
 
+  // Preview slice: the most recently created puzzle (Home showcase).
+  useEffect(() => {
+    if (source === null) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setPreview((current) => ({ ...current, loading: true, error: null }));
+      const slice = await loadPreview(source);
+      if (!cancelled) {
+        setPreview(slice);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [source, dataVersionKey]);
+
   function reload(): void {
     setNow((options.now ?? Date.now)());
     setRetryToken((value) => value + 1);
   }
 
-  return { game, training, mastery, block, dataVersionKey, reload };
+  return { game, training, mastery, block, preview, dataVersionKey, reload };
 }

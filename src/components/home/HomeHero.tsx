@@ -4,8 +4,14 @@ import { ROUTES, trainingCyclePath, trainingSetPath } from '@/app/routes';
 import type { HomePrimaryAction } from '@/presentation/home';
 import styles from './HomeHero.module.css';
 
+export interface HomeHeroPill {
+  readonly label: string;
+  readonly tone: 'brand' | 'neutral';
+}
+
 export interface HomeHeroProps {
   readonly primaryAction: HomePrimaryAction | null;
+  readonly pills?: readonly HomeHeroPill[];
   readonly loading: boolean;
   readonly error: string | null;
   readonly onRetry: () => void;
@@ -33,12 +39,25 @@ function hrefFor(action: HomePrimaryAction): string {
  */
 export function HomeHero({
   primaryAction,
+  pills = [],
   loading,
   error,
   onRetry,
 }: HomeHeroProps): React.JSX.Element {
   return (
     <section className={styles.hero} data-testid="home-hero">
+      {pills.length > 0 ? (
+        <div className={styles.pillRow} data-testid="home-hero-pills">
+          {pills.map((pill) => (
+            <span
+              key={pill.label}
+              className={`${styles.pill} ${pill.tone === 'brand' ? styles.pillBrand : styles.pillNeutral}`}
+            >
+              {pill.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <h1 className={styles.title}>ChessRemedy</h1>
       <p className={styles.tagline}>
         Analyze your own games locally, turn mistakes and missed tactics into puzzles, and train

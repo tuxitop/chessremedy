@@ -48,8 +48,9 @@ const BULLET = partition('lichess', 'bullet');
 function gameSlice(
   partitions: readonly GameMetricsPartition[],
   totalGames = 18,
+  previousPartitions: readonly GameMetricsPartition[] = [],
 ): HomeSlice<HomeGameData> {
-  return { data: { totalGames, partitions }, loading: false, error: null };
+  return { data: { totalGames, partitions, previousPartitions }, loading: false, error: null };
 }
 
 function trainingSlice(

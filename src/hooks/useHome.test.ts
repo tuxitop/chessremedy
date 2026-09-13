@@ -23,24 +23,26 @@ function setup(results: FakeHomeResults) {
 }
 
 describe('useHome', () => {
-  it('reads one bounded gameMetrics call with all dimensions and no combine', async () => {
+  it('reads the current and previous bounded gameMetrics windows with all dimensions and no combine', async () => {
     const { source, result } = setup(returningHomeScenario());
 
     await waitFor(() => expect(result.current.game.data).not.toBeNull());
 
-    expect(source.countCalls('gameMetrics')).toBe(1);
-    const call = source.callsFor('gameMetrics')[0]!;
-    expect(call.query).toMatchObject({
+    const calls = source.callsFor('gameMetrics');
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.query).toMatchObject({
       platform: 'all',
       timeControl: 'all',
       side: 'all',
       result: 'all',
-      dateRange: { preset: 'last3m' },
+      dateRange: { preset: 'last7d' },
     });
-    expect(call.query?.combine).toBeUndefined();
-    expect(call.query?.now).toBe(HOME_FIXTURE_NOW);
-    expect(call.options?.dataVersionKey).toBe(result.current.dataVersionKey);
-    expect(call.options).not.toHaveProperty('backfill');
+    expect(calls[0]!.query?.combine).toBeUndefined();
+    expect(calls[0]!.query?.now).toBe(HOME_FIXTURE_NOW);
+    expect(calls[0]!.options?.dataVersionKey).toBe(result.current.dataVersionKey);
+    expect(calls[0]!.options).not.toHaveProperty('backfill');
+    // The comparison read targets the non-overlapping previous week.
+    expect(calls[1]!.query).toMatchObject({ dateRange: { preset: 'custom' } });
   });
 
   it('reads trainingSetStats once, for the open block only', async () => {

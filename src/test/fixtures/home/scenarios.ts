@@ -199,10 +199,12 @@ export function firstRunHomeScenario(): FakeHomeResults {
 
 /** Games stored but none analyzed. */
 export function noAnalysisHomeScenario(): FakeHomeResults {
+  const recent = (daysAgo: number): string =>
+    new Date(HOME_FIXTURE_NOW - daysAgo * DAY).toISOString();
   const games = [
-    game({ id: 'lichess:no-analysis:0' }),
-    game({ id: 'lichess:no-analysis:1' }),
-    game({ id: 'lichess:no-analysis:2' }),
+    game({ id: 'lichess:no-analysis:0', playedAt: recent(1) }),
+    game({ id: 'lichess:no-analysis:1', playedAt: recent(2) }),
+    game({ id: 'lichess:no-analysis:2', playedAt: recent(3) }),
   ];
   return homeScenario({ totalGames: games.length, gameMetrics: gameMetricsFor(games, [], []) });
 }

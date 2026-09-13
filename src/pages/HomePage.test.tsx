@@ -53,15 +53,13 @@ describe('HomePage', () => {
       'href',
       '/training/sets/home-set/cycles/2',
     );
-    expect(screen.getByTestId('home-how-it-works').tagName).toBe('DETAILS');
+    expect(screen.getByTestId('home-how-it-works').tagName).toBe('SECTION');
   });
 
-  it('shows "View your statistics" when analyzed with no continue target', async () => {
+  it('shows "View your insights" when analyzed with no continue target', async () => {
     renderHome(noTargetHomeScenario());
 
-    expect(await screen.findByTestId('home-hero-primary')).toHaveTextContent(
-      'View your statistics',
-    );
+    expect(await screen.findByTestId('home-hero-primary')).toHaveTextContent('View your insights');
     expect(screen.getByTestId('home-hero-primary')).toHaveAttribute('href', '/statistics');
     expect(screen.queryByTestId('home-continue')).not.toBeInTheDocument();
   });
@@ -75,7 +73,7 @@ describe('HomePage', () => {
       'href',
       '/training',
     );
-    expect(within(nav).getByRole('link', { name: /Statistics/ })).toHaveAttribute(
+    expect(within(nav).getByRole('link', { name: /Insights/ })).toHaveAttribute(
       'href',
       '/statistics',
     );
@@ -90,7 +88,7 @@ describe('HomePage', () => {
 
     const partition = await screen.findByTestId('home-stat-games-partition');
     expect(partition).toHaveTextContent('Lichess · Rapid');
-    expect(partition).toHaveTextContent('Last 3 months');
+    expect(partition).toHaveTextContent('Last 7 days');
     expect(partition).not.toHaveTextContent('All platforms');
   });
 
@@ -118,7 +116,7 @@ describe('HomePage', () => {
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('region', { name: 'Continue training' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'At a glance' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Training vitals' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Quick links' })).toBeInTheDocument();
     expect(screen.getByTestId('home-live')).toHaveAttribute('aria-live', 'polite');
   });

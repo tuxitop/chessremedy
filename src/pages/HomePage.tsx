@@ -4,8 +4,10 @@ import {
   HomeContinueCard,
   HomeHero,
   HomeHowItWorks,
+  HomePuzzlePreview,
   HomeQuickNav,
   HomeStatsGrid,
+  type HomeHeroPill,
 } from '@/components/home';
 import { useHome, type UseHomeOptions } from '@/hooks/useHome';
 import {
@@ -48,6 +50,40 @@ export function HomePage(props: HomePageProps = {}): React.JSX.Element {
     continueTarget,
   });
 
+  const heroPills = useMemo<readonly HomeHeroPill[]>(() => {
+    if (continueTarget.kind === 'cycle') {
+      return [
+        { label: 'Training in progress', tone: 'brand' },
+        {
+          label: continueTarget.quickTrain ? 'Quick train' : `Cycle ${continueTarget.cycleNumber}`,
+          tone: 'neutral',
+        },
+      ];
+    }
+    if (continueTarget.kind === 'block') {
+      return [{ label: 'Active training block', tone: 'brand' }];
+    }
+    return [];
+  }, [continueTarget]);
+
+  const continueProgress = useMemo<{ completed: number; total: number } | null>(() => {
+    if (continueTarget.kind !== 'cycle' || continueTarget.quickTrain) {
+      return null;
+    }
+    const stats = home.block.data?.stats;
+    if (stats === undefined || stats.setId !== continueTarget.setId) {
+      return null;
+    }
+    const cycle = stats.currentCycle;
+    if (cycle === null || cycle.cycleNumber !== continueTarget.cycleNumber) {
+      return null;
+    }
+    if (stats.puzzleCount <= 0) {
+      return null;
+    }
+    return { completed: cycle.metrics.puzzlesCompleted, total: stats.puzzleCount };
+  }, [continueTarget, home.block.data]);
+
   const loading =
     home.game.loading || home.training.loading || home.mastery.loading || home.block.loading;
 
@@ -59,12 +95,13 @@ export function HomePage(props: HomePageProps = {}): React.JSX.Element {
 
       <HomeHero
         primaryAction={primaryAction}
+        pills={heroPills}
         loading={home.game.loading}
         error={home.game.error}
         onRetry={home.reload}
       />
 
-      <HomeContinueCard target={continueTarget} />
+      <HomeContinueCard target={continueTarget} progress={continueProgress} />
 
       <HomeStatsGrid
         game={home.game}
@@ -74,9 +111,11 @@ export function HomePage(props: HomePageProps = {}): React.JSX.Element {
         onRetry={home.reload}
       />
 
+      {home.preview.data !== null ? <HomePuzzlePreview puzzle={home.preview.data} /> : null}
+
       <HomeQuickNav />
 
-      <HomeHowItWorks collapsible={home.game.data !== null && home.game.data.totalGames > 0} />
+      <HomeHowItWorks />
     </div>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 export { HomeHero } from './HomeHero';
-export type { HomeHeroProps } from './HomeHero';
+export type { HomeHeroProps, HomeHeroPill } from './HomeHero';
 export { HomeContinueCard } from './HomeContinueCard';
 export type { HomeContinueCardProps } from './HomeContinueCard';
 export { HomeStatsGrid } from './HomeStatsGrid';
@@ -15,5 +15,7 @@ export { HomeStatCard } from './HomeStatCard';
 export type { HomeStatCardProps } from './HomeStatCard';
 export { HomeEmptyState } from './HomeEmptyState';
 export { HomeQuickNav } from './HomeQuickNav';
+export { HomePuzzlePreview } from './HomePuzzlePreview';
+export type { HomePuzzlePreviewProps } from './HomePuzzlePreview';
 export { HomeHowItWorks } from './HomeHowItWorks';
 export type { HomeHowItWorksProps } from './HomeHowItWorks';

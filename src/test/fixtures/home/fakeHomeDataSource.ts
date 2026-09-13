@@ -8,6 +8,7 @@
  */
 
 import type { TrainingSetStats } from '@/domain/statistics';
+import type { PuzzleRow } from '@/domain/puzzle';
 import type {
   TacticalTrainingSetRow,
   TrainingCycleRow,
@@ -32,6 +33,8 @@ export interface FakeHomeResults {
   readonly mastery: HomeMasteryData;
   /** Feature-014 set statistics keyed by set id. */
   readonly blockStats: Readonly<Record<string, TrainingSetStats>>;
+  /** The Home preview puzzle (absent when the pool is empty). */
+  readonly latestPuzzle?: PuzzleRow | null;
 }
 
 /** One recorded call (method + its identifying arguments). */
@@ -51,6 +54,7 @@ export class FakeHomeDataSource implements HomeDataSource {
   failTraining = false;
   failMastery = false;
   failBlock = false;
+  failPreview = false;
 
   constructor(data: FakeHomeResults) {
     this.data = data;
@@ -132,5 +136,13 @@ export class FakeHomeDataSource implements HomeDataSource {
       throw new Error('masterySummary failed');
     }
     return this.data.mastery;
+  }
+
+  async latestPuzzle(): Promise<PuzzleRow | undefined> {
+    this.calls.push({ method: 'latestPuzzle' });
+    if (this.failPreview) {
+      throw new Error('latestPuzzle failed');
+    }
+    return this.data.latestPuzzle ?? undefined;
   }
 }
