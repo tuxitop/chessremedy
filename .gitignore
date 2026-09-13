@@ -10,3 +10,5 @@ test-results/
 .DS_Store
 *.tsbuildinfo
 public/stockfish/
+
+temp/
