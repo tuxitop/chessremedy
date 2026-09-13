@@ -119,3 +119,17 @@ export type {
   CycleTimeGoal,
   SolvingTimeMetrics,
 } from './cycleMetrics';
+export {
+  DEFAULT_PUZZLE_RED_MS,
+  DEFAULT_SESSION_DURATION_MS,
+  DEFAULT_SESSION_WARNING_MS,
+  SESSION_DURATION_OPTIONS_MS,
+  sessionTimerState,
+  summarizeSession,
+} from './session';
+export type {
+  SessionConfig,
+  SessionSummary,
+  SessionTimerInput,
+  SessionTimerState,
+} from './session';

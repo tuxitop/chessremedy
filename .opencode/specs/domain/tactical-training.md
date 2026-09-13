@@ -227,6 +227,27 @@ where noted:
 A puzzle that is still failing at the end of a completed cycle remains
 in the set and is revisited in the next cycle.
 
+## Training session
+
+A **training session** is an ephemeral, time-boxed solving run over a cycle's
+queue. It is a focus wrapper, not a stored artifact:
+
+- it has no id and is never persisted; the **cycle remains the source of
+  truth** and stays resumable, so a cycle may span several sessions;
+- it writes nothing of its own: the attempt rows it produces are ordinary
+  cycle attempts, and there is **no attempt-row schema change**;
+- its summary (first-try / help / failed / skipped counts, first-try accuracy,
+  time used, average time per puzzle, remaining puzzles) is derived at session
+  end from the cycle's attempt rows written during the session window (same
+  `cycleId`, `endedAt >= sessionStart`) and is discarded when the user leaves;
+- it adds a **per-puzzle timer threshold** concept: the presentation clock is
+  revealed (red) once the presentation's wall-clock elapsed time reaches the
+  configured threshold, even when the clock is otherwise hidden. The threshold
+  is display-only and never ends, fails or alters a presentation.
+
+Session length, the session warning threshold and the puzzle timer threshold
+are user settings (Feature 019); none changes the cycle or attempt model.
+
 ## PuzzleAttempt
 
 A `PuzzleAttempt` records one puzzle **presentation**'s outcome within a

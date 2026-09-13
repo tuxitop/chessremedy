@@ -129,7 +129,12 @@ function renderSession(service: CycleService, cycleNumber = 1): void {
   );
 }
 
+async function waitForSetup(): Promise<void> {
+  await screen.findByTestId('session-setup');
+}
+
 async function waitForChrome(): Promise<void> {
+  fireEvent.click(await screen.findByTestId('session-begin'));
   await waitFor(() => expect(screen.getByTestId('solve-stub')).toBeInTheDocument());
 }
 
@@ -204,14 +209,19 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     await db.games.clear();
   });
 
-  it('renders the session chrome and mounts the solving screen for the first puzzle', async () => {
+  it('shows the pre-session gate before the first puzzle and begins solving', async () => {
     const { service } = await seedCycle();
     renderSession(service);
-    await waitForChrome();
 
+    // The setup gate gates the first presentation.
+    await waitForSetup();
     expect(screen.getByTestId('cycle-session-set-name')).toHaveTextContent('Tactics set');
     expect(screen.getByTestId('cycle-session-cycle-number')).toHaveTextContent('Cycle 1');
     expect(screen.getByTestId('cycle-session-progress')).toHaveTextContent('Puzzle 1 of 2');
+    expect(screen.queryByTestId('solve-stub')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('session-begin'));
+    await waitFor(() => expect(screen.getByTestId('solve-stub')).toBeInTheDocument());
     expect(screen.getByTestId('solve-stub-puzzle')).toHaveTextContent('game:session:6');
     expect(screen.getByTestId('solve-stub-presentation')).toHaveTextContent('1');
     expect(screen.getByTestId('solve-stub-allow-skip')).toHaveTextContent('true');
@@ -238,7 +248,7 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     expect(screen.getByTestId('solve-stub-puzzle')).toHaveTextContent('game:session:8');
   });
 
-  it('navigates to the results when the cycle completes and marks it completed', async () => {
+  it('shows the summary before the results when the cycle completes', async () => {
     const { service } = await seedCycle();
     renderSession(service);
     await waitForChrome();
@@ -249,10 +259,88 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     );
     fireEvent.click(screen.getByTestId('solve-stub-solve'));
 
+    // Feature 019 §6: the ephemeral summary is shown first, then the results.
+    await screen.findByTestId('session-summary');
+    expect(screen.queryByTestId('cycle-results-stub')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('session-summary-view-results'));
+
     await screen.findByTestId('cycle-results-stub');
     const cycles = await trainingCyclesRepository.listForSet(SET_ID);
     expect(cycles).toHaveLength(1);
     expect(cycles[0]!.status).toBe('completed');
+  });
+
+  it('ends the session early, discards the presentation and shows the summary', async () => {
+    const { service } = await seedCycle();
+    renderSession(service);
+    await waitForChrome();
+
+    fireEvent.click(screen.getByTestId('solve-stub-solve'));
+    await waitFor(() =>
+      expect(screen.getByTestId('cycle-session-progress')).toHaveTextContent('Puzzle 2 of 2'),
+    );
+
+    fireEvent.click(screen.getByTestId('session-end'));
+
+    const summary = await screen.findByTestId('session-summary');
+    expect(summary).toBeInTheDocument();
+    expect(screen.getByTestId('session-summary-solved')).toHaveTextContent('1');
+    expect(screen.getByTestId('session-summary-remaining')).toHaveTextContent('1');
+    // The cycle stays inProgress and resumable.
+    const cycles = await trainingCyclesRepository.listForSet(SET_ID);
+    expect(cycles[0]!.status).toBe('inProgress');
+  });
+
+  it('resumes the cycle from the summary back to the setup gate', async () => {
+    const { service } = await seedCycle();
+    renderSession(service);
+    await waitForChrome();
+
+    fireEvent.click(screen.getByTestId('session-end'));
+    await screen.findByTestId('session-summary');
+    fireEvent.click(screen.getByTestId('session-summary-resume'));
+
+    await waitForSetup();
+    expect(screen.queryByTestId('session-summary')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('solve-stub')).not.toBeInTheDocument();
+  });
+
+  it('navigates back to the set detail from the summary', async () => {
+    const { service } = await seedCycle();
+    renderSession(service);
+    await waitForChrome();
+
+    fireEvent.click(screen.getByTestId('session-end'));
+    await screen.findByTestId('session-summary');
+    fireEvent.click(screen.getByTestId('session-summary-back'));
+
+    await screen.findByTestId('set-detail-stub');
+  });
+
+  it('shows the session timer and cycle stats in the chrome while running', async () => {
+    const { service } = await seedCycle();
+    renderSession(service);
+    await waitForChrome();
+
+    expect(screen.getByTestId('session-timer')).toBeInTheDocument();
+    expect(screen.getByTestId('session-timer-readout')).toHaveTextContent('10:00');
+    expect(screen.getByTestId('cycle-session-stats')).toHaveTextContent('· 0 solved · —');
+    expect(screen.getByTestId('session-end')).toHaveTextContent('End session');
+  });
+
+  it('runs an untimed session with no countdown but still summarizes on End session', async () => {
+    const { service } = await seedCycle();
+    renderSession(service);
+    await waitForSetup();
+
+    fireEvent.click(screen.getByTestId('session-duration-none'));
+    fireEvent.click(screen.getByTestId('session-begin'));
+    await waitFor(() => expect(screen.getByTestId('solve-stub')).toBeInTheDocument());
+    expect(screen.queryByTestId('session-timer')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('session-end'));
+    await screen.findByTestId('session-summary');
+    expect(screen.getByTestId('session-summary-remaining')).toHaveTextContent('2');
   });
 
   it('exits without completing, leaving the cycle inProgress and resumable', async () => {
@@ -360,6 +448,9 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     );
     fireEvent.click(screen.getByTestId('solve-stub-solve'));
 
+    await screen.findByTestId('session-summary');
+    fireEvent.click(screen.getByTestId('session-summary-view-results'));
+
     await screen.findByTestId('training-home-stub');
     const cycles = await trainingCyclesRepository.listForSet(QUICK_TRAIN_SET_ID);
     expect(cycles).toHaveLength(1);
@@ -395,15 +486,17 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     expect(screen.queryByTestId('solve-stub')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('cycle-spacing-nudge-start'));
-    await screen.findByTestId('solve-stub');
+    await screen.findByTestId('session-setup');
     expect(screen.queryByTestId('cycle-spacing-nudge')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('session-begin'));
+    await screen.findByTestId('solve-stub');
   });
 
   it('does not nudge when the previous block cycle ended a day or more ago', async () => {
     const service = await seedBlockWithPreviousCycle(2 * DAY_MS);
     renderBlockSession(service);
 
-    await screen.findByTestId('solve-stub');
+    await waitForChrome();
     expect(screen.queryByTestId('cycle-spacing-nudge')).not.toBeInTheDocument();
   });
 
@@ -436,7 +529,7 @@ describe('CycleSessionPage (Feature 013, Stage F)', () => {
     );
     renderSession(makeService(), 2);
 
-    await screen.findByTestId('solve-stub');
+    await waitForChrome();
     expect(screen.queryByTestId('cycle-spacing-nudge')).not.toBeInTheDocument();
   });
 });

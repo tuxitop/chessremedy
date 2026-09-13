@@ -24,6 +24,9 @@ export const SETTINGS_KEYS = {
   chessComFilters: 'import.chesscom.filters',
   lichessFilters: 'import.lichess.filters',
   puzzleTimer: 'puzzle.timer',
+  puzzleTimerRedThreshold: 'puzzle.timerRedThreshold',
+  sessionDefaultMinutes: 'training.session.defaultMinutes',
+  sessionWarningSeconds: 'training.session.warningSeconds',
   defaultHintConfig: 'training.hints',
   legacyAutoSetsCleaned: 'training.legacyAutoSetsCleaned',
 } as const;

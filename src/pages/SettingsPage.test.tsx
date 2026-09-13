@@ -136,6 +136,82 @@ describe('Settings page — Puzzles (Feature 012 solve UX)', () => {
   });
 });
 
+describe('Settings page — Timed-training settings (Feature 019 §8)', () => {
+  beforeEach(async () => {
+    await db.settings.clear();
+  });
+
+  it('renders the three new controls with the documented defaults', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+
+    const row = await screen.findByTestId('settings-row-puzzles');
+    const threshold = (await within(row).findByTestId(
+      'setting-puzzle-timer-threshold',
+    )) as HTMLInputElement;
+    expect(threshold).toHaveValue(30);
+    expect(threshold.min).toBe('5');
+    expect(threshold.max).toBe('600');
+    expect(within(row).getByTestId('setting-session-duration')).toHaveValue(10);
+    expect(within(row).getByTestId('setting-session-warning')).toHaveValue(30);
+  });
+
+  it('persists the red threshold, default session length and warning threshold', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    const row = await screen.findByTestId('settings-row-puzzles');
+
+    fireEvent.change(await within(row).findByTestId('setting-puzzle-timer-threshold'), {
+      target: { value: '45' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.puzzleTimerRedThreshold)).toBe(45);
+    });
+
+    fireEvent.change(within(row).getByTestId('setting-session-duration'), {
+      target: { value: '15' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.sessionDefaultMinutes)).toBe(15);
+    });
+
+    fireEvent.change(within(row).getByTestId('setting-session-warning'), {
+      target: { value: '20' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.sessionWarningSeconds)).toBe(20);
+    });
+    // Editing one session value keeps the other.
+    expect(await settingsRepository.get(SETTINGS_KEYS.sessionDefaultMinutes)).toBe(15);
+  });
+
+  it('clamps invalid values before persisting', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    const row = await screen.findByTestId('settings-row-puzzles');
+
+    fireEvent.change(await within(row).findByTestId('setting-puzzle-timer-threshold'), {
+      target: { value: '999' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.puzzleTimerRedThreshold)).toBe(600);
+    });
+    expect(within(row).getByTestId('setting-puzzle-timer-threshold')).toHaveValue(600);
+
+    fireEvent.change(within(row).getByTestId('setting-session-duration'), {
+      target: { value: '0' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.sessionDefaultMinutes)).toBe(1);
+    });
+
+    fireEvent.change(within(row).getByTestId('setting-session-warning'), {
+      target: { value: '1' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.sessionWarningSeconds)).toBe(5);
+    });
+    expect(within(row).getByTestId('setting-session-warning')).toHaveValue(5);
+  });
+});
+
 describe('Settings page — Puzzle hints default (Feature 017 §7)', () => {
   beforeEach(async () => {
     await db.settings.clear();

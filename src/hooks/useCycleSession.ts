@@ -37,8 +37,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
+  computeCycleMetrics,
   reconstructResume,
   solveHintConfigOf,
+  type CycleMetrics,
   type PresentationOutcome,
   type ResumeQueue,
   type SessionPuzzleContext,
@@ -103,6 +105,10 @@ export interface CycleSessionController {
   readonly current: CycleSessionPuzzle | null;
   /** Progress for the "Puzzle X of Y" chrome (derived from persisted rows). */
   readonly progress: CycleSessionProgress;
+  /** The canonical cycle aggregates over the persisted attempt rows. */
+  readonly metrics: CycleMetrics;
+  /** Number of pending presentations (the reconstructed queue length). */
+  readonly remaining: number;
   /** Whether the cycle's config snapshot allows skipping. */
   readonly allowSkip: boolean;
   /** Session lifecycle status. */
@@ -169,6 +175,9 @@ export function useCycleSession(options: UseCycleSessionOptions): CycleSessionCo
   const [notice, setNotice] = useState<string | null>(null);
   const [queue, setQueue] = useState<ResumeQueue>([]);
   const [cycle, setCycle] = useState<TrainingCycleRow>(options.cycle);
+  const [metrics, setMetrics] = useState<CycleMetrics>(() =>
+    computeCycleMetrics({ puzzleIds: options.cycle.puzzleIds, attempts: [] }),
+  );
 
   // Generation guards stale async loads when the session (cycle id) changes.
   const generationRef = useRef(0);
@@ -188,6 +197,7 @@ export function useCycleSession(options: UseCycleSessionOptions): CycleSessionCo
       return;
     }
     const missingPuzzleIds = new Set(current.puzzleIds.filter((id) => !rows.has(id)));
+    setMetrics(computeCycleMetrics({ puzzleIds: current.puzzleIds, attempts, missingPuzzleIds }));
     const nextQueue = reconstructResume({
       puzzleIds: current.puzzleIds,
       attempts,
@@ -235,6 +245,9 @@ export function useCycleSession(options: UseCycleSessionOptions): CycleSessionCo
     completedRef.current = false;
     setCycle(optionsRef.current.cycle);
     setQueue([]);
+    setMetrics(
+      computeCycleMetrics({ puzzleIds: optionsRef.current.cycle.puzzleIds, attempts: [] }),
+    );
     setStatus('loading');
     setNotice(null);
     refresh(generation).catch((error: unknown) => {
@@ -307,6 +320,8 @@ export function useCycleSession(options: UseCycleSessionOptions): CycleSessionCo
   return {
     current,
     progress,
+    metrics,
+    remaining: queue.length,
     allowSkip: cycle.config.allowSkip,
     status,
     notice,

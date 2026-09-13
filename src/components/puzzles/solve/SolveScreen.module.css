@@ -85,6 +85,13 @@
   margin: 0;
 }
 
+/* Feature 019 §7: the revealed/over-threshold clock is red; the text itself
+   carries the state so the colour is never the only signal. */
+.infoClockWarning {
+  color: var(--color-danger, #c33);
+  font-weight: 600;
+}
+
 .infoBody {
   display: flex;
   flex-direction: column;

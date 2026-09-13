@@ -24,6 +24,27 @@ describe('CycleHistory', () => {
     expect(screen.getByTestId('ch-empty')).toHaveTextContent('No cycles yet.');
   });
 
+  it('renders per-cycle progress when a progress resolver is supplied', () => {
+    renderWithProviders(
+      <CycleHistory
+        cycles={CYCLES}
+        emptyMessage="None"
+        testId="ch3"
+        progressFor={(cycle) =>
+          cycle.cycleNumber === 1
+            ? { solved: 2, total: 3, accuracy: 0.5 }
+            : cycle.cycleNumber === 2
+              ? { solved: 0, total: 3, accuracy: null }
+              : null
+        }
+      />,
+    );
+
+    expect(screen.getByTestId('ch3-progress-1')).toHaveTextContent('2/3 · 50%');
+    expect(screen.getByTestId('ch3-progress-2')).toHaveTextContent('0/3 · —');
+    expect(screen.queryByTestId('ch3-progress-3')).toBeNull();
+  });
+
   it('renders a results link only when a path builder is supplied', () => {
     renderWithProviders(<CycleHistory cycles={CYCLES} emptyMessage="None" testId="ch" />);
     expect(screen.queryByTestId('ch-results-1')).toBeNull();

@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { SolveScreen } from '@/components/puzzles/solve';
-import { SpacingNudge } from '@/components/puzzles/cycles';
+import {
+  SessionSetup,
+  SessionSummary,
+  SessionTimer,
+  SpacingNudge,
+  formatPercent,
+} from '@/components/puzzles/cycles';
 import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
+import { usePuzzleTimerThreshold } from '@/hooks/usePuzzleTimerThreshold';
+import { useTrainingSession } from '@/hooks/useTrainingSession';
+import { useTrainingSessionSettings } from '@/hooks/useTrainingSessionSettings';
 import { useCycleSession } from '@/hooks/useCycleSession';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import type { PuzzleRow } from '@/domain/puzzle';
@@ -12,8 +21,11 @@ import {
   QUICK_TRAIN_SET_ID,
   isWoodpeckerBlock,
   spacingNudgeFor,
+  summarizeSession,
   type CycleSpacingNudge,
   type PresentationOutcome,
+  type SessionConfig,
+  type SessionSummary as SessionSummaryData,
   type TacticalTrainingSetRow,
   type TrainingCycleRow,
 } from '@/domain/training';
@@ -105,6 +117,10 @@ export function CycleSessionPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SessionData | null>(null);
+  // Bumped when the summary's "Resume cycle" action asks for a fresh session
+  // mount: the previous session view exited (its outcome seam is closed), so a
+  // remount is what re-opens the cycle for solving.
+  const [sessionEpoch, setSessionEpoch] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +194,7 @@ export function CycleSessionPage({
 
   return (
     <CycleSessionView
+      key={sessionEpoch}
       set={data.set}
       cycle={data.cycle}
       puzzles={data.puzzles}
@@ -186,6 +203,7 @@ export function CycleSessionPage({
       attemptsRepository={attemptsRepo}
       cycleService={cycleService}
       now={now}
+      onResumeSession={() => setSessionEpoch((epoch) => epoch + 1)}
     />
   );
 }
@@ -218,6 +236,18 @@ interface CycleSessionViewProps {
   readonly attemptsRepository: PuzzleAttemptsRepository;
   readonly cycleService: CycleService;
   readonly now: () => number;
+  /** Ask the page to remount a fresh session (summary's Resume cycle action). */
+  readonly onResumeSession: () => void;
+}
+
+/** The ephemeral session phase (Feature 019 §1/§5). */
+type SessionPhase = 'setup' | 'running' | 'summary';
+
+/** The end-of-session projection rendered by the summary. */
+interface SessionSummaryState {
+  readonly summary: SessionSummaryData;
+  readonly remainingPuzzles: number;
+  readonly cycleCompleted: boolean;
 }
 
 /** The mounted session: the chrome plus the Feature-012 solving screen. */
@@ -230,11 +260,17 @@ function CycleSessionView({
   attemptsRepository,
   cycleService,
   now,
+  onResumeSession,
 }: CycleSessionViewProps): React.JSX.Element {
   const navigate = useNavigate();
   const { showPuzzleTimer } = usePuzzleTimerSetting();
+  const { thresholdMs: puzzleRedThresholdMs } = usePuzzleTimerThreshold();
+  const { defaultDurationMs, warningMs } = useTrainingSessionSettings();
   const [restartTick, setRestartTick] = useState(0);
   const [spacingAcknowledged, setSpacingAcknowledged] = useState(false);
+  const [phase, setPhase] = useState<SessionPhase>('setup');
+  const [sessionConfig, setSessionConfig] = useState<SessionConfig | null>(null);
+  const [summaryState, setSummaryState] = useState<SessionSummaryState | null>(null);
 
   const session = useCycleSession({
     set,
@@ -254,13 +290,108 @@ function CycleSessionView({
     ? ROUTES.training
     : trainingCycleResultsPath(set.id, cycle.cycleNumber);
 
-  // Completion (the queue emptied and the cycle was marked completed, or the
-  // cycle was already terminal on load) lands on the results view.
+  const exitSession = session.exit;
+  // Latest values for the stable end-of-session callback without re-creating it.
+  const startedAtRef = useRef<number | null>(null);
+  const remainingRef = useRef(0);
+  const statusRef = useRef(session.status);
+  // Guards the one-shot transition into the summary (expiry vs completion).
+  const endingRef = useRef(false);
   useEffect(() => {
-    if (session.status === 'complete') {
+    remainingRef.current = session.remaining;
+  }, [session.remaining]);
+  useEffect(() => {
+    statusRef.current = session.status;
+  }, [session.status]);
+
+  /**
+   * End the running session: discard the in-progress presentation (no outcome
+   * is applied, so no row is written), project the session's persisted rows and
+   * show the ephemeral summary (Feature 019 §3/§4/§5). The cycle stays
+   * `inProgress` and resumable.
+   */
+  const finishSession = useCallback(
+    async (cycleCompleted: boolean): Promise<void> => {
+      if (endingRef.current) {
+        return;
+      }
+      endingRef.current = true;
+      exitSession();
+      const startedAt = startedAtRef.current;
+      let summary: SessionSummaryData;
+      try {
+        const attempts = await attemptsRepository.listForCycle(cycle.id);
+        const sessionAttempts =
+          startedAt === null ? attempts : attempts.filter((row) => row.endedAt >= startedAt);
+        summary = summarizeSession(sessionAttempts);
+      } catch {
+        // The cycle/attempts could not be read; fall back to the training home
+        // rather than fabricating a summary.
+        navigate(isQuickTrain ? ROUTES.training : trainingSetPath(set.id));
+        return;
+      }
+      setSummaryState({
+        summary,
+        remainingPuzzles: remainingRef.current,
+        cycleCompleted: cycleCompleted || statusRef.current === 'complete',
+      });
+      setPhase('summary');
+    },
+    [exitSession, attemptsRepository, cycle.id, navigate, isQuickTrain, set.id],
+  );
+
+  const handleExpire = useCallback((): void => {
+    void finishSession(false);
+  }, [finishSession]);
+
+  const timer = useTrainingSession({
+    config: phase === 'running' ? sessionConfig : null,
+    now,
+    onExpire: handleExpire,
+  });
+  useEffect(() => {
+    startedAtRef.current = timer.startedAt;
+  }, [timer.startedAt]);
+
+  // A cycle that completes mid-session shows the summary first, then results
+  // (Feature 019 §6); a cycle already terminal on load goes straight to results.
+  useEffect(() => {
+    if (session.status === 'complete' && phase === 'running') {
+      void finishSession(true);
+    }
+  }, [session.status, phase, finishSession]);
+
+  useEffect(() => {
+    if (session.status === 'complete' && phase === 'setup' && summaryState === null) {
       navigate(resultsPath, { replace: true });
     }
-  }, [session.status, navigate, resultsPath]);
+  }, [session.status, phase, summaryState, navigate, resultsPath]);
+
+  const handleBegin = useCallback(
+    (durationMs: number | null): void => {
+      endingRef.current = false;
+      setSummaryState(null);
+      setSessionConfig({ durationMs, warningMs });
+      setPhase('running');
+    },
+    [warningMs],
+  );
+
+  const handleEnd = useCallback((): void => {
+    void finishSession(false);
+  }, [finishSession]);
+
+  const handleResume = useCallback((): void => {
+    onResumeSession();
+  }, [onResumeSession]);
+
+  const handleBack = useCallback((): void => {
+    navigate(isQuickTrain ? ROUTES.training : trainingSetPath(set.id));
+  }, [navigate, isQuickTrain, set.id]);
+
+  const handleViewResults = useCallback((): void => {
+    navigate(resultsPath, { replace: true });
+  }, [navigate, resultsPath]);
 
   const handleExit = useCallback((): void => {
     // Leave the cycle inProgress and resumable; discard the presentation.
@@ -278,8 +409,11 @@ function CycleSessionView({
   const current = session.current;
   const total = session.progress.total;
   // The spacing nudge gates the first presentation of a too-soon block cycle;
-  // "Start anyway" acknowledges it and the session proceeds. It never blocks.
-  const showSpacingNudge = spacing !== null && !spacingAcknowledged && session.status === 'solving';
+  // "Start anyway" acknowledges it and the session proceeds. It never blocks and
+  // is shown before the pre-session gate (Feature 019 §1 ordering).
+  const showSpacingNudge =
+    spacing !== null && !spacingAcknowledged && phase === 'setup' && session.status === 'solving';
+  const firstTryAccuracyLabel = formatPercent(session.metrics.firstTryAccuracy) ?? '—';
 
   return (
     <div className={styles.page} data-testid="cycle-session">
@@ -301,15 +435,34 @@ function CycleSessionView({
               ? `Cycle complete — all ${total} ${total === 1 ? 'puzzle' : 'puzzles'} answered`
               : `Puzzle ${session.progress.index} of ${total}`}
           </p>
+          {phase === 'running' ? (
+            <div className={styles.sessionStatus}>
+              <SessionTimer
+                remainingMs={timer.remainingMs}
+                warning={timer.warning}
+                expired={timer.expired}
+              />
+              <p className={styles.stats} data-testid="cycle-session-stats">
+                · {session.metrics.puzzlesCompleted} solved · {firstTryAccuracyLabel}
+              </p>
+            </div>
+          ) : null}
         </div>
-        <Button
-          variant="secondary"
-          data-testid="cycle-session-exit"
-          onClick={handleExit}
-          disabled={session.status === 'complete'}
-        >
-          Exit
-        </Button>
+        <div className={styles.chromeActions}>
+          {phase === 'running' ? (
+            <Button variant="secondary" data-testid="session-end" onClick={handleEnd}>
+              End session
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            data-testid="cycle-session-exit"
+            onClick={handleExit}
+            disabled={session.status === 'complete'}
+          >
+            Exit
+          </Button>
+        </div>
       </header>
 
       {session.notice !== null ? (
@@ -323,12 +476,23 @@ function CycleSessionView({
         </p>
       ) : null}
 
-      {showSpacingNudge ? (
+      {phase === 'summary' && summaryState !== null ? (
+        <SessionSummary
+          summary={summaryState.summary}
+          remainingPuzzles={summaryState.remainingPuzzles}
+          cycleCompleted={summaryState.cycleCompleted}
+          onResume={handleResume}
+          onBack={handleBack}
+          onViewResults={handleViewResults}
+        />
+      ) : showSpacingNudge ? (
         <SpacingNudge
           setName={set.name}
           previousCycleNumber={spacing.previousCycleNumber}
           onStartAnyway={() => setSpacingAcknowledged(true)}
         />
+      ) : phase === 'setup' && session.status === 'solving' ? (
+        <SessionSetup defaultDurationMs={defaultDurationMs} onBegin={handleBegin} />
       ) : current !== null ? (
         <SolveScreen
           key={`${current.row.sourceGameId}:${current.row.sourcePly}:${current.context.presentationIndex}:${restartTick}`}
@@ -339,6 +503,7 @@ function CycleSessionView({
           onExit={handleOutcome}
           allowSkip={session.allowSkip}
           showTimer={showPuzzleTimer}
+          puzzleRedThresholdMs={puzzleRedThresholdMs}
           onRestart={() => setRestartTick((tick) => tick + 1)}
         />
       ) : null}

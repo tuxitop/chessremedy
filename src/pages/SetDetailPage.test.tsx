@@ -157,6 +157,59 @@ describe('SetDetailPage', () => {
     expect(await trainingSetsRepository.get(SET_ID)).toBeUndefined();
   });
 
+  it('shows progress on the continue-cycle button for an in-progress cycle', async () => {
+    await seedSet();
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle-1',
+        trainingSetId: SET_ID,
+        cycleNumber: 1,
+        status: 'inProgress',
+        puzzleIds: PUZZLE_IDS,
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'cycle-1',
+        trainingSetId: SET_ID,
+        puzzleId: PUZZLE_IDS[0]!,
+        result: 'solvedFirstTry',
+      }),
+    );
+
+    renderDetail();
+    await waitForDetail();
+
+    expect(screen.getByTestId('set-detail-continue-cycle')).toHaveTextContent(
+      'Continue cycle 1 · 1/2 solved',
+    );
+  });
+
+  it('shows per-cycle progress in the cycle history', async () => {
+    await seedSet();
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle-1',
+        trainingSetId: SET_ID,
+        cycleNumber: 1,
+        status: 'completed',
+        puzzleIds: PUZZLE_IDS,
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'cycle-1',
+        trainingSetId: SET_ID,
+        puzzleId: PUZZLE_IDS[0]!,
+      }),
+    );
+
+    renderDetail();
+    await waitForDetail();
+
+    expect(screen.getByTestId('set-detail-history-progress-1')).toHaveTextContent('1/2 · 100%');
+  });
+
   it('starts a cycle and opens the session', async () => {
     await seedSet();
     renderDetail();

@@ -8,12 +8,14 @@ import {
   CycleHistory,
   MembershipList,
   cycleConfigSummary,
+  type CycleHistoryProgress,
   type MembershipListItem,
 } from '@/components/puzzles/cycles';
 import { ROUTES, trainingCyclePath, trainingCycleResultsPath } from '@/app/routes';
 import { difficultyBucketOf, puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
+  computeCycleMetrics,
   isWoodpeckerBlock,
   setSourceLabel,
   type CycleConfig,
@@ -36,6 +38,8 @@ interface DetailData {
   readonly membership: readonly PuzzleRow[];
   readonly cycles: readonly TrainingCycleRow[];
   readonly attemptCount: number;
+  /** Canonical per-cycle progress, keyed by cycle id. */
+  readonly progressByCycleId: ReadonlyMap<string, CycleHistoryProgress>;
 }
 
 /** Which close action the block confirmation dialog is asking about. */
@@ -102,6 +106,7 @@ export function SetDetailPage({
     membership: [],
     cycles: [],
     attemptCount: 0,
+    progressByCycleId: new Map(),
   });
   const [name, setName] = useState('');
   const [config, setConfig] = useState<CycleConfig | null>(null);
@@ -126,7 +131,13 @@ export function SetDetailPage({
           return;
         }
         if (set === undefined) {
-          setData({ set: null, membership: [], cycles: [], attemptCount: 0 });
+          setData({
+            set: null,
+            membership: [],
+            cycles: [],
+            attemptCount: 0,
+            progressByCycleId: new Map(),
+          });
           setLoading(false);
           return;
         }
@@ -140,11 +151,24 @@ export function SetDetailPage({
         if (cancelled) {
           return;
         }
+        const progressByCycleId = new Map<string, CycleHistoryProgress>();
+        cycles.forEach((cycle, index) => {
+          const metrics = computeCycleMetrics({
+            puzzleIds: cycle.puzzleIds,
+            attempts: attemptRows[index] ?? [],
+          });
+          progressByCycleId.set(cycle.id, {
+            solved: metrics.puzzlesCompleted,
+            total: cycle.puzzleIds.length,
+            accuracy: metrics.firstTryAccuracy,
+          });
+        });
         setData({
           set,
           membership,
           cycles,
           attemptCount: attemptRows.reduce((sum, rows) => sum + rows.length, 0),
+          progressByCycleId,
         });
         setName(set.name);
         setConfig(set.config);
@@ -172,6 +196,9 @@ export function SetDetailPage({
     }
     return found;
   }, [data.cycles]);
+
+  const inProgressProgress =
+    inProgress === null ? null : (data.progressByCycleId.get(inProgress.id) ?? null);
 
   const set = data.set;
 
@@ -353,7 +380,9 @@ export function SetDetailPage({
               disabled={busy || empty}
               onClick={startOrContinue}
             >
-              Continue cycle {inProgress.cycleNumber}
+              {inProgressProgress === null
+                ? `Continue cycle ${inProgress.cycleNumber}`
+                : `Continue cycle ${inProgress.cycleNumber} · ${inProgressProgress.solved}/${inProgressProgress.total} solved`}
             </Button>
           ) : (
             <Button
@@ -504,6 +533,7 @@ export function SetDetailPage({
           emptyMessage="No cycles yet."
           testId="set-detail-history"
           resultsPathFor={(cycle) => trainingCycleResultsPath(setId, cycle.cycleNumber)}
+          progressFor={(cycle) => data.progressByCycleId.get(cycle.id) ?? null}
         />
       </section>
 

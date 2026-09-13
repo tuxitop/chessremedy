@@ -45,6 +45,7 @@ import type { PuzzleRow } from '@/domain/puzzle';
 import {
   hintContent,
   nextHintLevel,
+  DEFAULT_PUZZLE_RED_MS,
   type HintLevel,
   type PresentationOutcome,
   type SessionPuzzleContext,
@@ -107,6 +108,11 @@ export interface SolveScreenProps {
   /** Show the solve clock (Settings → Puzzles; default hidden). */
   readonly showTimer?: boolean;
   /**
+   * Elapsed-time threshold (millis) at which the solve clock is revealed even
+   * when `showTimer` is off, and turns red when it is on (Feature 019 §7).
+   */
+  readonly puzzleRedThresholdMs?: number;
+  /**
    * Host seam to re-present the current puzzle from a clean start. Used for the
    * post-finish "Restart" action (the presentation controller has no return
    * path from a recorded outcome to `solving`, so the host remounts the row).
@@ -143,6 +149,7 @@ export function SolveScreen({
   boardSize,
   storedAnalysis = analysesRepository,
   showTimer = false,
+  puzzleRedThresholdMs = DEFAULT_PUZZLE_RED_MS,
   onRestart,
   allowSkip = false,
 }: SolveScreenProps): React.JSX.Element {
@@ -712,6 +719,11 @@ export function SolveScreen({
   );
 
   const totalPlies = leafPath.length;
+  // Feature 019 §7: the clock is revealed once elapsed reaches the red
+  // threshold even when the Show puzzle timer setting is off; when it is on the
+  // clock is always visible and the threshold only controls the red state.
+  const clockWarning = controller.elapsedMs >= puzzleRedThresholdMs;
+  const showClock = showTimer || clockWarning;
 
   return (
     <section className={styles.screen} data-testid="solve-screen">
@@ -788,8 +800,14 @@ export function SolveScreen({
                   >
                     {objective}
                   </h2>
-                  {showTimer ? (
-                    <p className={styles.infoClock} data-testid="solve-clock">
+                  {showClock ? (
+                    <p
+                      className={[styles.infoClock, clockWarning ? styles.infoClockWarning : '']
+                        .filter(Boolean)
+                        .join(' ')}
+                      data-testid="solve-clock"
+                      data-state={clockWarning ? 'warning' : 'normal'}
+                    >
                       {formatSolveTime(controller.elapsedMs)}
                     </p>
                   ) : null}

@@ -8,6 +8,21 @@ import { useGameAnalysisSettings } from '@/hooks/useGameAnalysisSettings';
 import { useTacticalDetectionSettings } from '@/hooks/useTacticalDetectionSettings';
 import { usePuzzleTimerSetting } from '@/hooks/usePuzzleTimerSetting';
 import {
+  MAX_PUZZLE_RED_THRESHOLD_SECONDS,
+  MIN_PUZZLE_RED_THRESHOLD_SECONDS,
+  DEFAULT_PUZZLE_RED_THRESHOLD_SECONDS,
+  usePuzzleTimerThreshold,
+} from '@/hooks/usePuzzleTimerThreshold';
+import {
+  DEFAULT_SESSION_DURATION_MINUTES,
+  DEFAULT_SESSION_WARNING_SECONDS,
+  MAX_SESSION_DURATION_MINUTES,
+  MAX_SESSION_WARNING_SECONDS,
+  MIN_SESSION_DURATION_MINUTES,
+  MIN_SESSION_WARNING_SECONDS,
+  useTrainingSessionSettings,
+} from '@/hooks/useTrainingSessionSettings';
+import {
   DEFAULT_VERIFICATION_DEPTH,
   MAX_VERIFICATION_DEPTH,
   MIN_VERIFICATION_DEPTH,
@@ -316,6 +331,17 @@ export function SettingsPage({
     save: savePuzzleTimer,
   } = usePuzzleTimerSetting();
   const {
+    thresholdMs,
+    isReady: puzzleThresholdReady,
+    save: savePuzzleThreshold,
+  } = usePuzzleTimerThreshold();
+  const {
+    defaultDurationMs,
+    warningMs,
+    isReady: sessionSettingsReady,
+    save: saveSessionSettings,
+  } = useTrainingSessionSettings();
+  const {
     settings: detectionSettings,
     isReady: detectionReady,
     save: saveDetection,
@@ -559,7 +585,7 @@ export function SettingsPage({
               never fail a puzzle, and the engine becomes available once a puzzle is finished.
             </p>
           </div>
-          {puzzleTimerReady ? (
+          {puzzleTimerReady && puzzleThresholdReady && sessionSettingsReady ? (
             <div className={styles.boardForm}>
               <label className={styles.check}>
                 <input
@@ -570,6 +596,80 @@ export function SettingsPage({
                 />
                 <span>Show puzzle timer</span>
               </label>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Puzzle timer red threshold (s)</span>
+                <input
+                  type="number"
+                  min={MIN_PUZZLE_RED_THRESHOLD_SECONDS}
+                  max={MAX_PUZZLE_RED_THRESHOLD_SECONDS}
+                  value={thresholdMs / 1000}
+                  aria-describedby="setting-puzzle-timer-threshold-help"
+                  onChange={(e) => void savePuzzleThreshold(Number(e.target.value) * 1000)}
+                  data-testid="setting-puzzle-timer-threshold"
+                />
+              </label>
+              <p
+                id="setting-puzzle-timer-threshold-help"
+                className={styles.helpText}
+                data-testid="setting-puzzle-timer-threshold-help"
+              >
+                Seconds of elapsed solving time before the solve clock turns red. Default{' '}
+                {DEFAULT_PUZZLE_RED_THRESHOLD_SECONDS}, bounds {MIN_PUZZLE_RED_THRESHOLD_SECONDS}–
+                {MAX_PUZZLE_RED_THRESHOLD_SECONDS}. The clock is revealed at the threshold even when
+                Show puzzle timer is off.
+              </p>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Default session length (min)</span>
+                <input
+                  type="number"
+                  min={MIN_SESSION_DURATION_MINUTES}
+                  max={MAX_SESSION_DURATION_MINUTES}
+                  value={defaultDurationMs / 60_000}
+                  aria-describedby="setting-session-duration-help"
+                  onChange={(e) =>
+                    void saveSessionSettings({
+                      defaultMinutes: Number(e.target.value),
+                      warningSeconds: warningMs / 1000,
+                    })
+                  }
+                  data-testid="setting-session-duration"
+                />
+              </label>
+              <p
+                id="setting-session-duration-help"
+                className={styles.helpText}
+                data-testid="setting-session-duration-help"
+              >
+                Length preselected by the timed-training gate. Default{' '}
+                {DEFAULT_SESSION_DURATION_MINUTES}, bounds {MIN_SESSION_DURATION_MINUTES}–
+                {MAX_SESSION_DURATION_MINUTES} minutes.
+              </p>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Session warning threshold (s)</span>
+                <input
+                  type="number"
+                  min={MIN_SESSION_WARNING_SECONDS}
+                  max={MAX_SESSION_WARNING_SECONDS}
+                  value={warningMs / 1000}
+                  aria-describedby="setting-session-warning-help"
+                  onChange={(e) =>
+                    void saveSessionSettings({
+                      defaultMinutes: defaultDurationMs / 60_000,
+                      warningSeconds: Number(e.target.value),
+                    })
+                  }
+                  data-testid="setting-session-warning"
+                />
+              </label>
+              <p
+                id="setting-session-warning-help"
+                className={styles.helpText}
+                data-testid="setting-session-warning-help"
+              >
+                Remaining seconds at which the session countdown turns red. Default{' '}
+                {DEFAULT_SESSION_WARNING_SECONDS}, bounds {MIN_SESSION_WARNING_SECONDS}–
+                {MAX_SESSION_WARNING_SECONDS}.
+              </p>
             </div>
           ) : (
             <p className={styles.engineLoading}>Loading puzzle settings…</p>

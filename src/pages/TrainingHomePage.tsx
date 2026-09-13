@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { SetCard } from '@/components/puzzles/cycles';
+import { SetCard, formatPercent } from '@/components/puzzles/cycles';
 import { Button } from '@/components/ui/Button';
 import { ROUTES, trainingCyclePath, trainingSetPath } from '@/app/routes';
 import {
@@ -10,6 +10,7 @@ import {
   QUICK_TRAIN_SET_ID,
   derivePool,
   masteredPuzzleIds,
+  type CycleMetrics,
   type TacticalTrainingSetRow,
   type TrainingCycleRow,
 } from '@/domain/training';
@@ -36,6 +37,8 @@ interface SetSummary {
 interface ResumeTarget {
   readonly set: TacticalTrainingSetRow;
   readonly cycle: TrainingCycleRow;
+  /** Canonical partial metrics for the in-progress cycle; `null` if unreadable. */
+  readonly metrics: CycleMetrics | null;
 }
 
 interface HomeData {
@@ -154,6 +157,10 @@ export function TrainingHomePage({
   const showEmptyState = !hasUserSets && data.totalPuzzleCount === 0;
   const poolEmpty = data.poolCount === 0;
   const openBlock = data.openBlock;
+  const resumeProgress =
+    data.resume !== null && data.resume.metrics !== null
+      ? progressOf(data.resume.cycle, data.resume.metrics)
+      : null;
 
   const run = async (action: () => Promise<void>): Promise<void> => {
     setBusy(true);
@@ -235,9 +242,21 @@ export function TrainingHomePage({
         >
           <div className={styles.resumeText}>
             <strong>Resume cycle {data.resume.cycle.cycleNumber}</strong>
-            <span>
-              {data.resume.set.name} has a cycle in progress. Pick up at the next unanswered puzzle.
-            </span>
+            {resumeProgress !== null ? (
+              <span data-testid="training-resume-progress">
+                Cycle {data.resume.cycle.cycleNumber} · {resumeProgress.completed} of{' '}
+                {resumeProgress.total} solved ·{' '}
+                <span data-testid="training-resume-accuracy">
+                  {formatPercent(resumeProgress.accuracy) ?? '—'}
+                </span>{' '}
+                first-try · {resumeProgress.remaining} left
+              </span>
+            ) : (
+              <span>
+                {data.resume.set.name} has a cycle in progress. Pick up at the next unanswered
+                puzzle.
+              </span>
+            )}
           </div>
           <Link
             className={styles.resumeLink}
@@ -447,6 +466,22 @@ export function TrainingHomePage({
   );
 }
 
+/** Solved/total/remaining for a cycle, derived from its canonical metrics. */
+function progressOf(
+  cycle: TrainingCycleRow,
+  metrics: CycleMetrics,
+): {
+  readonly completed: number;
+  readonly total: number;
+  readonly remaining: number;
+  readonly accuracy: number | null;
+} {
+  const total = cycle.puzzleIds.length;
+  const completed = metrics.puzzlesCompleted;
+  const remaining = Math.max(0, total - completed - metrics.puzzlesSkipped);
+  return { completed, total, remaining, accuracy: metrics.firstTryAccuracy };
+}
+
 /** Load the derived pool, the open block, custom set summaries and the resume target. */
 async function loadHome(
   setsService: TrainingSetsService,
@@ -478,7 +513,6 @@ async function loadHome(
   const cyclesBySet = await Promise.all(summarySets.map((set) => cycleService.listForSet(set.id)));
 
   const summaries = new Map<string, SetSummary>();
-  let resume: ResumeTarget | null = null;
   summarySets.forEach((set, index) => {
     const cycles = cyclesBySet[index]!;
     const current = cycles.length > 0 ? cycles[cycles.length - 1]! : null;
@@ -496,14 +530,30 @@ async function loadHome(
       cycle: current,
       lastActivityAt,
     });
-    for (const cycle of cycles) {
-      if (cycle.status === 'inProgress') {
-        if (resume === null || cycle.startedAt > resume.cycle.startedAt) {
-          resume = { set, cycle };
-        }
+  });
+
+  let resumeCandidate: { set: TacticalTrainingSetRow; cycle: TrainingCycleRow } | null = null;
+  for (let index = 0; index < summarySets.length; index += 1) {
+    const set = summarySets[index]!;
+    for (const cycle of cyclesBySet[index]!) {
+      if (
+        cycle.status === 'inProgress' &&
+        (resumeCandidate === null || cycle.startedAt > resumeCandidate.cycle.startedAt)
+      ) {
+        resumeCandidate = { set, cycle };
       }
     }
-  });
+  }
+
+  let resume: ResumeTarget | null = null;
+  if (resumeCandidate !== null) {
+    const result = await cycleService.results(resumeCandidate.cycle.id);
+    resume = {
+      set: resumeCandidate.set,
+      cycle: resumeCandidate.cycle,
+      metrics: result.ok ? result.results.metrics : null,
+    };
+  }
 
   return {
     customActive: customActiveSets.map((set) => summaries.get(set.id)!),

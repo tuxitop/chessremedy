@@ -116,7 +116,9 @@ next puzzle or cycle results — never to a per-puzzle scheduler
   color, Feature-011) inside the game-context move list; the objective
   chip (the tactical objective, or the fixed "Find the best move" label
   for a blunder row) is shown, the solve clock only when the "Show
-  puzzle timer" setting is on, and counters are never shown. Difficulty
+  puzzle timer" setting is on (and, per Feature 019, revealed in red once
+  the elapsed time reaches the puzzle timer red threshold even when that
+  setting is off), and counters are never shown. Difficulty
   is not shown while solving (it would leak cycle ordering, which is
   difficulty ascending by default).
 - The presentation ends when one of the outcomes in "Outcomes" occurs.
@@ -174,7 +176,9 @@ redesign). Required capabilities on the solving screen:
   without shifting the layout;
 - **solve clock** — a Settings row ("Show puzzle timer", default hidden)
   controls whether the solve clock is rendered; when off it is not rendered
-  at all;
+  at all, except that Feature 019 reveals it (red) once the elapsed time
+  reaches the **puzzle timer red threshold** (default 30 s). When the setting
+  is on the clock is always visible and turns red at that threshold;
 - wrong moves must be identified as incorrect (see Solving rules): the
   first wrong move fails the puzzle (recorded `failed`) and flashes its
   from/to squares **red** as a square highlight (a CSS class on the board
@@ -571,9 +575,10 @@ the outcome unrecorded (never silently dropped).
     mainline with wrong attempts as variations (no classification glyphs,
     no per-ply evals) and auto-scrolls to the active move; transport and
     keyboard `←`/`→` (Shift = first/last) move across the whole line.
-12. The solve clock is rendered only when the "Show puzzle timer" setting
-    is on (default hidden); counters and the timer are never shown in the
-    result area.
+12. The solve clock is rendered when the "Show puzzle timer" setting is on
+    (default hidden) and, per Feature 019, is revealed in red once the elapsed
+    time reaches the puzzle timer red threshold even when the setting is off;
+    counters and the timer are never shown in the result area.
 13. Feature 012 never computes cycle aggregates and never re-derives or
     regenerates puzzle rows.
 14. The solving screen is keyboard-operable end to end, outcomes are

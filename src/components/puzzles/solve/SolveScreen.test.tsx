@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { puzzleRowFixture, blunderRowFixture } from '@/domain/puzzle/test-support';
 import { buildAttemptRow } from '@/domain/training';
@@ -198,6 +198,7 @@ function renderSolve(
   options: {
     readonly storedAnalysis?: StoredAnalysisLookup;
     readonly showTimer?: boolean;
+    readonly puzzleRedThresholdMs?: number;
     readonly onRestart?: () => void;
     readonly allowSkip?: boolean;
   } = {},
@@ -211,6 +212,9 @@ function renderSolve(
       onExit={onExit}
       storedAnalysis={options.storedAnalysis ?? NO_RECORDS}
       {...(options.showTimer !== undefined ? { showTimer: options.showTimer } : {})}
+      {...(options.puzzleRedThresholdMs !== undefined
+        ? { puzzleRedThresholdMs: options.puzzleRedThresholdMs }
+        : {})}
       {...(options.onRestart !== undefined ? { onRestart: options.onRestart } : {})}
       {...(options.allowSkip !== undefined ? { allowSkip: options.allowSkip } : {})}
     />,
@@ -343,10 +347,63 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
   it('shows the solve clock only when the timer setting is on', async () => {
     const rig = createRig();
     renderSolve(blunderRowFixture(), rig, () => undefined, { showTimer: true });
-    expect(await screen.findByTestId('solve-clock')).toHaveTextContent('0:00');
+    const clock = await screen.findByTestId('solve-clock');
+    expect(clock).toHaveTextContent('0:00');
+    expect(clock).toHaveAttribute('data-state', 'normal');
     await waitFor(() =>
       expect(screen.getByTestId('solve-movelist-status')).toHaveTextContent('White to move…'),
     );
+  });
+
+  describe('per-puzzle timer reveal-at-threshold (Feature 019 §7)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('keeps the clock hidden below the threshold when Show puzzle timer is off', () => {
+      const rig = createRig();
+      renderSolve(blunderRowFixture(), rig, () => undefined, {
+        showTimer: false,
+        puzzleRedThresholdMs: 1_000,
+      });
+
+      expect(screen.queryByTestId('solve-clock')).not.toBeInTheDocument();
+    });
+
+    it('reveals the clock in the warning state once elapsed reaches the threshold', () => {
+      const rig = createRig();
+      renderSolve(blunderRowFixture(), rig, () => undefined, {
+        showTimer: false,
+        puzzleRedThresholdMs: 1_000,
+      });
+      expect(screen.queryByTestId('solve-clock')).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+
+      const clock = screen.getByTestId('solve-clock');
+      expect(clock).toHaveAttribute('data-state', 'warning');
+      expect(clock.className).toContain('infoClockWarning');
+    });
+
+    it('turns the always-visible clock red at the threshold', () => {
+      const rig = createRig();
+      renderSolve(blunderRowFixture(), rig, () => undefined, {
+        showTimer: true,
+        puzzleRedThresholdMs: 1_000,
+      });
+      expect(screen.getByTestId('solve-clock')).toHaveAttribute('data-state', 'normal');
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(screen.getByTestId('solve-clock')).toHaveAttribute('data-state', 'warning');
+    });
   });
 
   it('solves via the board, writes one row, shows Success inside the move list, then Next advances the host', async () => {

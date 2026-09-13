@@ -190,7 +190,10 @@ and behaviors are:
 - Shows a link to the read-only **Mastered puzzles** list (see "Mastered
   puzzles list").
 - Shows a **resume banner** when a cycle is `inProgress`, linking directly
-  back into that cycle at the next unanswered puzzle.
+  back into that cycle at the next unanswered puzzle. The banner shows the
+  cycle's **progress** from the canonical cycle metrics — **first-try
+  accuracy**, **solved count** and **remaining count** — never a fabricated or
+  re-derived number.
 - Offers **New custom set** and, when no puzzles exist at all, an explicit
   empty state that explains puzzles must first be generated from games
   (Feature 011) and links to the Game Library.
@@ -239,6 +242,10 @@ and behaviors are:
 - **Custom set detail**: rename, edit configuration, view membership, view
   cycle history, start/continue a cycle, archive/unarchive and delete
   (destructive confirmation naming the set and its cycle/attempt counts).
+- **Per-cycle progress**: the block/set **cycle history** shows each cycle's
+  progress from the canonical cycle metrics (**first-try accuracy**, **solved
+  count**, **remaining count**) alongside its status, so progress is visible
+  across cycles without opening each one. No new metric is computed.
 - Starting a cycle shows the effective config snapshot and the puzzle count
   before committing.
 
@@ -246,9 +253,25 @@ and behaviors are:
 
 - Hosts Feature 012's `SolveScreen` for one presentation at a time, with the
   cycle's ordered queue and config snapshot.
-- Session chrome shows progress ("Puzzle X of Y"), the set name, the current
-  cycle number, an **Exit** control that leaves the cycle `inProgress`
-  (resumable) and a **Skip** control when skipping is allowed.
+- Session chrome shows progress ("Puzzle X of Y" plus the cycle's **first-try
+  accuracy**, **solved count** and **remaining count** from the canonical cycle
+  metrics), the set name, the current cycle number, an **Exit** control that
+  leaves the cycle `inProgress` (resumable) and a **Skip** control when
+  skipping is allowed.
+- **Timed session setup (Feature 019).** Before the first puzzle of a solving
+  run, the host shows a **pre-session commit gate** (after the same-day spacing
+  nudge) offering 5/10/15/20/30/45/60 minutes or **No time limit**; the timer
+  starts on **Begin**.
+- **Session timer and summary (Feature 019).** A quiet wall-clock countdown and
+  progress bar sit in the chrome, turning red at the warning threshold and
+  ending the session at zero. Expiry stops the run immediately and discards the
+  in-progress presentation (no row; the puzzle stays queued), while any
+  already-written `failed` row still counts. An **End session** control stops
+  the run early; both paths leave the cycle `inProgress` and resumable and show
+  the ephemeral **session summary** (first-try / help / failed / skipped
+  counts, first-try accuracy, time used, average time per puzzle, remaining
+  puzzles; Resume cycle / Back to training). If the cycle completes before the
+  timer, the summary is shown first with a **View cycle results** action.
 - Does **not** show puzzle difficulty, cycle ordering rationale or any
   scheduling language (no "due", no "next review"; ADR-031).
 - When a new cycle is started **on the same local calendar day** as the
@@ -278,6 +301,12 @@ and behaviors are:
 - "Start next cycle" (repeat) is offered from a completed or abandoned cycle.
 - An `inProgress` cycle shows partial aggregates and a resume action; an
   `abandoned` cycle is shown separately and is never resumable.
+- A cycle completed by a timed session (Feature 019) shows the ephemeral
+  **session summary** first (with a **View cycle results** action) before this
+  page.
+- **Per-cycle progress**: the results/history surfaces show each cycle's
+  **first-try accuracy**, **solved count** and **remaining count** from the
+  canonical cycle metrics; no value is re-derived.
 
 ### 6. Woodpecker block + pool + Quick train
 

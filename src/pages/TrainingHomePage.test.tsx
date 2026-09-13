@@ -13,6 +13,7 @@ import { QUICK_TRAIN_SET_ID } from '@/domain/training';
 import type { TrainingSetsService } from '@/infrastructure/training';
 import {
   blockSetFixture,
+  cycleAttemptFixture,
   cycleFixture,
   legitimateFirstTryRows,
   setFixture,
@@ -240,9 +241,12 @@ describe('TrainingHomePage', () => {
     expect(screen.getByTestId('set-card-count-set-empty')).not.toHaveTextContent('0');
   });
 
-  it('surfaces a resume banner for an in-progress cycle linking to the session', async () => {
+  it('surfaces a resume banner with first-try progress linking to the session', async () => {
+    const puzzle = poolPuzzle(6);
+    await puzzlesRepository.addIfAbsent([puzzle]);
+    const puzzleId = puzzleIdOf(puzzle.sourceGameId, puzzle.sourcePly);
     await trainingSetsRepository.create(
-      setFixture({ id: 'set-b', name: 'Tactics', puzzleIds: ['g:4'] }),
+      setFixture({ id: 'set-b', name: 'Tactics', puzzleIds: [puzzleId] }),
     );
     await trainingCyclesRepository.create(
       cycleFixture({
@@ -251,6 +255,15 @@ describe('TrainingHomePage', () => {
         cycleNumber: 3,
         status: 'inProgress',
         startedAt: NOW,
+        puzzleIds: [puzzleId],
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        puzzleId,
+        cycleId: 'cycle-b',
+        trainingSetId: 'set-b',
+        result: 'solvedFirstTry',
       }),
     );
 
@@ -262,6 +275,37 @@ describe('TrainingHomePage', () => {
       'href',
       '/training/sets/set-b/cycles/3',
     );
+    expect(screen.getByTestId('training-resume-progress')).toHaveTextContent(
+      'Cycle 3 · 1 of 1 solved · 100% first-try · 0 left',
+    );
+    expect(screen.getByTestId('training-resume-accuracy')).toHaveTextContent('100%');
+  });
+
+  it('renders an em dash for first-try accuracy when the cycle has no completed puzzles', async () => {
+    const puzzle = poolPuzzle(6);
+    await puzzlesRepository.addIfAbsent([puzzle]);
+    const puzzleId = puzzleIdOf(puzzle.sourceGameId, puzzle.sourcePly);
+    await trainingSetsRepository.create(
+      setFixture({ id: 'set-c', name: 'Tactics', puzzleIds: [puzzleId] }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle-c',
+        trainingSetId: 'set-c',
+        cycleNumber: 1,
+        status: 'inProgress',
+        startedAt: NOW,
+        puzzleIds: [puzzleId],
+      }),
+    );
+
+    renderHome();
+    await waitForHome();
+
+    expect(screen.getByTestId('training-resume-progress')).toHaveTextContent(
+      'Cycle 1 · 0 of 1 solved · — first-try · 1 left',
+    );
+    expect(screen.getByTestId('training-resume-accuracy')).toHaveTextContent('—');
   });
 
   it('keeps archived sets behind an affordance until expanded', async () => {

@@ -97,6 +97,10 @@ features, ADRs, research, or the whole documentation tree.
 - Required: `ARCHITECTURE.md` §3/§6a/§7/§10; ADRs `decisions/ADR-001`, `decisions/ADR-010`, `decisions/ADR-013`, `decisions/ADR-031`; `PRODUCT.md` §2/§12/§13/§14; features `features/007-game-import.md`, `features/008-game-analysis.md`, `features/013-tactical-training-cycles.md`, `features/014-game-history-statistics.md`, `features/015-dashboard.md`, `features/017-w1-ui-ux-refinements.md`; domain `domain/game-library.md`, `domain/statistics.md`, `domain/tactical-training.md`.
 - Dependencies: Features 001 (shell/routes), 007 (Game Library + game count), 008 (analysis status), 011/012/013 (puzzles/attempts/sets/cycles + canonical mastery), 014 (sole statistics source), 015 (honest-state helpers), 017 (section naming/routes). No new dependency, ADR or schema change.
 
+### Feature 019 — Timed training sessions
+- Required: `ARCHITECTURE.md` §3/§7/§10; ADRs `decisions/ADR-031`; features `features/012-puzzle-training.md`, `features/013-tactical-training-cycles.md`; domain `domain/tactical-training.md`.
+- Dependencies: Features 001 (settings), 012 (solve clock + immutable attempt rows), 013 (cycle session host + canonical cycle metrics). No new dependency, ADR or schema change.
+
 ## Lookup: decisions by area
 
 - Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020/034 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
@@ -128,5 +132,5 @@ features, ADRs, research, or the whole documentation tree.
 - `domain/game-phase.md` → Features 008/014/015
 - `domain/tactics.md` → Features 010/011/014
 - `domain/puzzle-model.md` → Features 010/011/012/013/014
-- `domain/tactical-training.md` → Features 011/012/013/014/015/016/018
+- `domain/tactical-training.md` → Features 011/012/013/014/015/016/018/019
 - `domain/statistics.md` → Features 013/014/015/018

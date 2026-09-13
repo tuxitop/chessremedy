@@ -1,8 +1,16 @@
 import type * as React from 'react';
 import { Link } from 'react-router-dom';
 import type { TrainingCycleRow } from '@/domain/training';
-import { cycleStatusLabel, formatTimestamp } from './labels';
+import { cycleStatusLabel, formatPercent, formatTimestamp } from './labels';
 import styles from './CycleHistory.module.css';
+
+/** A cycle's progress summary rendered in its history row. */
+export interface CycleHistoryProgress {
+  readonly solved: number;
+  readonly total: number;
+  /** `firstTryAccuracy`, or `null` when the sample is empty. */
+  readonly accuracy: number | null;
+}
 
 export interface CycleHistoryProps {
   readonly cycles: readonly TrainingCycleRow[];
@@ -12,6 +20,8 @@ export interface CycleHistoryProps {
    * route exists, so no dead link is rendered.
    */
   readonly resultsPathFor?: (cycle: TrainingCycleRow) => string;
+  /** Optional per-cycle progress; a cycle with no summary renders none. */
+  readonly progressFor?: (cycle: TrainingCycleRow) => CycleHistoryProgress | null;
   readonly testId?: string;
 }
 
@@ -24,6 +34,7 @@ export function CycleHistory({
   cycles,
   emptyMessage,
   resultsPathFor,
+  progressFor,
   testId = 'cycle-history',
 }: CycleHistoryProps): React.JSX.Element {
   if (cycles.length === 0) {
@@ -38,6 +49,7 @@ export function CycleHistory({
     <ol className={styles.list} data-testid={testId}>
       {cycles.map((cycle) => {
         const resultsPath = resultsPathFor?.(cycle);
+        const progress = progressFor?.(cycle) ?? null;
         return (
           <li
             key={cycle.id}
@@ -50,6 +62,14 @@ export function CycleHistory({
                 {cycleStatusLabel(cycle.status)}
               </span>
             </div>
+            {progress !== null ? (
+              <p
+                className={styles.progress}
+                data-testid={`${testId}-progress-${cycle.cycleNumber}`}
+              >
+                {progress.solved}/{progress.total} · {formatPercent(progress.accuracy) ?? '—'}
+              </p>
+            ) : null}
             <dl className={styles.times}>
               <div className={styles.timeRow}>
                 <dt>Started</dt>

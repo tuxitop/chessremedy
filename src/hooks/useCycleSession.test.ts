@@ -199,6 +199,9 @@ describe('useCycleSession (Feature 013, Stage D)', () => {
     });
     expect(result.current.progress).toEqual({ index: 1, total: 3 });
     expect(result.current.allowSkip).toBe(true);
+    expect(result.current.remaining).toBe(3);
+    expect(result.current.metrics.puzzlesCompleted).toBe(0);
+    expect(result.current.metrics.firstTryAccuracy).toBeNull();
 
     await act(async () => {
       await result.current.handleOutcome(
@@ -207,6 +210,9 @@ describe('useCycleSession (Feature 013, Stage D)', () => {
     });
     expect(result.current.current?.row).toBe(p2);
     expect(result.current.progress).toEqual({ index: 2, total: 3 });
+    expect(result.current.remaining).toBe(2);
+    expect(result.current.metrics.puzzlesCompleted).toBe(1);
+    expect(result.current.metrics.firstTryAccuracy).toBe(1);
 
     await act(async () => {
       await result.current.handleOutcome(
@@ -214,6 +220,10 @@ describe('useCycleSession (Feature 013, Stage D)', () => {
       );
     });
     expect(result.current.current?.row).toBe(p3);
+    expect(result.current.remaining).toBe(1);
+    expect(result.current.metrics.puzzlesCompleted).toBe(2);
+    expect(result.current.metrics.firstTryAccuracy).toBe(0.5);
+    expect(result.current.metrics.hintsUsed).toBe(1);
 
     await act(async () => {
       await result.current.handleOutcome(
@@ -222,6 +232,9 @@ describe('useCycleSession (Feature 013, Stage D)', () => {
     });
     await waitFor(() => expect(result.current.status).toBe('complete'));
     expect(result.current.current).toBeNull();
+    expect(result.current.remaining).toBe(0);
+    expect(result.current.metrics.puzzlesCompleted).toBe(3);
+    expect(result.current.metrics.firstTryAccuracy).toBeCloseTo(2 / 3);
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect((await trainingCyclesRepository.get(seed.cycle.id))?.status).toBe('completed');
   });
