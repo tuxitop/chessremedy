@@ -23,6 +23,17 @@ import type { PuzzleAttemptRecorderLike } from '@/infrastructure/training';
 /** Wall-clock tick for the live solving timer (millis). */
 export const SOLVE_TIMER_TICK_MS = 250;
 
+/**
+ * Stable wall clock used when no `now` is injected. A module-level default
+ * keeps the identity constant across renders; an inline `() => Date.now()`
+ * would change identity every render and make the timer effect below tear
+ * down and re-create its interval on every render (which starves the tick
+ * whenever the parent re-renders, e.g. the Feature-019 session countdown).
+ */
+function defaultNow(): number {
+  return Date.now();
+}
+
 /** Auto-open the post-solve step when a `failed` outcome lands (OQ-4 default). */
 export const AUTO_OPEN_POSTSOLVE_ON_FAILED = true;
 
@@ -178,7 +189,7 @@ function positionAt(state: PresentationState, ply: number): Position | null {
  * record exactly one `solvedFirstTry` / `solvedWithHelp` row as before.
  */
 export function usePuzzleSolve(options: UsePuzzleSolveOptions): PuzzleSolveController {
-  const { row, context, config, recorder, now = () => Date.now() } = options;
+  const { row, context, config, recorder, now = defaultNow } = options;
 
   const [initial] = useState<{ state: PresentationState | null; error: string | null }>(() => {
     const began = beginPresentation(row, now());

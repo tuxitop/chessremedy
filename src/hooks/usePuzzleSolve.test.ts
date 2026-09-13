@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { buildAttemptRow } from '@/domain/training';
@@ -394,5 +394,30 @@ describe('usePuzzleSolve — presentation controller (Feature 012, Stage D)', ()
     expect(result.current.outcome).toBeNull();
     expect(result.current.exitOutcome()).toBeNull();
     expect(result.current.writePhase).toBeNull();
+  });
+
+  it('keeps a single wall-clock interval across re-renders (stable default clock)', () => {
+    // Regression: an inline `now = () => Date.now()` default changed identity on
+    // every render, so the timer effect re-ran and re-created its interval on
+    // each render. A parent that re-renders often (the Feature-019 session
+    // countdown ticks every 250 ms) then starved the puzzle timer, making it
+    // stall and jump. The default clock must be identity-stable.
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    const rig = createRecorderRig();
+    const row = blunderRowFixture();
+    const { rerender } = renderHook(() =>
+      usePuzzleSolve({
+        row,
+        context: cycleContextFixture('fixture:cycle', `${row.sourceGameId}:${row.sourcePly}`, 1),
+        config: solveConfigFixture(),
+        recorder: rig.recorder,
+      }),
+    );
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    rerender();
+    rerender();
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    setIntervalSpy.mockRestore();
   });
 });
