@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { puzzleRowFixture, blunderRowFixture } from '@/domain/puzzle/test-support';
 import { buildAttemptRow } from '@/domain/training';
 import { makeMove } from '@/domain/analysis/test-support';
 import { fenOf } from '@/domain/chess';
 import type { AnalysisProfile, EngineMetadata, MoveAnalysis } from '@/domain/chess';
+import type { Game } from '@/domain/chess';
 import type { PuzzleRow } from '@/domain/puzzle';
 import type { PresentationOutcome } from '@/domain/training';
 import type { PuzzleAttemptRecorderLike, RecordAttemptInput } from '@/infrastructure/training';
@@ -22,7 +24,7 @@ import type {
   EngineServiceStatus,
 } from '@/infrastructure/engine/types';
 import type { EngineCapabilities } from '@/infrastructure/engine/capabilities';
-import { SolveScreen, type StoredAnalysisLookup } from './SolveScreen';
+import { SolveScreen, type SourceGameLookup, type StoredAnalysisLookup } from './SolveScreen';
 
 type FakeResultLine = EngineLine;
 
@@ -197,6 +199,7 @@ function renderSolve(
   onExit: (outcome: PresentationOutcome | null) => void,
   options: {
     readonly storedAnalysis?: StoredAnalysisLookup;
+    readonly sourceGames?: SourceGameLookup;
     readonly showTimer?: boolean;
     readonly puzzleRedThresholdMs?: number;
     readonly onRestart?: () => void;
@@ -204,20 +207,23 @@ function renderSolve(
   } = {},
 ): void {
   render(
-    <SolveScreen
-      row={row}
-      context={cycleContextFixture('fixture:cycle', `${row.sourceGameId}:${row.sourcePly}`, 1)}
-      config={solveConfigFixture()}
-      recorder={rig.recorder}
-      onExit={onExit}
-      storedAnalysis={options.storedAnalysis ?? NO_RECORDS}
-      {...(options.showTimer !== undefined ? { showTimer: options.showTimer } : {})}
-      {...(options.puzzleRedThresholdMs !== undefined
-        ? { puzzleRedThresholdMs: options.puzzleRedThresholdMs }
-        : {})}
-      {...(options.onRestart !== undefined ? { onRestart: options.onRestart } : {})}
-      {...(options.allowSkip !== undefined ? { allowSkip: options.allowSkip } : {})}
-    />,
+    <MemoryRouter>
+      <SolveScreen
+        row={row}
+        context={cycleContextFixture('fixture:cycle', `${row.sourceGameId}:${row.sourcePly}`, 1)}
+        config={solveConfigFixture()}
+        recorder={rig.recorder}
+        onExit={onExit}
+        storedAnalysis={options.storedAnalysis ?? NO_RECORDS}
+        {...(options.sourceGames !== undefined ? { sourceGames: options.sourceGames } : {})}
+        {...(options.showTimer !== undefined ? { showTimer: options.showTimer } : {})}
+        {...(options.puzzleRedThresholdMs !== undefined
+          ? { puzzleRedThresholdMs: options.puzzleRedThresholdMs }
+          : {})}
+        {...(options.onRestart !== undefined ? { onRestart: options.onRestart } : {})}
+        {...(options.allowSkip !== undefined ? { allowSkip: options.allowSkip } : {})}
+      />
+    </MemoryRouter>,
   );
 }
 
@@ -926,5 +932,27 @@ describe('SolveScreen (Feature 012, plan 012b single-view redesign)', () => {
     expect(lastBoard().interactive).toBe(false);
     fireEvent.click(screen.getByTestId('nav-last'));
     expect(screen.getByTestId('solve-ply')).toHaveTextContent('2/2');
+  });
+
+  it('shows the source game and a review link in the puzzle info', async () => {
+    const rig = createRig();
+    const game = {
+      id: 'lichess:abc123',
+      source: 'lichess',
+      externalId: 'abc123',
+      userColor: 'white',
+      whitePlayer: { name: 'chessremedy', rating: 1500 },
+      blackPlayer: { name: 'GrandTactician', rating: 1840 },
+    } as unknown as Game;
+    const sourceGames: SourceGameLookup = {
+      getGame: () => Promise.resolve(game),
+    };
+
+    renderSolve(puzzleRowFixture('mate-one'), rig, () => undefined, { sourceGames });
+
+    const line = await screen.findByTestId('solve-source-game');
+    expect(line).toHaveTextContent('From your game vs. GrandTactician (1840)');
+    const link = within(line).getByRole('link', { name: 'Review game' });
+    expect(link).toHaveAttribute('href', '/games/lichess:abc123/review');
   });
 });

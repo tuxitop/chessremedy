@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
+import { Link } from 'react-router-dom';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Color, Key } from '@lichess-org/chessground/types';
 import { makeSan } from 'chessops/san';
@@ -39,7 +40,7 @@ import { useEngineDefaults } from '@/hooks/useEngineDefaults';
 import { useAnalysisNavigation } from '@/hooks/useAnalysisNavigation';
 import { Button } from '@/components/ui/Button';
 import { fenOf, parsePositionFen, uciPvToSan, type Position } from '@/domain/chess';
-import type { MoveAnalysis } from '@/domain/chess';
+import type { Game, MoveAnalysis } from '@/domain/chess';
 import { puzzleObjectiveLabel } from '@/domain/puzzle';
 import type { PuzzleRow } from '@/domain/puzzle';
 import {
@@ -53,6 +54,7 @@ import {
 } from '@/domain/training';
 import type { PuzzleAttemptRecorderLike } from '@/infrastructure/training';
 import { analysesRepository } from '@/infrastructure/db/analysis-repository';
+import { gamesRepository } from '@/infrastructure/db/games-repository';
 import { usePuzzleSolve, type MoveSubmission } from '@/hooks/usePuzzleSolve';
 import { formatSolveTime } from './solveText';
 import styles from './SolveScreen.module.css';
@@ -89,6 +91,18 @@ export interface StoredAnalysisLookup {
   ) => Promise<readonly MoveAnalysis[]>;
 }
 
+/** Source-game lookup for the puzzle's provenance line (defaults to the repo). */
+export interface SourceGameLookup {
+  readonly getGame: (gameId: string) => Promise<Game | undefined>;
+}
+
+/** Precomputed provenance of the puzzle's source game (opponent + review link). */
+interface SourceGameInfo {
+  readonly opponentName: string;
+  readonly opponentRating: number | null;
+  readonly reviewPath: string;
+}
+
 /** Host contract of the solving screen (Feature 013 supplies these props). */
 export interface SolveScreenProps {
   /** The immutable puzzle row being presented. */
@@ -105,6 +119,8 @@ export interface SolveScreenProps {
   readonly boardSize?: UseBoardSize;
   /** Optional stored-analysis seam for the game prefix (defaults to the repo). */
   readonly storedAnalysis?: StoredAnalysisLookup;
+  /** Optional source-game seam for the provenance line (defaults to the repo). */
+  readonly sourceGames?: SourceGameLookup;
   /** Show the solve clock (Settings → Puzzles; default hidden). */
   readonly showTimer?: boolean;
   /**
@@ -148,6 +164,7 @@ export function SolveScreen({
   onExit,
   boardSize,
   storedAnalysis = analysesRepository,
+  sourceGames = gamesRepository,
   showTimer = false,
   puzzleRedThresholdMs = DEFAULT_PUZZLE_RED_MS,
   onRestart,
@@ -215,6 +232,38 @@ export function SolveScreen({
       active = false;
     };
   }, [storedAnalysis, row, row.sourceGameId, row.analysisId]);
+
+  // Source-game provenance for the puzzle info: opponent name/rating and a link
+  // back to the game review. Missing/foreign games simply hide the line.
+  const [sourceGame, setSourceGame] = useState<SourceGameInfo | null>(null);
+  useEffect(() => {
+    let active = true;
+    sourceGames
+      .getGame(row.sourceGameId)
+      .then((game) => {
+        if (!active) {
+          return;
+        }
+        if (game === undefined) {
+          setSourceGame(null);
+          return;
+        }
+        const opponent = game.userColor === 'white' ? game.blackPlayer : game.whitePlayer;
+        setSourceGame({
+          opponentName: opponent.name,
+          opponentRating: opponent.rating,
+          reviewPath: `/games/${game.id}/review`,
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setSourceGame(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [sourceGames, row.sourceGameId]);
 
   // View state over the (re-derived) solve tree; variations are recorded by the
   // mainline depth of the decision node they were tried at. `path` is `null`
@@ -836,6 +885,19 @@ export function SolveScreen({
                   ) : finished && result === 'failed' ? (
                     <p className={styles.solutionLine} data-testid="solve-solution-line">
                       Solution: {solutionSan}
+                    </p>
+                  ) : null}
+
+                  {sourceGame !== null ? (
+                    <p className={styles.sourceGame} data-testid="solve-source-game">
+                      From your game vs. {sourceGame.opponentName}
+                      {sourceGame.opponentRating !== null
+                        ? ` (${sourceGame.opponentRating})`
+                        : ''}{' '}
+                      ·{' '}
+                      <Link className={styles.sourceGameLink} to={sourceGame.reviewPath}>
+                        Review game
+                      </Link>
                     </p>
                   ) : null}
 

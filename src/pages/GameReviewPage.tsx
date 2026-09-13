@@ -46,6 +46,7 @@ import { fenOf, uciPvToSan } from '@/domain/chess';
 import type { EvalCpMate, MoveAnalysis, MoveClassification, Wdl } from '@/domain/chess';
 import { classifyMove, cpValueOf } from '@/domain/chess/classification';
 import { GAME_SOURCE_LABELS } from '@/domain/chess/gameSource';
+import { platformGameUrl } from '@/presentation/games/platformGameUrl';
 import {
   CLASSIFICATION_LABELS,
   CLASSIFICATION_LABEL_TEXT,
@@ -304,6 +305,8 @@ export function GameReviewPage({ analysisService }: GameReviewPageProps): React.
         pgn={data.game.pgn}
         userColor={data.game.userColor}
         playerLabel={playerLabel(data.game)}
+        platformUrl={platformGameUrl(data.game.source, data.game.externalId, data.game.pgn)}
+        platformLabel={GAME_SOURCE_LABELS[data.game.source]}
         records={data.records}
         obsolete={data.obsolete || serviceOutdated}
         detectionState={data.detectionState}
@@ -401,6 +404,8 @@ function GameReview({
   pgn,
   userColor,
   playerLabel,
+  platformUrl,
+  platformLabel,
   records,
   obsolete,
   detectionState,
@@ -418,6 +423,9 @@ function GameReview({
   pgn: string;
   userColor: 'white' | 'black';
   playerLabel: string;
+  /** Canonical source-platform page for this game, or `null` when unavailable. */
+  platformUrl: string | null;
+  platformLabel: string;
   records: readonly MoveAnalysis[];
   obsolete: boolean;
   detectionState: SummaryDetectionState | null;
@@ -1036,6 +1044,17 @@ function GameReview({
           <p className={styles.subtitle} data-testid="review-game-label">
             {playerLabel}
           </p>
+          {platformUrl !== null ? (
+            <a
+              className={styles.platformLink}
+              href={platformUrl}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="review-platform-link"
+            >
+              View on {platformLabel} ↗
+            </a>
+          ) : null}
         </div>
         {obsolete ? (
           <div className={styles.obsolete} data-testid="review-obsolete" role="note">

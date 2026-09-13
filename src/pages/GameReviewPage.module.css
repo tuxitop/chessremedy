@@ -14,7 +14,7 @@
 
 .backLink {
   display: inline-block;
-  color: var(--color-accent, #1f6feb);
+  color: var(--color-accent, #01b681);
   text-decoration: none;
   font-size: var(--font-size-sm);
   margin-bottom: var(--space-1);
@@ -34,6 +34,18 @@
   color: var(--color-fg-muted);
   font-size: var(--font-size-md);
   margin: var(--space-1) 0 0;
+}
+
+.platformLink {
+  display: inline-block;
+  margin-top: var(--space-1);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.platformLink:hover {
+  text-decoration: underline;
 }
 
 .obsolete {
@@ -178,8 +190,8 @@
 }
 
 .toggleOn {
-  border-color: var(--color-accent, #1f6feb);
-  background: color-mix(in srgb, var(--color-accent, #1f6feb) 14%, transparent);
+  border-color: var(--color-accent, #01b681);
+  background: color-mix(in srgb, var(--color-accent, #01b681) 14%, transparent);
 }
 
 .toggleOff {
@@ -188,14 +200,14 @@
 
 .liveButton {
   margin-left: auto;
-  border: 1px solid var(--color-accent, #1f6feb);
+  border: 1px solid var(--color-accent, #01b681);
   border-radius: 999px;
   padding: var(--space-1) var(--space-3);
   font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;
   color: #fff;
-  background: var(--color-accent, #1f6feb);
+  background: var(--color-accent, #01b681);
 }
 
 .liveBanner {
@@ -203,7 +215,7 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
-  border: 1px solid var(--color-accent, #1f6feb);
+  border: 1px solid var(--color-accent, #01b681);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   align-items: flex-start;

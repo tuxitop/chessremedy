@@ -112,6 +112,21 @@
   margin: 0;
 }
 
+.sourceGame {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.sourceGameLink {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.sourceGameLink:hover {
+  text-decoration: underline;
+}
+
 .confirm {
   color: var(--color-success, #15781b);
   font-size: var(--font-size-sm);
