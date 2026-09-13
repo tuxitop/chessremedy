@@ -102,6 +102,32 @@ or:
 
 Both are valid analyzed moves.
 
+## Missed tactic vs blunder
+
+The two are different failure modes and are deliberately distinguished:
+
+- **Blunder** is the ADR-023 points-loss ladder: the user's move drops the
+  evaluation by a large amount (`wpLoss ≥ 15`). It says nothing about whether an
+  opportunity existed — it is purely "this move made things much worse".
+- **Missed tactic** is objective-based. The position before the user's move
+  contained a concrete tactical objective — winning material, a forced mate, or
+  a decisive advantage — that the engine's best line reaches within the tactic
+  window. Finding it requires looking ahead, which is why a missed tactic may
+  take one ply (a hanging piece), three (a fork) or five (a short mate). The
+  definition rests on **the objective that existed**, not on the move that
+  created it; the opponent's mistake is the usual cause but not part of the
+  definition.
+- **Overlap.** A ply can be both a large points loss and a missed objective; it
+  is then classified as a **missed tactic**, never additionally as a blunder
+  (the exclusivity below).
+
+**Scope (owner decision).** Only a **verified** objective (Feature 010 Stage 2)
+counts as a missed tactic in V1. A position whose opportunity is fuzzier and
+does not verify stays on the raw ADR-023 ladder (`blunder` / `mistake` /
+`inaccuracy`). A more permissive objective-based miss — looser guards for
+statistics while keeping the strict guards for puzzle generation — is deferred
+to a future decision.
+
 ## Missed-tactic exclusivity (ADR-023 amendment)
 
 A ply whose analysis carries a **current-version verified missed tactic**

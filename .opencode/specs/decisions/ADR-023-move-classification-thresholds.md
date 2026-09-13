@@ -98,6 +98,16 @@ algorithm or thresholds increments the version (ARCHITECTURE.md §9).
 
 ## Amendment — Missed-tactic exclusivity (2026-09-11)
 
+**What counts as a missed tactic.** The objective is found by lookahead: the
+position before the ply contained a concrete tactical objective (winning
+material, a forced mate, or a decisive advantage) that the engine's best line
+reaches within the tactic window — so a miss may take one ply (a hanging
+piece), three (a fork) or five (a short mate). Only a *verified* objective
+counts in V1 (owner decision); a fuzzier opportunity stays on the raw ladder.
+`blunder`, by contrast, is purely the points-loss ladder and carries no
+requirement that an opportunity existed. The full definition lives in
+`domain/classification.md`.
+
 A ply whose analysis carries a **current-version verified missed tactic** — a
 `MoveAnalysis` with `missedTactic === true` and `detectionVersion ===
 DETECTION_VERSION`, or equivalently a `verified` puzzle candidate for the same
