@@ -325,6 +325,10 @@ export function MoveList({
   // Scroll the active move into view (puzzle prefix lines can be long). Runs
   // only when the active ply changes, so the user's own scrolling is never
   // fought while the selection stays put.
+  //
+  // The list scrolls *itself* (adjusting `scrollTop`) rather than calling
+  // `Element.scrollIntoView`, which also scrolls every scrollable ancestor —
+  // on a phone that yanked the whole page down to the move list on each move.
   useEffect(() => {
     if (!autoScroll || activeId === null) {
       return;
@@ -334,7 +338,16 @@ export function MoveList({
       return;
     }
     const active = list.querySelector<HTMLButtonElement>('[aria-current="step"]');
-    active?.scrollIntoView({ block: 'nearest' });
+    if (!active) {
+      return;
+    }
+    const listRect = list.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+    if (activeRect.top < listRect.top) {
+      list.scrollTop -= listRect.top - activeRect.top;
+    } else if (activeRect.bottom > listRect.bottom) {
+      list.scrollTop += activeRect.bottom - listRect.bottom;
+    }
   }, [autoScroll, activeId]);
 
   // Keep the keyboard focus ring on the active move: when the current ply

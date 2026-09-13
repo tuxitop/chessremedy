@@ -163,35 +163,54 @@ describe('MoveList', () => {
     expect(screen.queryAllByTestId('nag-glyph')).toHaveLength(0);
   });
 
-  it('scrolls the active move into view when autoScroll is on and the active ply changes', () => {
+  it('scrolls the move list internally (never the page) when autoScroll is on', () => {
     const scrollIntoView = vi.fn();
-    const original = Element.prototype.scrollIntoView;
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = scrollIntoView;
+    const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect');
+    const rect = (top: number, bottom: number): DOMRect =>
+      ({
+        top,
+        bottom,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: bottom - top,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      }) as DOMRect;
     try {
       const tree = treeOf('1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#');
       const { rerender } = render(<MoveList tree={tree} path={[]} autoScroll />);
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      // The active row sits below the list viewport (list 0–100, row 200–220).
+      rectSpy.mockImplementation(function (this: Element) {
+        if (this.getAttribute('data-testid') === 'move-list') {
+          return rect(0, 100);
+        }
+        if (this.getAttribute('aria-current') === 'step') {
+          return rect(200, 220);
+        }
+        return rect(0, 0);
+      });
       const landing = pathToLanding(tree);
       rerender(<MoveList tree={tree} path={landing} autoScroll />);
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      // The list scrolled itself by the overflow (220 − 100)…
+      expect(screen.getByTestId('move-list').scrollTop).toBe(120);
+      // …and the page-scrolling API was never used.
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      Element.prototype.scrollIntoView = original;
+      rectSpy.mockRestore();
+      Element.prototype.scrollIntoView = originalScrollIntoView;
     }
   });
 
   it('does not auto-scroll when the opt-in prop is off (Review/Live untouched)', () => {
-    const scrollIntoView = vi.fn();
-    const original = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = scrollIntoView;
-    try {
-      const tree = treeOf('1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#');
-      const { rerender } = render(<MoveList tree={tree} path={[]} />);
-      const landing = pathToLanding(tree);
-      rerender(<MoveList tree={tree} path={landing} />);
-      expect(scrollIntoView).not.toHaveBeenCalled();
-    } finally {
-      Element.prototype.scrollIntoView = original;
-    }
+    const tree = treeOf('1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#');
+    const { rerender } = render(<MoveList tree={tree} path={[]} />);
+    const landing = pathToLanding(tree);
+    rerender(<MoveList tree={tree} path={landing} />);
+    expect(screen.getByTestId('move-list').scrollTop).toBe(0);
   });
 
   // --- Pinned solve decision tail (wrong moves at an unsolved decision) -----

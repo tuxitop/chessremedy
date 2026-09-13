@@ -765,7 +765,7 @@ export function SolveScreen({
               />
             </div>
 
-            <MoveListPane dataTestId="solve-movelist">
+            <MoveListPane dataTestId="solve-movelist" className={styles.moveListPane}>
               <MoveList
                 tree={tree}
                 path={displayedPath}

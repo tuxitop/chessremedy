@@ -9,13 +9,16 @@ import styles from './MoveListPane.module.css';
 export function MoveListPane({
   children,
   dataTestId,
+  className,
 }: {
   readonly children: React.ReactNode;
   readonly dataTestId?: string;
+  /** Extra class(es) merged onto the pane (responsive overrides). */
+  readonly className?: string | undefined;
 }): React.JSX.Element {
   return (
     <div
-      className={styles.pane}
+      className={className !== undefined ? `${styles.pane} ${className}` : styles.pane}
       role="region"
       aria-label="Moves"
       {...(dataTestId !== undefined ? { 'data-testid': dataTestId } : {})}
