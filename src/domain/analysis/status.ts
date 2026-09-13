@@ -76,12 +76,15 @@ export function isAnalysisObsolete(job: AnalysisJob): boolean {
 export type EngineIdentity = Pick<EngineMetadata, 'engineName' | 'engineVersion' | 'engineBuild'>;
 
 function sameEngine(a: EngineIdentity, b: EngineIdentity | undefined): boolean {
-  return (
-    b !== undefined &&
-    a.engineName === b.engineName &&
-    a.engineVersion === b.engineVersion &&
-    a.engineBuild === b.engineBuild
-  );
+  // Compare the engine name and version only. The build token
+  // (`stockfish-<release>-lite` vs `-lite-single`) is a threading/performance
+  // variant of the *same* engine version — cross-origin isolation selects it —
+  // so it must not invalidate an analysis. Without this, syncing an analysis
+  // between a host that sends COOP/COEP headers (dev/preview → `lite`) and one
+  // that does not (e.g. GitHub Pages → `lite-single`) reads as `outdated` even
+  // though the engine version and settings are identical. ADR-020 already keeps
+  // analyses valid across engine upgrades; a build variant is less significant.
+  return b !== undefined && a.engineName === b.engineName && a.engineVersion === b.engineVersion;
 }
 
 /**

@@ -14,7 +14,13 @@ Specifically:
 1. The application continues to use the currently installed engine
    version for all new and resumed analysis jobs.
 2. Existing analyses persist unchanged and remain associated with the
-   `engineName` / `engineVersion` / `engineBuild` that produced them.
+   `engineName` / `engineVersion` / `engineBuild` that produced them. The
+   `engineBuild` token records the **build variant** (threading: `lite`
+   vs `lite-single`, selected by cross-origin isolation); a variant
+   difference is *not* a version change and does not by itself mark an
+   analysis `outdated`. Validity (Feature 008 §22) compares the engine
+   **name and version** only, so an analysis synced between a host with
+   COOP/COEP headers and one without stays current.
 3. The dashboard does **not** automatically re-analyze games after
    an engine upgrade.
 4. The user may explicitly trigger a re-analysis of selected games or

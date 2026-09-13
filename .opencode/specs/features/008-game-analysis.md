@@ -639,7 +639,12 @@ continuation to the move list; the stored game/PGN and its persisted
   persisted analysis predates a newer engine/analysis version and can be
   re-analyzed). Status is derived from persisted analysis/job state
   (analysis-status domain) and the persistent queue is the source of
-  truth.
+  truth. A build **variant** is not a version change: `lite` and
+  `lite-single` are the same engine version (they differ only in
+  threading, selected by cross-origin isolation), so an analysis moved
+  between environments that differ only in build — e.g. after a sync —
+  never reads `outdated`. Validity compares the engine **name and
+  version**, not the build token.
 - `Re-analyze` is an explicit user-requested forced re-analysis: it
   clears/restarts the affected run, bypasses the ADR-018 position cache
   (so the engine genuinely re-runs), and persists the refreshed results

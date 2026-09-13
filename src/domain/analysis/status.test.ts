@@ -75,6 +75,18 @@ describe('analysisLibraryStatus (outdated detection)', () => {
     expect(analysisLibraryStatus([older], CURRENT)).toBe('outdated');
   });
 
+  it('keeps a completed analysis current across engine build variants (lite vs lite-single)', () => {
+    // Same Stockfish version, different threading build — the variant depends
+    // on cross-origin isolation, so it must not invalidate (e.g. after sync).
+    const multiThreaded = completedWith({ engineBuild: 'stockfish-18-lite' });
+    const singleThreadedCurrent = { ...CURRENT, engineBuild: 'stockfish-18-lite-single' };
+    expect(analysisLibraryStatus([multiThreaded], singleThreadedCurrent)).toBe('completed');
+
+    const singleThreaded = completedWith({ engineBuild: 'stockfish-18-lite-single' });
+    const multiThreadedCurrent = { ...CURRENT, engineBuild: 'stockfish-18-lite' };
+    expect(analysisLibraryStatus([singleThreaded], multiThreadedCurrent)).toBe('completed');
+  });
+
   it('reports outdated when versions are stale and keeps completed when unknown engine', () => {
     const stale = {
       ...markCompleted(createAnalysisJob('lichess:abc', ENGINE, 10, 1), 2),
