@@ -178,6 +178,13 @@ analysis (Feature 006) run **in parallel**.
 - **Independent failure.** Each engine has its own queue/stall watchdog; a
   wedged verification worker cannot stall the analysis queue, and cancelling
   a scan cancels only the verification engine's jobs.
+- **One scan at a time.** Detection passes are serialized per session: a
+  scan requested while another is running is **queued** and starts only when
+  the running pass settles, so two passes never interleave their Stage-2
+  searches. Every requested game is still registered as scanning
+  immediately, so the UI shows it (and can cancel it); a pass cancelled
+  while queued never starts. This is a scheduling rule only — it does not
+  change the detection algorithm, the candidate rules or the guards.
 
 ### Verification depth setting (ADR-026)
 

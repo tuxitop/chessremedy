@@ -962,6 +962,50 @@ describe('AnalysisService — resumable scans & orphan reconciliation (plan 012,
     expect(await service.activeDetectionGames()).toEqual([]);
   });
 
+  it('runs one tactics scan at a time and queues the next', async () => {
+    const a = await seedFixture('cc-bullet-blunder');
+    const b = await seedFixture('cc-blitz-clean');
+    const setupRig = createFakeEngine();
+    const setup = serviceWithDetectionOf(setupRig);
+    const jobs = await setup.analyzeGames([a, b]);
+    await waitFor(async () => {
+      const summaries = await Promise.all(
+        jobs.map((job) => summariesRepository.getForAnalysis(job.id)),
+      );
+      return summaries.every((summary) => summary?.detectionState === 'completed');
+    });
+    // Make both completed passes stale so `scanGame` re-runs them.
+    for (const job of jobs) {
+      const summary = (await summariesRepository.getForAnalysis(job.id))!;
+      await summariesRepository.putForAnalysis({ ...summary, detectionVersion: 1 });
+    }
+
+    const jobA = jobs.find((job) => job.gameId === a)!;
+    const jobB = jobs.find((job) => job.gameId === b)!;
+    const starts: string[] = [];
+    const releases: Array<() => void> = [];
+    const spyDetection = {
+      runPassForCompletedJob: async (job: AnalysisJob): Promise<void> => {
+        starts.push(job.id);
+        await new Promise<void>((resolve) => releases.push(resolve));
+      },
+    } as unknown as TacticalDetectionService;
+    const service = serviceWithDetectionOf(setupRig, spyDetection);
+
+    expect(await service.scanGame(a)).toBe('started');
+    expect(await service.scanGame(b)).toBe('started');
+
+    // Only the first scan runs; the second waits in the queue.
+    await waitFor(() => starts.length === 1);
+    expect(starts).toEqual([jobA.id]);
+
+    releases[0]!();
+    await waitFor(() => starts.length === 2);
+    expect(starts).toEqual([jobA.id, jobB.id]);
+    releases[1]!();
+    await waitFor(async () => (await service.activeDetectionGames()).length === 0);
+  });
+
   it('scanGame refuses when there is no completed analysis or a live analysis', async () => {
     const clean = await seedFixture('cc-blitz-clean');
     const service = serviceWithDetectionOf(createFakeEngine());

@@ -213,6 +213,16 @@ export class AnalysisService {
   private readonly scans = new Map<GameId, ScanEntry>();
 
   /**
+   * FIFO tail serializing Feature-010 detection passes: only one tactics scan
+   * runs at a time, so concurrent requests (e.g. several games finishing
+   * analysis together) queue behind the running pass instead of interleaving
+   * their engine searches. Every requested game is still registered in `scans`
+   * immediately, so the UI can show it as queued/running and cancel it; a pass
+   * cancelled before it reaches the head of the queue never starts.
+   */
+  private scanTail: Promise<void> = Promise.resolve();
+
+  /**
    * Live Feature-011 puzzle-generation passes **in this session**, keyed by
    * game id (mirror of `scans`). A persisted summary row with
    * `puzzleState: 'queued'/'inProgress'` only means a generation pass is
@@ -1023,8 +1033,12 @@ export class AnalysisService {
       return existing;
     }
     const controller = new AbortController();
-    const done = (async () => {
+    const run = async (): Promise<void> => {
       try {
+        // A pass cancelled while queued never starts.
+        if (controller.signal.aborted) {
+          return;
+        }
         await this.detection!.runPassForCompletedJob(
           job,
           { id: game.id, userColor: game.userColor },
@@ -1068,7 +1082,11 @@ export class AnalysisService {
           this.scans.delete(game.id);
         }
       }
-    })();
+    };
+    const done = this.scanTail.then(run);
+    // Keep the queue alive regardless of individual failures: the next queued
+    // pass must still run.
+    this.scanTail = done.catch(() => undefined);
     const entry: ScanEntry = { controller, done };
     this.scans.set(game.id, entry);
     return entry;
