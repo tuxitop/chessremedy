@@ -29,6 +29,7 @@ export const SETTINGS_KEYS = {
   sessionWarningSeconds: 'training.session.warningSeconds',
   defaultHintConfig: 'training.hints',
   legacyAutoSetsCleaned: 'training.legacyAutoSetsCleaned',
+  missedTacticSummaryRepair: 'analysis.missedTacticSummaryRepair',
 } as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS];
 

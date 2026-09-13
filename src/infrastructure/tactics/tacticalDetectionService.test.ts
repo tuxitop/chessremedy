@@ -299,6 +299,30 @@ describe('TacticalDetectionService — pass orchestration', () => {
     expect(ghost?.detectionVersion).toBeNull();
   });
 
+  it('does not count a verified missed tactic in the blunder bucket (ADR-023 exclusivity reaches the summary)', async () => {
+    const game = fixtureGame(BULLET_ID);
+    const job = completedJobFor(game);
+    const plan = planOf(game);
+    const missedPly = 6;
+    const startingFen = plan.moves[missedPly]!.positionFen;
+    const rig = createFakeEngine({ results: new Map([[startingFen, mateResult(startingFen)]]) });
+    const service = serviceOf(rig.service);
+    const { records } = bulletRecords(
+      job.id,
+      new Map([[missedPly, missedMateOverride(startingFen)]]),
+    );
+
+    await service.runPassForCompletedJob(job, game, records);
+
+    const summary = (await summariesRepository.getForAnalysis(job.id))!;
+    // The ply is a verified miss: counted once as a missed tactic…
+    expect(summary.missedTacticCount).toBe(1);
+    // …and NOT also in the raw blunder bucket. (Regression: the completed
+    // summary used to be built from the un-annotated records, so a verified
+    // miss stayed counted as a blunder.)
+    expect(summary.classificationCounts.blunder).toBe(0);
+  });
+
   it('resets puzzle-generation fields when it starts a fresh (re)derivation and never resurrects them (R-2)', async () => {
     const game = fixtureGame(BULLET_ID);
     const job = completedJobFor(game);

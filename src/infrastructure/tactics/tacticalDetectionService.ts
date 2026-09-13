@@ -398,7 +398,7 @@ export class TacticalDetectionService {
       const reused = verifiedByPly.get(candidate.sourcePly);
       if (reused) {
         verified.push(reused);
-        await this.persistAnnotatedRecords(records, verified);
+        records = await this.persistAnnotatedRecords(records, verified);
         continue;
       }
 
@@ -420,7 +420,7 @@ export class TacticalDetectionService {
             total,
             verificationDepth,
           );
-          await this.persistAnnotatedRecords(records, verified);
+          records = await this.persistAnnotatedRecords(records, verified);
           continue;
         }
       }
@@ -490,7 +490,7 @@ export class TacticalDetectionService {
             total,
             verificationDepth,
           );
-          await this.persistAnnotatedRecords(records, verified);
+          records = await this.persistAnnotatedRecords(records, verified);
           continue;
         }
         // settled.kind === 'rejected'
@@ -522,7 +522,7 @@ export class TacticalDetectionService {
       verified.push(outcome.candidate);
       settledCount += 1;
       await this.persistScanProgress(job, game, records, settledCount, total, verificationDepth);
-      await this.persistAnnotatedRecords(records, verified);
+      records = await this.persistAnnotatedRecords(records, verified);
     }
 
     if (signal?.aborted) {
@@ -615,16 +615,23 @@ export class TacticalDetectionService {
 
   // --- internals --------------------------------------------------------------
 
-  /** Persist the run's records with the verified-miss annotations applied. */
+  /**
+   * Persist the run's records with the verified-miss annotations applied and
+   * return the annotated records. Callers MUST continue the pass from the
+   * returned array: the summary is built from it, and a summary built from the
+   * un-annotated input would count a verified missed tactic in its raw
+   * classification bucket (ADR-023 exclusivity, W3).
+   */
   private async persistAnnotatedRecords(
     records: readonly MoveAnalysis[],
     verified: readonly VerifiedTacticalCandidate[],
-  ): Promise<void> {
+  ): Promise<readonly MoveAnalysis[]> {
     if (verified.length === 0) {
-      return;
+      return records;
     }
     const annotated = annotateVerifiedMisses(records, verified, DETECTION_VERSION);
     await this.analyses.replaceAnalysis(annotated);
+    return annotated;
   }
 
   /** Persist one per-analysis summary row for the pass state + optional extras. */

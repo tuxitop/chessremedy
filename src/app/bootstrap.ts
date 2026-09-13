@@ -16,6 +16,10 @@ import {
   type LegacyAutoSetCleanupDeps,
 } from '@/infrastructure/training/legacy-auto-set-cleanup';
 import {
+  repairMissedTacticSummaries,
+  type SummaryRepairDeps,
+} from '@/infrastructure/analysis/summary-repair';
+import {
   createSyncScheduler,
   type SyncScheduler,
   type SyncSchedulerService,
@@ -37,9 +41,16 @@ export interface BootstrapSyncDeps {
 export async function bootstrap(
   deps?: LegacyAutoSetCleanupDeps,
   syncDeps?: BootstrapSyncDeps,
+  repairDeps?: SummaryRepairDeps,
 ): Promise<void> {
   try {
     await runLegacyAutoSetCleanup(deps);
+  } catch {
+    // Best-effort: never block startup.
+  }
+
+  try {
+    await repairMissedTacticSummaries(repairDeps);
   } catch {
     // Best-effort: never block startup.
   }
