@@ -58,11 +58,11 @@
 }
 
 .column:hover .columnInner {
-  background: color-mix(in srgb, var(--color-accent, #1f6feb) 14%, transparent);
+  background: color-mix(in srgb, var(--color-accent, #01b681) 14%, transparent);
 }
 
 .column:focus-visible {
-  outline: 2px solid var(--color-accent, #1f6feb);
+  outline: 2px solid var(--color-accent, #01b681);
   outline-offset: -2px;
   z-index: 1;
 }
@@ -74,6 +74,6 @@
 }
 
 .active .columnInner {
-  background: color-mix(in srgb, var(--color-accent, #1f6feb) 20%, transparent);
-  box-shadow: inset 0 0 0 2px var(--color-accent, #1f6feb);
+  background: color-mix(in srgb, var(--color-accent, #01b681) 20%, transparent);
+  box-shadow: inset 0 0 0 2px var(--color-accent, #01b681);
 }

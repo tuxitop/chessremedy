@@ -30,15 +30,15 @@ describe('NAV_ITEMS', () => {
       'Home',
       'Games',
       'Training',
-      'Statistics',
+      'Insights',
       'Analysis',
       'Settings',
     ]);
   });
 
-  it('points Training and Statistics at the renamed routes', () => {
+  it('points Training and Insights at the renamed routes', () => {
     expect(NAV_ITEMS.find((item) => item.label === 'Training')?.path).toBe(ROUTES.training);
-    expect(NAV_ITEMS.find((item) => item.label === 'Statistics')?.path).toBe(ROUTES.statistics);
+    expect(NAV_ITEMS.find((item) => item.label === 'Insights')?.path).toBe(ROUTES.statistics);
   });
 });
 

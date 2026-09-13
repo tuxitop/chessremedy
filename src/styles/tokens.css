@@ -11,23 +11,28 @@
   --color-fg-muted: #59636e;
   --color-fg-subtle: #818b98;
 
-  --color-accent: #1f6feb;
+  --color-accent: #01b681;
   --color-accent-fg: #ffffff;
-  --color-accent-hover: #1858bf;
+  --color-accent-hover: #02a273;
+  --color-accent-subtle: rgba(1, 182, 129, 0.12);
+
+  /* Secondary/informational blue (kept from the original palette). */
+  --color-info: #1f6feb;
+  --color-info-subtle: rgba(31, 111, 235, 0.12);
 
   --color-success: #1a7f37;
   --color-warning: #9a6700;
   --color-danger: #cf222e;
 
-  --color-focus-ring: rgba(31, 111, 235, 0.4);
+  --color-focus-ring: rgba(1, 182, 129, 0.4);
 
   /* Active ply in the move list (subtle, readable on light). */
   --color-move-active: rgba(31, 130, 60, 0.16);
   --color-move-active-ring: rgba(31, 130, 60, 0.5);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.06);
+  --shadow-md: 0 3px 8px rgba(31, 35, 40, 0.08);
+  --shadow-lg: 0 8px 24px rgba(31, 35, 40, 0.12);
 
   color-scheme: light;
 }
@@ -44,31 +49,36 @@
   --color-fg-muted: #9da7b3;
   --color-fg-subtle: #6e7681;
 
-  --color-accent: #4493f8;
+  --color-accent: #01b681;
   --color-accent-fg: #ffffff;
-  --color-accent-hover: #58a6ff;
+  --color-accent-hover: #02a273;
+  --color-accent-subtle: rgba(1, 182, 129, 0.2);
+
+  /* Secondary/informational blue (kept from the original palette). */
+  --color-info: #4493f8;
+  --color-info-subtle: rgba(68, 147, 248, 0.15);
 
   --color-success: #3fb950;
   --color-warning: #d29922;
   --color-danger: #f85149;
 
-  --color-focus-ring: rgba(68, 147, 248, 0.5);
+  --color-focus-ring: rgba(1, 182, 129, 0.5);
 
   /* Active ply in the move list (a bit stronger on dark so it stands out). */
   --color-move-active: rgba(63, 185, 80, 0.28);
   --color-move-active-ring: rgba(63, 185, 80, 0.55);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.7);
 
   color-scheme: dark;
 }
 
 :root {
   --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif,
-    'Apple Color Emoji', 'Segoe UI Emoji';
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Helvetica, Arial,
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
   --font-mono:
     ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 

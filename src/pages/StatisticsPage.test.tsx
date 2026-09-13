@@ -129,6 +129,6 @@ describe('StatisticsPage', () => {
     expect(within(page).getByTestId('dashboard-training-section')).toBeInTheDocument();
     expect(screen.getByTestId('dashboard-live')).toHaveAttribute('aria-live', 'polite');
     expect(screen.getAllByRole('img').length).toBeGreaterThan(0);
-    expect(container.querySelector('h1')).toHaveTextContent('Statistics');
+    expect(container.querySelector('h1')).toHaveTextContent('Insights');
   });
 });

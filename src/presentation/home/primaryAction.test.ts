@@ -46,7 +46,7 @@ describe('selectHomePrimaryAction', () => {
         hasEligibleAnalysis: true,
         continueTarget: none,
       }),
-    ).toEqual({ kind: 'statistics', label: 'View your statistics', target: { to: 'statistics' } });
+    ).toEqual({ kind: 'statistics', label: 'View your insights', target: { to: 'statistics' } });
   });
 
   it('selects continue for a cycle target', () => {

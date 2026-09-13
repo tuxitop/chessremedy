@@ -16,7 +16,7 @@ describe('Navigation', () => {
       'nav-home',
       'nav-games',
       'nav-training',
-      'nav-statistics',
+      'nav-insights',
       'nav-analysis',
       'nav-settings',
     ]);
@@ -24,7 +24,7 @@ describe('Navigation', () => {
       'Home',
       'Games',
       'Training',
-      'Statistics',
+      'Insights',
       'Analysis',
       'Settings',
     ]);

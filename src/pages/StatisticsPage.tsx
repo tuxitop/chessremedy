@@ -27,7 +27,7 @@ export function StatisticsPage(props: StatisticsPageProps = {}): React.JSX.Eleme
   return (
     <div className={styles.page} data-testid="statistics-page">
       <header className={styles.header}>
-        <h1 className={styles.heading}>Statistics</h1>
+        <h1 className={styles.heading}>Insights</h1>
         <p className={styles.subtitle}>
           Rating, accuracy, mistakes and training progress. Every value shows its sample size, and
           partitions are never silently combined.

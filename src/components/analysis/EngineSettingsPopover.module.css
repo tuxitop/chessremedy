@@ -97,7 +97,7 @@
 .rangeRow input[type='range'] {
   flex: 1 1 auto;
   min-width: 0;
-  accent-color: var(--color-accent, #1f6feb);
+  accent-color: var(--color-accent, #01b681);
 }
 
 .rangeValue {

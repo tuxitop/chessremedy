@@ -34,7 +34,7 @@ describe('AppShell', () => {
     renderWithOutlet();
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
     expect(screen.getByText('ChessRemedy')).toBeInTheDocument();
-    for (const label of ['Home', 'Games', 'Training', 'Statistics', 'Analysis', 'Settings']) {
+    for (const label of ['Home', 'Games', 'Training', 'Insights', 'Analysis', 'Settings']) {
       expect(screen.getByTestId(`nav-${label.toLowerCase()}`)).toBeInTheDocument();
     }
   });

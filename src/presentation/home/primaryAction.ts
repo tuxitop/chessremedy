@@ -66,5 +66,5 @@ export function selectHomePrimaryAction(state: HomePrimaryActionState): HomePrim
   if (!state.hasEligibleAnalysis) {
     return { kind: 'analyze', label: 'Analyze a game', target: { to: 'games' } };
   }
-  return { kind: 'statistics', label: 'View your statistics', target: { to: 'statistics' } };
+  return { kind: 'statistics', label: 'View your insights', target: { to: 'statistics' } };
 }

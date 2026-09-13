@@ -1,5 +1,3 @@
-import { ANALYSIS_GLYPH } from '@/components/ui/icons';
-
 export const ROUTES = {
   home: '/',
   games: '/games',
@@ -46,7 +44,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: ROUTES.home, label: 'Home' },
   { path: ROUTES.games, label: 'Games' },
   { path: ROUTES.training, label: 'Training' },
-  { path: ROUTES.statistics, label: 'Statistics' },
-  { path: ROUTES.analysisLive, label: 'Analysis', glyph: ANALYSIS_GLYPH },
+  { path: ROUTES.statistics, label: 'Insights' },
+  { path: ROUTES.analysisLive, label: 'Analysis' },
   { path: ROUTES.settings, label: 'Settings' },
 ];
