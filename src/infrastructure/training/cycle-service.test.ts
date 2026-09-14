@@ -144,6 +144,111 @@ describe('CycleService', () => {
     expect(await trainingCyclesRepository.listForSet(set.id)).toHaveLength(1);
   });
 
+  it('start abandons a stray duplicate in-progress cycle when resuming', async () => {
+    const set = await seedSet([puzzleFor('game:one', 6)]);
+    // Simulate a pre-`activeCycleOf` stray: two in-progress rows, the lower
+    // number is the real pass (it has the attempt), the higher one shadows it.
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cyc:1', trainingSetId: set.id, cycleNumber: 1 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cyc:2', trainingSetId: set.id, cycleNumber: 2 }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'cyc:1',
+        trainingSetId: set.id,
+        puzzleId: idOf(puzzleFor('game:one', 6)),
+        presentationIndex: 0,
+        result: 'solvedFirstTry',
+      }),
+    );
+
+    const result = await makeService().start(set.id);
+
+    if (!result.ok) throw new Error('expected start to succeed');
+    expect(result.cycle.id).toBe('cyc:1');
+    const rows = await trainingCyclesRepository.listForSet(set.id);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get('cyc:1')?.status).toBe('inProgress');
+    expect(byId.get('cyc:2')?.status).toBe('abandoned');
+    expect(byId.get('cyc:2')?.abandonedAt).toBe(NOW);
+  });
+
+  it('resume abandons a stray duplicate in-progress cycle of the same set', async () => {
+    const set = await seedSet([puzzleFor('game:one', 6)]);
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cyc:1',
+        trainingSetId: set.id,
+        cycleNumber: 1,
+        puzzleIds: [idOf(puzzleFor('game:one', 6))],
+      }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cyc:2', trainingSetId: set.id, cycleNumber: 2 }),
+    );
+
+    const result = await makeService().resume('cyc:1');
+
+    if (!result.ok) throw new Error('expected resume to succeed');
+    expect(result.cycle.id).toBe('cyc:1');
+    const rows = await trainingCyclesRepository.listForSet(set.id);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get('cyc:1')?.status).toBe('inProgress');
+    expect(byId.get('cyc:2')?.status).toBe('abandoned');
+  });
+
+  it('reconcileInProgress abandons every in-progress cycle except the active one', async () => {
+    const set = await seedSet([puzzleFor('game:one', 6)]);
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cyc:1', trainingSetId: set.id, cycleNumber: 1 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cyc:2', trainingSetId: set.id, cycleNumber: 2 }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cyc:done',
+        trainingSetId: set.id,
+        cycleNumber: 3,
+        status: 'completed',
+        completedAt: NOW,
+      }),
+    );
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'cyc:1',
+        trainingSetId: set.id,
+        puzzleId: idOf(puzzleFor('game:one', 6)),
+        presentationIndex: 0,
+        result: 'solvedFirstTry',
+      }),
+    );
+
+    const abandoned = await makeService().reconcileInProgress(set.id);
+
+    expect(abandoned).toBe(1);
+    const rows = await trainingCyclesRepository.listForSet(set.id);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get('cyc:1')?.status).toBe('inProgress');
+    expect(byId.get('cyc:2')?.status).toBe('abandoned');
+    expect(byId.get('cyc:done')?.status).toBe('completed');
+  });
+
+  it('reconcileInProgress is a no-op with zero or one in-progress cycle', async () => {
+    const set = await seedSet([puzzleFor('game:one', 6)]);
+    expect(await makeService().reconcileInProgress(set.id)).toBe(0);
+
+    await trainingCyclesRepository.create(
+      cycleFixture({ id: 'cyc:1', trainingSetId: set.id, cycleNumber: 1 }),
+    );
+    expect(await makeService().reconcileInProgress(set.id)).toBe(0);
+    const rows = await trainingCyclesRepository.listForSet(set.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe('inProgress');
+  });
+
   it('start rejects an empty set (no puzzle row) and creates no cycle', async () => {
     const empty = await seedSet([]);
     expect(await makeService().start(empty.id)).toEqual({ ok: false, reason: 'empty-set' });

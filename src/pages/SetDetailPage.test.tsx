@@ -83,6 +83,43 @@ describe('SetDetailPage', () => {
     expect(screen.getByTestId('set-detail-history-status-1')).toHaveTextContent('Completed');
   });
 
+  it('reconciles duplicate in-progress cycles in the history to a single active pass', async () => {
+    await seedSet();
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle-1',
+        trainingSetId: SET_ID,
+        cycleNumber: 1,
+        status: 'inProgress',
+        puzzleIds: PUZZLE_IDS,
+      }),
+    );
+    await trainingCyclesRepository.create(
+      cycleFixture({
+        id: 'cycle-2',
+        trainingSetId: SET_ID,
+        cycleNumber: 2,
+        status: 'inProgress',
+        puzzleIds: PUZZLE_IDS,
+      }),
+    );
+    // The real pass (cycle 1) holds the attempt; cycle 2 is a legacy stray.
+    await attemptsRepository.addAttempt(
+      cycleAttemptFixture({
+        cycleId: 'cycle-1',
+        trainingSetId: SET_ID,
+        puzzleId: puzzleIdOf(GAME.id, 6),
+        result: 'solvedFirstTry',
+      }),
+    );
+
+    renderDetail();
+    await waitForDetail();
+
+    expect(screen.getByTestId('set-detail-history-status-1')).toHaveTextContent('In progress');
+    expect(screen.getByTestId('set-detail-history-status-2')).toHaveTextContent('Abandoned');
+  });
+
   it('renames the set', async () => {
     await seedSet();
     renderDetail();

@@ -143,6 +143,10 @@ export function SetDetailPage({
           setLoading(false);
           return;
         }
+        await cycleService.reconcileInProgress(setId);
+        if (cancelled) {
+          return;
+        }
         const [membership, cycles] = await Promise.all([
           puzzlesRepo.getPuzzles(set.puzzleIds),
           cycleService.listForSet(setId),

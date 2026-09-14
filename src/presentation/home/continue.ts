@@ -5,11 +5,13 @@
  * reads. It resolves exactly one of: the most recent `inProgress` cycle
  * (including the reserved Quick-train sentinel), else the single open
  * Woodpecker block, else the most recently active custom set, else `none`.
- * `abandoned`/`completed` cycles are never chosen and no progress value is
- * derived here (Feature 014/013 own every number).
+ * The reserved review sentinel (`REVIEW_SET_ID`) is never chosen: its cycles
+ * belong to the review session, not a resumable set. `abandoned`/`completed`
+ * cycles are never chosen and no progress value is derived here (Feature
+ * 014/013 own every number).
  */
 
-import { QUICK_TRAIN_SET_ID } from '@/domain/training/autoSet';
+import { QUICK_TRAIN_SET_ID, REVIEW_SET_ID } from '@/domain/training/autoSet';
 import type { TacticalTrainingSetRow, TrainingCycleRow } from '@/domain/training/cycleTypes';
 import { selectDefaultTrainingSet } from '@/presentation/dashboard/selection';
 
@@ -62,7 +64,7 @@ function compareText(a: string, b: string): number {
  */
 export function resolveHomeContinue(input: HomeContinueInput): HomeContinueTarget {
   const cycle = [...input.cycles]
-    .filter((row) => row.status === 'inProgress')
+    .filter((row) => row.status === 'inProgress' && row.trainingSetId !== REVIEW_SET_ID)
     .sort(
       (a, b) =>
         b.startedAt - a.startedAt || b.cycleNumber - a.cycleNumber || compareText(a.id, b.id),

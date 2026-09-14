@@ -200,6 +200,13 @@ where noted:
   `inProgress` and can be resumed later from the next unanswered
   puzzle. The user may instead discard the cycle, which marks it
   `abandoned`; a new cycle can then be started from the set.
+- **Single in-progress cycle per set**: a set has at most one
+  `inProgress` cycle at a time. When a set's history holds more than one
+  (a legacy or raced duplicate), the active pass is kept — the one with
+  the most recent attempt, else the latest started, else the lowest
+  cycle number — and every other `inProgress` cycle is abandoned, so the
+  cycle history never shows two in-progress rows. Starting, resuming or
+  opening the set reconciles such duplicates.
 - **Skip a puzzle**: the puzzle is recorded as skipped (`PuzzleAttempt`
   result `skipped`), excluded from accuracy and solving-time aggregates,
   and is not marked completed. Skipping does not remove the puzzle from

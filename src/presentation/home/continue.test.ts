@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { QUICK_TRAIN_SET_ID } from '@/domain/training/autoSet';
+import { QUICK_TRAIN_SET_ID, REVIEW_SET_ID } from '@/domain/training/autoSet';
 import { blockSetFixture, cycleFixture, setFixture } from '@/domain/training/test-support';
 import { resolveHomeContinue } from './continue';
 
@@ -167,5 +167,51 @@ describe('resolveHomeContinue', () => {
       label: 'Quick train',
       quickTrain: true,
     });
+  });
+
+  it('ignores the reserved review sentinel cycle in favour of a real training cycle', () => {
+    const set = setFixture({ id: 'set-1', name: 'Rapid review' });
+    const reviewCycle = cycleFixture({
+      id: 'review-cycle',
+      trainingSetId: REVIEW_SET_ID,
+      cycleNumber: 1,
+      status: 'inProgress',
+      startedAt: NOW,
+    });
+    const trainingCycle = cycleFixture({
+      id: 'training-cycle',
+      trainingSetId: 'set-1',
+      cycleNumber: 1,
+      status: 'inProgress',
+      startedAt: NOW - 1000,
+    });
+
+    const target = resolveHomeContinue({
+      sets: [set],
+      openBlock: null,
+      cycles: [reviewCycle, trainingCycle],
+    });
+
+    expect(target).toEqual({
+      kind: 'cycle',
+      setId: 'set-1',
+      cycleNumber: 1,
+      label: 'Rapid review',
+      quickTrain: false,
+    });
+  });
+
+  it('falls through when only a review sentinel cycle is in progress', () => {
+    const set = setFixture({ id: 'set-1' });
+    const reviewCycle = cycleFixture({
+      id: 'review-cycle',
+      trainingSetId: REVIEW_SET_ID,
+      status: 'inProgress',
+      startedAt: NOW,
+    });
+
+    const target = resolveHomeContinue({ sets: [set], openBlock: null, cycles: [reviewCycle] });
+
+    expect(target).toEqual({ kind: 'set', setId: 'set-1', label: 'Fixture set' });
   });
 });

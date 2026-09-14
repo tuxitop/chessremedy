@@ -223,7 +223,9 @@ export class CycleService {
       // Never create a second in-progress pass for the same set: starting an
       // already-running set resumes the pass being worked through instead (a
       // duplicate cycle would shadow the real one in the UI). The UI resumes
-      // first; this guards races.
+      // first; this guards races. Any stray duplicate is abandoned so the
+      // history shows a single in-progress pass.
+      await this.abandonOtherInProgress(existing, active.id);
       return { ok: true, cycle: active, missingPuzzleIds };
     }
     const cycleNumber = nextCycleNumber(existing.map((cycle) => cycle.cycleNumber));
@@ -327,6 +329,9 @@ export class CycleService {
     if (!check.ok) {
       return { ok: false, reason: 'invalid-config', message: check.message };
     }
+    // The resumed pass is the active one; abandon any legacy/raced duplicate so
+    // the history shows a single in-progress cycle.
+    await this.abandonOtherInProgress(await this.cycles.listForSet(cycle.trainingSetId), cycleId);
     const attempts = await this.attempts.listForCycle(cycleId);
     const missingPuzzleIds = await this.missingPuzzleIdsFor(cycle.puzzleIds);
     const queue = reconstructResume({
@@ -372,6 +377,43 @@ export class CycleService {
       abandonedAt: this.now(),
     });
     return { ok: true, cycle: abandoned ?? cycle };
+  }
+
+  /**
+   * Reconcile a set's in-progress cycles to the single active pass, abandoning
+   * any legacy/raced duplicates. A set is meant to have one in-progress cycle,
+   * but interrupted starts (and pre-`activeCycleOf` builds) can leave several;
+   * without this the history would show two "In progress" rows. Returns the
+   * number abandoned; a no-op when the set has zero or one in-progress cycle.
+   */
+  async reconcileInProgress(setId: string): Promise<number> {
+    const cycles = await this.cycles.listForSet(setId);
+    const inProgress = cycles.filter((cycle) => cycle.status === 'inProgress');
+    if (inProgress.length <= 1) {
+      return 0;
+    }
+    const active = activeCycleOf(cycles, await this.attempts.listAll());
+    return this.abandonOtherInProgress(cycles, active?.id ?? null);
+  }
+
+  /**
+   * Abandon every in-progress cycle except `keepId` (pass `null` to abandon
+   * all), stamping `abandonedAt` with the service clock. Returns the number
+   * abandoned.
+   */
+  private async abandonOtherInProgress(
+    cycles: readonly TrainingCycleRow[],
+    keepId: string | null,
+  ): Promise<number> {
+    const now = this.now();
+    let abandoned = 0;
+    for (const cycle of cycles) {
+      if (cycle.status === 'inProgress' && cycle.id !== keepId) {
+        await this.cycles.updateStatus(cycle.id, { status: 'abandoned', abandonedAt: now });
+        abandoned += 1;
+      }
+    }
+    return abandoned;
   }
 
   /**
