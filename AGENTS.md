@@ -29,8 +29,29 @@ shipping order is:
 | 014 | Game Analysis History & Statistics         | `014-game-history-statistics.md`      |
 | 015 | Dashboard                                  | `015-dashboard.md`                    |
 | 016 | Synchronization                            | `016-synchronization.md`              |
+| 017 | UI/UX Refinements                          | `017-w1-ui-ux-refinements.md`         |
+| 018 | Home Page                                  | `018-w6-home-page.md`                 |
+| 019 | Timed Training Sessions                    | `019-timed-training-sessions.md`      |
 
 Features should be implemented in this order.
+
+## Post-V1 roadmap (draft)
+
+These specs are **draft / idea-level** and are not approved for
+implementation. Each is revised and its ADR(s) written before that
+feature is implemented.
+
+| #   | Feature                                       | Spec                                  |
+| --- | --------------------------------------------- | ------------------------------------- |
+| 020 | Individual Review Scheduling                  | `020-individual-review-scheduling.md` |
+| 021 | Opening Repertoire Domain & PGN Import/Export | `021-opening-repertoire-domain.md`    |
+| 022 | Opening Identification & ECO Library          | `022-opening-identification-eco.md`   |
+| 023 | Repertoire Creator UI                         | `023-repertoire-creator-ui.md`        |
+| 024 | Opening Trainer                               | `024-opening-trainer.md`              |
+| 025 | Opening Coverage & Gap Detection              | `025-opening-coverage-gaps.md`        |
+| 026 | Repertoire Compliance                         | `026-repertoire-compliance.md`        |
+| 027 | Opening Statistics & Dashboard                | `027-opening-stats-dashboard.md`      |
+| 028 | Opening Model Games                           | `028-opening-model-games.md`          |
 
 ---
 

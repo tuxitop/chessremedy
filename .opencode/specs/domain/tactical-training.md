@@ -418,11 +418,12 @@ proves the training method caused it; it reports measured deltas only
 
 The immutable `Puzzle`, the `TacticalTrainingSet` membership (custom stored
 or block-frozen), the derived pool, the attempt/cycle history and the derived
-mastery state are the entire V1 training data surface. A future individual
-scheduler
-(e.g. FSRS) can be layered on top of attempt history without changing the
-puzzle definition or discarding V1 data; mastery is derived and adds no
-scheduling state.
+mastery state are the entire V1 training data surface. An individual review
+scheduler (`ts-fsrs`) is layered on top of attempt history without changing
+the puzzle definition or discarding V1 data; mastery is derived and adds no
+scheduling state. The scheduler lives behind a pure domain interface and its
+state is a derived, rebuildable projection (ADR-035;
+`specs/domain/review-scheduling.md`).
 No scheduler abstraction is introduced in V1 beyond this boundary:
 
 ```text
@@ -430,5 +431,5 @@ Puzzle
   ↓
 Training Strategy
   ├── Cycle Training (V1)
-  └── Individual Scheduler (future)
+  └── Individual Scheduler (ADR-035)
 ```

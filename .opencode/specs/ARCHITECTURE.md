@@ -20,8 +20,10 @@ hosting. No backend is required for the core application.
 - Engine: Stockfish WASM in a Web Worker.
 - Persistence: IndexedDB via Dexie.
 - Puzzle training: V1 deterministic in-domain **cycle-based** tactical
-  training (sets, cycles, attempts) — no scheduler library (ADR-031). A
-  future per-puzzle scheduler (e.g. FSRS) is an application-layer option.
+  training (sets, cycles, attempts) — no scheduler library in V1
+  (ADR-031). Post-V1 adds an **individual review scheduler** behind a pure
+  domain interface, using `ts-fsrs` (ADR-035); its scheduling state is a
+  derived, rebuildable projection, never authoritative.
 - Visualization: Recharts (ADR-010).
 - Testing: Vitest + Testing Library + happy-dom (default)/jsdom
   (on-demand) + fake-indexeddb + MSW (installed by its consumer feature,
@@ -237,13 +239,14 @@ SyncProvider
 ```
 
 Future opening-training reuses the chessboard, game-state and training
-infrastructure. V1's training model deliberately does not commit to an
-individual scheduler (ADR-031):
+infrastructure. V1's training model uses deterministic cycle training and
+deliberately takes no scheduler-library dependency (ADR-031). Post-V1 adds
+an individual review scheduler (ADR-035):
 
 ```
 Puzzle
   ↓
 Training Strategy
   ├── Cycle Training (V1)
-  └── Individual Scheduler (future)
+  └── Individual Scheduler (ADR-035)
 ```

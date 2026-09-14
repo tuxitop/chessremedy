@@ -46,6 +46,7 @@ Read order for any feature task:
 | [ADR-032](specs/decisions/ADR-032-typescript-version.md) | TypeScript tracks the latest stable supported by the current `typescript-eslint` peer range; no override | Accepted | Toolchain |
 | [ADR-033](specs/decisions/ADR-033-unified-analysis-board.md) | One shared analysis-board surface for Review (stored) and Live Analysis (engine); live never overwrites stored analysis; exploration non-destructive; numeric eval text White-positive, bar height bottom-oriented | Accepted | Analysis/Board |
 | [ADR-034](specs/decisions/ADR-034-dedicated-verification-engine.md) | Dedicated tactical-verification engine worker (own FIFO, lazy/idle lifecycle) and global thread budget `B = min(hardwareConcurrency, 8)`: verification 1 thread, analysis `max(1, B - 1)`; two engines never at maximum together | Accepted | Engine/Tactical detection |
+| [ADR-035](specs/decisions/ADR-035-individual-review-scheduling.md) | Post-V1 individual review scheduling: `ts-fsrs` behind a pure `Scheduler` interface; derived, unsynced `puzzleSchedules` projection (schema v13) rebuilt from immutable attempts; review excluded from mastery/statistics | Accepted | Puzzle training (post-V1) |
 
 ## Critical Constraints
 
@@ -62,6 +63,8 @@ feature:
 - V1 tactical training uses cycle-based training over fixed puzzle sets
   (ADR-031). There is no per-puzzle scheduler and no FSRS dependency in
   V1; the data model stays open to a future individual scheduler.
+  Post-V1 individual review scheduling is defined by ADR-035 and leaves
+  V1 cycle training unchanged.
 - Dropbox synchronization is optional backup/export infrastructure, not
   the primary database; the app must work without it (ADR-001/008).
 - Domain logic must not depend on React/UI (ARCHITECTURE.md §3).

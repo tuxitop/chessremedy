@@ -101,9 +101,13 @@ features, ADRs, research, or the whole documentation tree.
 - Required: `ARCHITECTURE.md` §3/§7/§10; ADRs `decisions/ADR-031`; features `features/012-puzzle-training.md`, `features/013-tactical-training-cycles.md`; domain `domain/tactical-training.md`.
 - Dependencies: Features 001 (settings), 012 (solve clock + immutable attempt rows), 013 (cycle session host + canonical cycle metrics). No new dependency, ADR or schema change.
 
+### Feature 020 — Individual Review Scheduling (post-V1, ADR-gated)
+- Required: `ARCHITECTURE.md` §3/§5/§7/§9/§10/§12; `PRODUCT.md` §10–§11/§15; ADRs `decisions/ADR-018`, `decisions/ADR-031`, `decisions/ADR-035`; domain `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/review-scheduling.md`; features `features/012-puzzle-training.md`, `features/013-tactical-training-cycles.md`, `features/019-timed-training-sessions.md`; research `research/fsrs-implementation.md`.
+- Dependencies: Features 001 (settings), 011 (`Puzzle`), 012 (immutable attempt rows + `SolveScreen`), 013 (session host, pool derivation, canonical metrics, mastery exclusion), 019 (session chrome). Adds the scheduler dependency (ADR-gated), a new ADR and an additive schema v13 (`puzzleSchedules`).
+
 ## Lookup: decisions by area
 
-- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020/034 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
+- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020/034 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031/035 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
 
 ## Lookup: research by consumer
 
