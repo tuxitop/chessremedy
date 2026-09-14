@@ -1,5 +1,5 @@
 export const APP_NAME = 'ChessRemedy';
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '1.0.0';
 // Schema v1 = settings (Foundation); v2 adds the games table (Feature 004);
 // v3 adds the importJobs table (Feature 007); v4 adds the game-analysis
 // tables analysisJobs/analyses/positionAnalysisCache (Feature 008);

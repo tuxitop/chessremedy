@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type * as React from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { APP_NAME } from '@/config/app-config';
+import { APP_NAME, APP_VERSION } from '@/config/app-config';
 import { SyncStatusIndicator } from '@/components/sync';
 import { useHeaderVisibility } from '@/hooks/useHeaderVisibility';
 import { Navigation } from './Navigation';
@@ -61,7 +61,7 @@ export function AppShell({ headerSurfaceOpen = false }: AppShellProps = {}): Rea
             data-testid="brand-icon"
           />
           <span>{APP_NAME}</span>
-          <span className={styles.brandTagline}>v0.1.0</span>
+          <span className={styles.brandTagline}>v{APP_VERSION}</span>
         </Link>
         <Navigation id="primary-nav" open={menuOpen} onNavigate={() => setMenuPath(null)} />
         <span className={styles.spacer} />

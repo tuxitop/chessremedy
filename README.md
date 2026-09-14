@@ -3,12 +3,10 @@
 Local-first chess training. Import your games, run Stockfish locally,
 and convert mistakes into personalised puzzles.
 
-> **Status:** V1 is under active development. This commit ships the
-> **Foundation** feature (see
-> [`.opencode/specs/features/001-foundation.md`](.opencode/specs/features/001-foundation.md)).
-> Subsequent features (chessboard, game import, Stockfish analysis,
-> puzzles, cycle-based tactical training, statistics, dashboard, sync)
-> are tracked by the spec workspace, not by this README.
+> **Status:** **v1.0.0 released.** All V1 roadmap features (001–016) and
+> the follow-up refinements 017–019 are implemented. The canonical
+> feature list lives in [`.opencode/specs/features/`](.opencode/specs/features/);
+> see [`CHANGELOG.md`](./CHANGELOG.md) for the release summary.
 
 ---
 
@@ -50,39 +48,56 @@ npm run preview
 
 ```
 src/
-  app/            # Routing & route-path constants (Application layer)
+  app/            # Router, routes, bootstrap (Application layer)
   pages/          # Routed pages (Presentation)
   components/
+    analysis/     # Analysis board + move list surfaces
+    chessboard/   # Chessground wrapper (ADR-002/014/030)
+    dashboard/    # Dashboard widgets
+    games/        # Library, review, puzzle and set surfaces
+    home/         # Home page widgets
     layout/       # AppShell, Navigation, ThemeToggle
-    ui/           # Button, Hero, ThemePicker (reusable primitives)
-  hooks/          # Cross-component React hooks (useTheme)
-  infrastructure/ # Cross-cutting adapters (db)
-    db/           # Dexie database + schema versioning + settings repo
+    puzzles/      # Puzzle board + training controls
+    sync/         # Sync status + settings
+    ui/           # Reusable primitives (Button, Hero, dialogs…)
+  domain/         # Pure domain logic (no React/DB/Worker imports)
+    analysis/ chess/ gameLibrary/ import/ puzzle/ statistics/
+    sync/ tactics/ training/
+  hooks/          # Cross-component React hooks
+  infrastructure/ # Adapters (Dexie, engine, providers, sync…)
+    analysis/ db/ engine/ home/ import/ providers/ puzzles/
+    statistics/ sync/ tactics/ training/
+  presentation/   # View models / mappers per surface
   styles/         # tokens.css, reset.css, global.css
   test/           # Vitest setup + renderWithProviders helper
-  config/         # App-wide constants
+  config/         # App-wide constants (incl. APP_VERSION, schema version)
 ```
 
 The four layers defined in `.opencode/specs/ARCHITECTURE.md` map as:
 
 - **Presentation** — `src/pages/`, `src/components/`
 - **Application** — `src/app/`
-- **Domain** — _not yet created; Feature 003 will introduce `src/domain/`_
+- **Domain** — `src/domain/` (pure TypeScript on `chessops`)
 - **Infrastructure** — `src/infrastructure/`
 
 ## Architecture decisions
 
-- React 19 + TypeScript 5 + Vite 6 + react-router-dom 6.
-- IndexedDB via Dexie 4 with versioned schemas (currently v1, just the
-  `settings` table).
+- React 19 + TypeScript 6 + Vite 8 + react-router-dom 7.
+- IndexedDB via Dexie 4 with versioned, additive schemas (currently
+  **v12**: settings, games, import jobs, analyses + analysis jobs, the
+  FEN-keyed engine cache, analysis summaries, puzzle candidates, puzzles,
+  puzzle attempts, training sets/cycles, and sync metadata). New versions
+  chain in `src/infrastructure/db/schema/`.
+- Chess rules/state on `chessops`; the board is our own wrapper around
+  `@lichess-org/chessground`; Stockfish runs in a Web Worker (ADR-004).
 - Theme is persisted in Dexie (`settings` table). A `localStorage` hint
   is used only to prevent FOUC before React mounts.
 - PWA via `vite-plugin-pwa` (Workbox). Service worker is disabled in
   `vite dev` and validated via `vite preview`.
 - All testing follows ADR-009: Vitest + Testing Library + happy-dom
-  (default) / jsdom (on-demand) + fake-indexeddb + MSW (installed by
-  its consumer feature) + Playwright. Exact versions follow the
-  Dependency policy in `AGENTS.md` (latest stable).
+  (default) / jsdom (on-demand) + fake-indexeddb + MSW + Playwright.
+  Exact versions follow the Dependency policy in `AGENTS.md` (latest
+  stable).
 
 See `.opencode/specs/decisions/` for the full set of accepted ADRs.
 
@@ -141,13 +156,14 @@ Notes:
 - SPA deep links/refreshes work because the workflow publishes `index.html` as
   `404.html` and the service worker uses an `index.html` navigation fallback.
 
-## Forbidden dependencies
+## Dependency policy
 
-Foundation must not install `chess.js`, `@lichess-org/chessground`,
-`stockfish`, or `recharts`. These belong to later features.
-`ts-fsrs` is not a planned V1 dependency: V1 trains puzzles with
-cycle-based tactical training, not an individual scheduler (ADR-031).
-A guard script is documented in `.opencode/plans/001-foundation.md` §15.
+Dependencies follow the policy in `AGENTS.md`: latest stable by default,
+licence-compatible with GPL-3.0-or-later (ADR-027), with a new ADR for any
+new copyleft dependency. `@lichess-org/chessground` is pinned to the 10.x
+range (ADR-014). `ts-fsrs` is intentionally **not** a V1 dependency: V1
+trains puzzles with cycle-based tactical training, not an individual
+scheduler (ADR-031).
 
 ## License
 

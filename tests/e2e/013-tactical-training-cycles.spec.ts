@@ -221,6 +221,13 @@ async function solveAndAdvance(page: Page, puzzleId: string): Promise<void> {
   await next.click();
 }
 
+/** Feature 019: a session gate precedes the solving screen; commit and begin. */
+async function beginSession(page: Page): Promise<void> {
+  await expect(page.getByTestId('session-setup')).toBeVisible();
+  await page.getByTestId('session-begin').click();
+  await expect(page.getByTestId('solve-screen')).toBeVisible();
+}
+
 test.describe('Tactical training cycles (Feature 013)', () => {
   test('set → cycle → solve → attempt rows → results → next cycle over real IndexedDB', async ({
     page,
@@ -248,14 +255,16 @@ test.describe('Tactical training cycles (Feature 013)', () => {
     // Cycle session chrome: the first snapshot puzzle (exchange-win).
     await expect(page.getByTestId('cycle-session-cycle-number')).toHaveText('Cycle 1');
     await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 1 of 2');
-    await expect(page.getByTestId('solve-screen')).toBeVisible();
+    await beginSession(page);
 
     // Solve both puzzles by clicking board squares (no engine toggle).
     await solveAndAdvance(page, EXCHANGE_PUZZLE_ID);
     await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 2 of 2');
     await solveAndAdvance(page, MATE_ONE_PUZZLE_ID);
 
-    // Completion navigates to the results view.
+    // Completion shows the Feature-019 session summary first; open the results.
+    await expect(page.getByTestId('session-summary')).toBeVisible();
+    await page.getByTestId('session-summary-view-results').click();
     await expect(page.getByTestId('cycle-results-status')).toHaveText('Completed');
     await expect(page.getByTestId('cycle-results-cycle-number')).toHaveText('Cycle 1');
 
@@ -263,6 +272,7 @@ test.describe('Tactical training cycles (Feature 013)', () => {
     await page.getByTestId('cycle-results-next-cycle').click();
     await expect(page.getByTestId('cycle-session-cycle-number')).toHaveText('Cycle 2');
     await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 1 of 2');
+    await beginSession(page);
 
     // Mobile layout: the session chrome stays reachable alongside the board.
     await page.setViewportSize({ width: 390, height: 844 });

@@ -435,6 +435,13 @@ async function solveAndAdvance(page: Page, puzzleId: string): Promise<void> {
   await next.click();
 }
 
+/** Feature 019: a session gate precedes the solving screen; commit and begin. */
+async function beginSession(page: Page): Promise<void> {
+  await expect(page.getByTestId('session-setup')).toBeVisible();
+  await page.getByTestId('session-begin').click();
+  await expect(page.getByTestId('solve-screen')).toBeVisible();
+}
+
 test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
   test('the pool forms a one-click block whose membership is frozen and snapshotted by the cycle', async ({
     page,
@@ -607,6 +614,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     await expect(page.getByTestId('cycle-session-set-name')).toHaveText('Quick train');
     await expect(page.getByTestId('cycle-session-cycle-number')).toHaveText('Quick train');
     await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 1 of 3');
+    await beginSession(page);
 
     await solveAndAdvance(page, MATE_ONE_PUZZLE_ID);
     await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 2 of 3');
@@ -649,6 +657,7 @@ test.describe('Woodpecker blocks, pool and Quick train (Feature 013)', () => {
     await page.getByTestId('training-quick-train').click();
     await expect(page.getByTestId('cycle-session-cycle-number')).toHaveText('Quick train');
     await expect(page.getByTestId('cycle-session-progress')).toHaveText('Puzzle 2 of 3');
+    await beginSession(page);
 
     const resumedCycles = (await readStore(page, 'trainingCycles')).filter(
       (cycle) => cycle.trainingSetId === QUICK_TRAIN_SET_ID,

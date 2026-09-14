@@ -18,7 +18,7 @@ test.describe('dashboard', () => {
     await page.goto('/statistics');
 
     await expect(page.getByTestId('statistics-page')).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1, name: 'Statistics' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Insights' })).toBeVisible();
     // The live region settles once the statistics service has finished loading.
     await expect(page.getByTestId('dashboard-live')).toHaveText(/Statistics loaded\./);
 

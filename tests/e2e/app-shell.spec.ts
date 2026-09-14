@@ -4,9 +4,9 @@ test.describe('App shell (production build)', () => {
   test('home page renders with brand and nav links', async ({ page }) => {
     await page.goto('/');
     await expect(page).toHaveTitle(/ChessRemedy/);
-    await expect(page.getByRole('heading', { name: 'ChessRemedy' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'ChessRemedy' })).toBeVisible();
     await expect(page.getByTestId('app-shell')).toBeVisible();
-    for (const label of ['Home', 'Games', 'Training', 'Statistics', 'Analysis', 'Settings']) {
+    for (const label of ['Home', 'Games', 'Training', 'Insights', 'Analysis', 'Settings']) {
       await expect(page.getByTestId(`nav-${label.toLowerCase()}`)).toBeVisible();
     }
   });
