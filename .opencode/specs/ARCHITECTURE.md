@@ -144,7 +144,7 @@ games, moves, analyses, analysis summaries, puzzle candidates, puzzles,
 training sets, training cycles, puzzle attempts, import jobs, analysis
 jobs, application settings, sync metadata.
 
-The schema is **versioned, currently v12** (additive): v4 added the
+The schema is **versioned, currently v13** (additive): v4 added the
 analysis tables; v5 added the structured time-control value
 (base/increment/days/estimate/display, `domain/time-control.md`) to the
 games row while retaining the verbatim `timeControl` string and the indexed
@@ -159,7 +159,10 @@ reads and the game-deletion cascade); v10 adds the Feature-013
 platform-specific profiles (ADR-013) — no store shape changes; v12 adds
 the Feature-016 sync tables `syncState`/`syncTombstones`/`syncBackups`
 and backfills the mutable-row `updatedAt` merge timestamps — additive, no
-store shape changes to existing tables.
+store shape changes to existing tables; v13 adds the Feature-020 derived
+`puzzleSchedules` table (one rebuildable row per puzzle, indexed by
+`dueAt`; ADR-035) — never authoritative, never synced, and rebuilt from
+the immutable `puzzleAttempts` log.
 
 ### Data ownership & deletion
 

@@ -105,9 +105,13 @@ features, ADRs, research, or the whole documentation tree.
 - Required: `ARCHITECTURE.md` §3/§5/§7/§9/§10/§12; `PRODUCT.md` §10–§11/§15; ADRs `decisions/ADR-018`, `decisions/ADR-031`, `decisions/ADR-035`; domain `domain/tactical-training.md`, `domain/puzzle-model.md`, `domain/review-scheduling.md`; features `features/012-puzzle-training.md`, `features/013-tactical-training-cycles.md`, `features/019-timed-training-sessions.md`; research `research/fsrs-implementation.md`.
 - Dependencies: Features 001 (settings), 011 (`Puzzle`), 012 (immutable attempt rows + `SolveScreen`), 013 (session host, pool derivation, canonical metrics, mastery exclusion), 019 (session chrome). Adds the scheduler dependency (ADR-gated), a new ADR and an additive schema v13 (`puzzleSchedules`).
 
+### Feature 021 — Opening Repertoire Domain & PGN Import/Export (post-V1)
+- Required: `ARCHITECTURE.md` §3/§7/§9/§10/§12; `PRODUCT.md` §1/§17; ADRs `decisions/ADR-001`, `decisions/ADR-009`, `decisions/ADR-016`, `decisions/ADR-028`, `decisions/ADR-030`, `decisions/ADR-036`; features `features/003-chess-domain.md`; domain `domain/game-model.md`, `domain/opening-repertoire.md`; research `research/opening-repertoire.md`.
+- Dependencies: Features 001/004 (Dexie schema/migration + repository conventions), Feature 003 (chessops domain, `MoveList`, `resolveStartPosition`). Introduces the position-keyed DAG repertoire model, the canonical position key, and PGN import/export; consumers Features 022–028. ADR-036 (accepted) and `domain/opening-repertoire.md` define the model and rules; adds additive schema v14 (`repertoires`/`repertoireNodes`/`repertoireEdges`). Local-only (not in the ADR-016 envelope yet).
+
 ## Lookup: decisions by area
 
-- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020/034 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031/035 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
+- Chess rules/PGN: ADR-028 · Chessboard: ADR-002/014/030 · Engine: ADR-004/012/018/020/034 · Analysis/classification/board: ADR-005/019/023/024/026/033 · Puzzles/training: ADR-006/025/031/035 · Opening repertoire: ADR-036 · Time control: ADR-013 · Sync: ADR-008/015/016/017 · Storage: ADR-001/018/019 · Testing: ADR-009 · Charts: ADR-010 · License: ADR-027.
 
 ## Lookup: research by consumer
 
@@ -120,7 +124,7 @@ features, ADRs, research, or the whole documentation tree.
 | `research/puzzle-generation.md` | ADR-025; Feature 011 |
 | `research/cycle-training.md` | ADR-031; Features 012/013 |
 | `research/fsrs-implementation.md` | Deferred future scheduler (not V1) |
-| `research/opening-repertoire.md` | Future opening repertoire creator/trainer (not V1) |
+| `research/opening-repertoire.md` | Post-V1 opening repertoire (Features 021–028); repertoire-model ADR |
 | `research/game-import.md` | Feature 007; ADR-013 fixture shapes |
 | `research/synchronization.md` | ADR-008/015/016/017; Feature 016 |
 | `research/charting-library.md` | ADR-010; Feature 015 |
@@ -139,3 +143,4 @@ features, ADRs, research, or the whole documentation tree.
 - `domain/puzzle-model.md` → Features 010/011/012/013/014
 - `domain/tactical-training.md` → Features 011/012/013/014/015/016/018/019
 - `domain/statistics.md` → Features 013/014/015/018
+- `domain/opening-repertoire.md` → Features 021–028

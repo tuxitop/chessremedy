@@ -47,6 +47,7 @@ Read order for any feature task:
 | [ADR-033](specs/decisions/ADR-033-unified-analysis-board.md) | One shared analysis-board surface for Review (stored) and Live Analysis (engine); live never overwrites stored analysis; exploration non-destructive; numeric eval text White-positive, bar height bottom-oriented | Accepted | Analysis/Board |
 | [ADR-034](specs/decisions/ADR-034-dedicated-verification-engine.md) | Dedicated tactical-verification engine worker (own FIFO, lazy/idle lifecycle) and global thread budget `B = min(hardwareConcurrency, 8)`: verification 1 thread, analysis `max(1, B - 1)`; two engines never at maximum together | Accepted | Engine/Tactical detection |
 | [ADR-035](specs/decisions/ADR-035-individual-review-scheduling.md) | Post-V1 individual review scheduling: `ts-fsrs` behind a pure `Scheduler` interface; derived, unsynced `puzzleSchedules` projection (schema v13) rebuilt from immutable attempts; review excluded from mastery/statistics | Accepted | Puzzle training (post-V1) |
+| [ADR-036](specs/decisions/ADR-036-opening-repertoire-model.md) | Post-V1 opening repertoires: position-keyed DAG on `chessops`, canonical EPD position key (en-passant legal-only, castling included, move counters excluded), PGN import/export round-trip, additive schema v14, local-only (not in the sync envelope yet) | Accepted | Opening repertoire (post-V1) |
 
 ## Critical Constraints
 
