@@ -1,8 +1,7 @@
 import type * as React from 'react';
-import { Link } from 'react-router-dom';
 import { trainingCyclePath, trainingSetPath } from '@/app/routes';
+import { InfoCard, type InfoCardRow } from '@/components/ui/InfoCard';
 import type { HomeContinueTarget } from '@/presentation/home';
-import styles from './HomeContinueCard.module.css';
 
 export interface HomeContinueCardProps {
   readonly target: HomeContinueTarget;
@@ -34,9 +33,11 @@ function statusFor(target: HomeContinueTarget): string {
 }
 
 /**
- * The "continue training" landmark: shown only when a target resolves. It names
- * the target, shows one line of status and links to the existing host page
- * (which owns the resume action). It never fabricates a progress number.
+ * The "continue training" landmark: shown only when a target resolves. It uses
+ * the shared `InfoCard` structure (title, description, info rows, accent
+ * action) so it matches the Review and Resume-cycle cards. It names the target,
+ * shows one line of status and links to the existing host page (which owns the
+ * resume action). It never fabricates a progress number.
  */
 export function HomeContinueCard({
   target,
@@ -45,43 +46,28 @@ export function HomeContinueCard({
   if (target.kind === 'none') {
     return null;
   }
-  const percent =
-    progress != null && progress.total > 0
-      ? Math.round((progress.completed / progress.total) * 100)
-      : 0;
+
+  const rows: InfoCardRow[] = [
+    { label: 'Set', value: target.label, testId: 'home-continue-label' },
+  ];
+  if (progress != null && progress.total > 0) {
+    rows.push({
+      label: 'Progress',
+      value: `${progress.completed} of ${progress.total} solved`,
+      testId: 'home-continue-progress-label',
+    });
+  }
+
   return (
-    <section className={styles.card} aria-label="Continue training" data-testid="home-continue">
-      <div className={styles.header}>
-        <h2 className={styles.heading}>Continue training</h2>
-        <span className={styles.pill}>In progress</span>
-      </div>
-      <p className={styles.label} data-testid="home-continue-label">
-        {target.label}
-      </p>
-      <p className={styles.status} data-testid="home-continue-status">
-        {statusFor(target)}
-      </p>
-      {progress != null && progress.total > 0 ? (
-        <div className={styles.progress}>
-          <div
-            className={styles.progressBar}
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={progress.total}
-            aria-valuenow={progress.completed}
-            aria-label={`${progress.completed} of ${progress.total} puzzles solved`}
-            data-testid="home-continue-progress"
-          >
-            <div className={styles.progressFill} style={{ width: `${percent}%` }} />
-          </div>
-          <span className={styles.progressLabel} data-testid="home-continue-progress-label">
-            {progress.completed} of {progress.total} solved
-          </span>
-        </div>
-      ) : null}
-      <Link className={styles.link} to={hrefFor(target)} data-testid="home-continue-link">
-        Continue
-      </Link>
-    </section>
+    <InfoCard
+      title="Continue training"
+      titleId="home-continue-title"
+      testId="home-continue"
+      pill={{ label: 'In progress' }}
+      description={statusFor(target)}
+      descriptionTestId="home-continue-status"
+      rows={rows}
+      action={{ label: 'Continue', to: hrefFor(target), testId: 'home-continue-link' }}
+    />
   );
 }

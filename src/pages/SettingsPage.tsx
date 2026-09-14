@@ -716,7 +716,7 @@ export function SettingsPage({
             </p>
           </div>
           {reviewReady ? (
-            <div>
+            <div className={styles.boardForm}>
               <label className={styles.rowField}>
                 <span className={styles.rowFieldLabel}>Daily new-puzzle cap</span>
                 <input

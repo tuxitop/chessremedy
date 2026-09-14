@@ -33,6 +33,7 @@ describe('HomePage', () => {
     expect(await screen.findByTestId('home-hero-primary')).toHaveTextContent('Import your games');
     expect(screen.getByTestId('home-hero-primary')).toHaveAttribute('href', '/games');
     expect(screen.queryByTestId('home-continue')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('review-card')).not.toBeInTheDocument();
     expect(await screen.findByTestId('home-empty-state')).toHaveTextContent('No games yet');
     expect(screen.getByTestId('home-how-it-works').tagName).toBe('SECTION');
   });
@@ -54,6 +55,14 @@ describe('HomePage', () => {
       '/training/sets/home-set/cycles/2',
     );
     expect(screen.getByTestId('home-how-it-works').tagName).toBe('SECTION');
+  });
+
+  it('shows the review card beside continue training once puzzles exist', async () => {
+    renderHome(returningHomeScenario());
+
+    expect(await screen.findByTestId('review-card')).toBeInTheDocument();
+    expect(screen.getByTestId('home-continue')).toBeInTheDocument();
+    expect(await screen.findByTestId('review-start')).toHaveAttribute('href', '/training/review');
   });
 
   it('shows "View your insights" when analyzed with no continue target', async () => {

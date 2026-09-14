@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { SetCard, formatPercent } from '@/components/puzzles/cycles';
 import { ReviewCard } from '@/components/puzzles/review/ReviewCard';
 import { Button } from '@/components/ui/Button';
+import { InfoCard, type InfoCardRow } from '@/components/ui/InfoCard';
 import { ROUTES, trainingCyclePath, trainingSetPath } from '@/app/routes';
 import { useReviewOverview } from '@/hooks/useReviewOverview';
 import type { ReviewService } from '@/infrastructure/review';
@@ -169,6 +170,36 @@ export function TrainingHomePage({
     data.resume !== null && data.resume.metrics !== null
       ? progressOf(data.resume.cycle, data.resume.metrics)
       : null;
+  const resumeRows: readonly InfoCardRow[] =
+    data.resume !== null
+      ? [
+          { label: 'Set', value: data.resume.set.name },
+          {
+            label: 'Cycle',
+            value: String(data.resume.cycle.cycleNumber),
+            testId: 'training-resume-cycle',
+          },
+          ...(resumeProgress !== null
+            ? [
+                {
+                  label: 'Solved',
+                  value: `${resumeProgress.completed} of ${resumeProgress.total}`,
+                  testId: 'training-resume-solved',
+                },
+                {
+                  label: 'First-try',
+                  value: formatPercent(resumeProgress.accuracy) ?? '—',
+                  testId: 'training-resume-accuracy',
+                },
+                {
+                  label: 'Remaining',
+                  value: String(resumeProgress.remaining),
+                  testId: 'training-resume-remaining',
+                },
+              ]
+            : []),
+        ]
+      : [];
 
   const run = async (action: () => Promise<void>): Promise<void> => {
     setBusy(true);
@@ -241,48 +272,33 @@ export function TrainingHomePage({
         </div>
       </header>
 
-      <ReviewCard
-        overview={review.overview}
-        isReady={!review.loading}
-        error={review.error}
-        now={review.now()}
-        to={ROUTES.trainingReview}
-      />
+      <div className={styles.actionRow}>
+        {data.resume !== null ? (
+          <InfoCard
+            title="Resume cycle"
+            titleId="training-resume-title"
+            testId="training-resume"
+            role="status"
+            pill={{ label: 'In progress' }}
+            description="Pick up at the next unanswered puzzle."
+            rows={resumeRows}
+            rowsTestId="training-resume-progress"
+            action={{
+              label: 'Resume cycle',
+              to: trainingCyclePath(data.resume.set.id, data.resume.cycle.cycleNumber),
+              testId: 'training-resume-link',
+            }}
+          />
+        ) : null}
 
-      {data.resume !== null ? (
-        <section
-          className={styles.resume}
-          role="status"
-          data-testid="training-resume"
-          aria-label="Resume training"
-        >
-          <div className={styles.resumeText}>
-            <strong>Resume cycle {data.resume.cycle.cycleNumber}</strong>
-            {resumeProgress !== null ? (
-              <span data-testid="training-resume-progress">
-                Cycle {data.resume.cycle.cycleNumber} · {resumeProgress.completed} of{' '}
-                {resumeProgress.total} solved ·{' '}
-                <span data-testid="training-resume-accuracy">
-                  {formatPercent(resumeProgress.accuracy) ?? '—'}
-                </span>{' '}
-                first-try · {resumeProgress.remaining} left
-              </span>
-            ) : (
-              <span>
-                {data.resume.set.name} has a cycle in progress. Pick up at the next unanswered
-                puzzle.
-              </span>
-            )}
-          </div>
-          <Link
-            className={styles.resumeLink}
-            to={trainingCyclePath(data.resume.set.id, data.resume.cycle.cycleNumber)}
-            data-testid="training-resume-link"
-          >
-            Resume cycle
-          </Link>
-        </section>
-      ) : null}
+        <ReviewCard
+          overview={review.overview}
+          isReady={!review.loading}
+          error={review.error}
+          now={review.now()}
+          to={ROUTES.trainingReview}
+        />
+      </div>
 
       {loading ? (
         <p className={styles.state} data-testid="training-home-loading">

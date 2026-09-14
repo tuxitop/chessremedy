@@ -282,14 +282,16 @@ describe('TrainingHomePage', () => {
     await waitForHome();
 
     expect(screen.getByTestId('training-resume')).toBeInTheDocument();
+    expect(await screen.findByTestId('review-card')).toBeInTheDocument();
     expect(screen.getByTestId('training-resume-link')).toHaveAttribute(
       'href',
       '/training/sets/set-b/cycles/3',
     );
-    expect(screen.getByTestId('training-resume-progress')).toHaveTextContent(
-      'Cycle 3 · 1 of 1 solved · 100% first-try · 0 left',
-    );
+    expect(screen.getByTestId('training-resume-progress')).toBeInTheDocument();
+    expect(screen.getByTestId('training-resume-cycle')).toHaveTextContent('3');
+    expect(screen.getByTestId('training-resume-solved')).toHaveTextContent('1 of 1');
     expect(screen.getByTestId('training-resume-accuracy')).toHaveTextContent('100%');
+    expect(screen.getByTestId('training-resume-remaining')).toHaveTextContent('0');
   });
 
   it('renders an em dash for first-try accuracy when the cycle has no completed puzzles', async () => {
@@ -313,10 +315,9 @@ describe('TrainingHomePage', () => {
     renderHome();
     await waitForHome();
 
-    expect(screen.getByTestId('training-resume-progress')).toHaveTextContent(
-      'Cycle 1 · 0 of 1 solved · — first-try · 1 left',
-    );
+    expect(screen.getByTestId('training-resume-solved')).toHaveTextContent('0 of 1');
     expect(screen.getByTestId('training-resume-accuracy')).toHaveTextContent('—');
+    expect(screen.getByTestId('training-resume-remaining')).toHaveTextContent('1');
   });
 
   it('keeps archived sets behind an affordance until expanded', async () => {

@@ -7,6 +7,13 @@
   margin: 0 auto;
 }
 
+.actionRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
 .srOnly {
   position: absolute;
   width: 1px;

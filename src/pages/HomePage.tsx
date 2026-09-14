@@ -9,7 +9,11 @@ import {
   HomeStatsGrid,
   type HomeHeroPill,
 } from '@/components/home';
+import { ReviewCard } from '@/components/puzzles/review/ReviewCard';
+import { ROUTES } from '@/app/routes';
 import { useHome, type UseHomeOptions } from '@/hooks/useHome';
+import { useReviewOverview } from '@/hooks/useReviewOverview';
+import type { ReviewService } from '@/infrastructure/review';
 import {
   resolveHomeContinue,
   selectHomePrimaryAction,
@@ -18,7 +22,10 @@ import {
 import styles from './HomePage.module.css';
 
 /** Injectable dependencies for deterministic tests (defaults are production). */
-export type HomePageProps = UseHomeOptions;
+export interface HomePageProps extends UseHomeOptions {
+  /** Injectable review service; defaults to the singleton-backed service. */
+  readonly reviewService?: ReviewService;
+}
 
 /**
  * The `/` Home landing page: a context-aware hero, a deterministic continue
@@ -30,6 +37,10 @@ export type HomePageProps = UseHomeOptions;
  */
 export function HomePage(props: HomePageProps = {}): React.JSX.Element {
   const home = useHome(props);
+  const review = useReviewOverview({
+    ...(props.reviewService !== undefined ? { service: props.reviewService } : {}),
+    ...(props.now !== undefined ? { now: props.now } : {}),
+  });
 
   const continueTarget: HomeContinueTarget = useMemo(() => {
     const training = home.training.data;
@@ -87,6 +98,10 @@ export function HomePage(props: HomePageProps = {}): React.JSX.Element {
   const loading =
     home.game.loading || home.training.loading || home.mastery.loading || home.block.loading;
 
+  // Review is only meaningful once puzzles exist; the card hides its own empty
+  // state, so a first-run Home (no puzzles) shows no review entry.
+  const showReview = (home.mastery.data?.total ?? 0) > 0;
+
   return (
     <div className={styles.page} data-testid="home-page">
       <p className={styles.srOnly} role="status" aria-live="polite" data-testid="home-live">
@@ -101,7 +116,18 @@ export function HomePage(props: HomePageProps = {}): React.JSX.Element {
         onRetry={home.reload}
       />
 
-      <HomeContinueCard target={continueTarget} progress={continueProgress} />
+      <div className={styles.actionRow}>
+        <HomeContinueCard target={continueTarget} progress={continueProgress} />
+        {showReview ? (
+          <ReviewCard
+            overview={review.overview}
+            isReady={!review.loading}
+            error={review.error}
+            now={review.now()}
+            to={ROUTES.trainingReview}
+          />
+        ) : null}
+      </div>
 
       <HomeStatsGrid
         game={home.game}
