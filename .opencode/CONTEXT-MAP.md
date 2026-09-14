@@ -116,6 +116,7 @@ features, ADRs, research, or the whole documentation tree.
 | `research/puzzle-generation.md` | ADR-025; Feature 011 |
 | `research/cycle-training.md` | ADR-031; Features 012/013 |
 | `research/fsrs-implementation.md` | Deferred future scheduler (not V1) |
+| `research/opening-repertoire.md` | Future opening repertoire creator/trainer (not V1) |
 | `research/game-import.md` | Feature 007; ADR-013 fixture shapes |
 | `research/synchronization.md` | ADR-008/015/016/017; Feature 016 |
 | `research/charting-library.md` | ADR-010; Feature 015 |
