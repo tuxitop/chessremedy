@@ -28,6 +28,7 @@ import type { TimeControlCategory } from '@/domain/chess/timeControl';
 import type { Color } from 'chessops/types';
 import { makeTombstone } from '@/domain/sync';
 import { DexiePuzzleAttemptsRepository } from './attempts-repository';
+import { DexieReviewSchedulesRepository } from './review-schedules-repository';
 import { DexieTrainingSetsRepository } from './training-sets-repository';
 import { DexieSyncStateRepository } from './sync-state-repository';
 import { db, type ChessRemedyDatabase } from './database';
@@ -268,6 +269,7 @@ export class DexieGamesRepository implements GamesRepository {
         this.database.puzzleCandidates,
         this.database.puzzles,
         this.database.puzzleAttempts,
+        this.database.puzzleSchedules,
         this.database.trainingSets,
         this.database.syncState,
         this.database.syncTombstones,
@@ -294,6 +296,7 @@ export class DexieGamesRepository implements GamesRepository {
         await this.database.puzzles.where('sourceGameId').anyOf(gameIds).delete();
         const puzzleIds = puzzleRows.map((row) => puzzleIdOf(row.sourceGameId, row.sourcePly));
         await new DexiePuzzleAttemptsRepository(this.database).deleteForPuzzleIds(puzzleIds);
+        await new DexieReviewSchedulesRepository(this.database).deleteForPuzzleIds(puzzleIds);
         await new DexieTrainingSetsRepository(this.database).removePuzzleIds(puzzleIds);
       },
     );

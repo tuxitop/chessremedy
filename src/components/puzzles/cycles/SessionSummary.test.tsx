@@ -102,4 +102,31 @@ describe('SessionSummary', () => {
     fireEvent.click(screen.getByTestId('session-summary-back'));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+
+  it('renders the optional review labels and extra rows', () => {
+    renderWithProviders(
+      <SessionSummary
+        summary={summaryFixture}
+        remainingPuzzles={7}
+        cycleCompleted
+        title="Review summary"
+        remainingLabel="Due for the next session"
+        resumeLabel="Review again"
+        backLabel="Back to training"
+        extraRows={[
+          { label: 'Retention', value: '82%', testId: 'review-summary-retention' },
+          { label: 'Introduced', value: '3', testId: 'review-summary-introduced' },
+        ]}
+        onResume={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Review summary' })).toBeInTheDocument();
+    expect(screen.getByTestId('session-summary-remaining')).toHaveTextContent('7');
+    expect(screen.getByTestId('review-summary-retention')).toHaveTextContent('82%');
+    expect(screen.getByTestId('review-summary-introduced')).toHaveTextContent('3');
+    expect(screen.getByTestId('session-summary-resume')).toHaveTextContent('Review again');
+    expect(screen.getByTestId('session-summary-back')).toHaveTextContent('Back to training');
+  });
 });

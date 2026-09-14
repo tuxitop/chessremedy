@@ -45,6 +45,14 @@ export const WOODPECKER_PLAN_CYCLES = 6;
 export const QUICK_TRAIN_SET_ID = '__quick_train__';
 
 /**
+ * Reserved ad-hoc `trainingSetId` sentinel for an individual review-session
+ * cycle (Feature 020, ADR-035). Like Quick train, review creates no
+ * `trainingSets` row and its attempts are excluded from mastery; it is a
+ * distinct sentinel so review cycles never count as cycle training.
+ */
+export const REVIEW_SET_ID = '__review__';
+
+/**
  * Version of the block recipe/formation semantics (size, ordering, tie-break).
  * A change to a recipe's semantics is a new recipe, not a silent mutation of
  * stored rows (Feature 013 §12).

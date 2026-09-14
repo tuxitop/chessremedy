@@ -68,6 +68,7 @@ export {
   DEFAULT_BLOCK_SIZE,
   QUICK_TRAIN_SET_ID,
   RECOMMENDED_MIN_BLOCK_SIZE,
+  REVIEW_SET_ID,
   WOODPECKER_PLAN_CYCLES,
   derivePool,
   formWoodpeckerBlock,

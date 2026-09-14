@@ -68,6 +68,17 @@ describe('TrainingHomePage', () => {
     expect(screen.getByTestId('training-home-empty-games-link')).toHaveAttribute('href', '/games');
   });
 
+  it('renders the review card and links to the review session', async () => {
+    await puzzlesRepository.addIfAbsent([poolPuzzle(6)]);
+    renderHome();
+    await waitForHome();
+
+    const card = await screen.findByTestId('review-card');
+    await waitFor(() => expect(within(card).getByTestId('review-new')).toHaveTextContent('1'));
+    expect(within(card).getByTestId('review-start')).toHaveAttribute('href', '/training/review');
+    expect(within(card).getByTestId('review-start')).toHaveAttribute('aria-disabled', 'false');
+  });
+
   it('shows the live pool count, guidance copy and the one-click create action', async () => {
     await puzzlesRepository.addIfAbsent([poolPuzzle(6), poolPuzzle(8), poolPuzzle(10)]);
     renderHome();

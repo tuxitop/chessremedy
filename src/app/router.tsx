@@ -46,6 +46,12 @@ const CycleSessionPage = lazy(() =>
   import('@/pages/CycleSessionPage').then((m) => ({ default: m.CycleSessionPage })),
 );
 
+// The review session (Feature 020) hosts the same solving screen and board;
+// keep it out of the initial bundle alongside the other board-heavy pages.
+const ReviewSessionPage = lazy(() =>
+  import('@/pages/ReviewSessionPage').then((m) => ({ default: m.ReviewSessionPage })),
+);
+
 // The statistics page pulls in the Recharts bundle; keep it out of the initial
 // bundle alongside the other heavy pages.
 const StatisticsPage = lazy(() =>
@@ -101,6 +107,14 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'training/sets/:setId/cycles/:cycleNumber/results',
         element: <CycleResultsPage />,
+      },
+      {
+        path: 'training/review',
+        element: (
+          <Suspense fallback={null}>
+            <ReviewSessionPage />
+          </Suspense>
+        ),
       },
       {
         path: 'statistics',

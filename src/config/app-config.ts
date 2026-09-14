@@ -9,8 +9,9 @@ export const APP_VERSION = '1.0.0';
 // v10 trainingSets/trainingCycles (Feature 013); v11 re-normalizes the
 // platform-specific time control (ADR-013 revision); v12 adds the Feature-016
 // sync tables (syncState/syncTombstones/syncBackups) and backfills the
-// mutable-row `updatedAt` merge timestamps (additive).
-export const PERSISTENCE_SCHEMA_VERSION = 12;
+// mutable-row `updatedAt` merge timestamps (additive); v13 adds the Feature-020
+// derived `puzzleSchedules` projection (additive, unsynced).
+export const PERSISTENCE_SCHEMA_VERSION = 13;
 export const DEFAULT_THEME: 'light' | 'dark' = 'light';
 
 export const SETTINGS_KEYS = {
@@ -28,6 +29,8 @@ export const SETTINGS_KEYS = {
   sessionDefaultMinutes: 'training.session.defaultMinutes',
   sessionWarningSeconds: 'training.session.warningSeconds',
   defaultHintConfig: 'training.hints',
+  reviewDailyNewCap: 'review.dailyNewCap',
+  reviewDailyReviewCap: 'review.dailyReviewCap',
   legacyAutoSetsCleaned: 'training.legacyAutoSetsCleaned',
   missedTacticSummaryRepair: 'analysis.missedTacticSummaryRepair',
 } as const;

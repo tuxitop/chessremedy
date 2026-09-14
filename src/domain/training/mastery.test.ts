@@ -14,7 +14,7 @@ import {
   legitimateFirstTryRows,
   masteryAttemptFixture,
 } from './test-support';
-import { QUICK_TRAIN_SET_ID } from './autoSet';
+import { QUICK_TRAIN_SET_ID, REVIEW_SET_ID } from './autoSet';
 
 const PUZZLE = 'fixture:puzzle:1';
 const OTHER = 'fixture:puzzle:2';
@@ -240,6 +240,33 @@ describe('masteryOf — Quick-train exclusion', () => {
 
     const threeReal = credits('c1', 'c2', 'c3');
     expect(masteryOf(PUZZLE, threeReal, cycles('c1', 'c2', 'c3'))).toBe(true);
+  });
+});
+
+describe('masteryOf — Review-sentinel exclusion (Feature 020)', () => {
+  function reviewCycles(...cycleIds: string[]): TrainingCycleRow[] {
+    return cycleIds.map((id) => cycleFixture({ id, trainingSetId: REVIEW_SET_ID }));
+  }
+
+  function reviewCredit(cycleId: string): PuzzleAttemptRow {
+    return masteryAttemptFixture({
+      puzzleId: PUZZLE,
+      cycleId,
+      trainingSetId: REVIEW_SET_ID,
+    });
+  }
+
+  it('never masters from three Review sentinel cycles', () => {
+    const rows = [reviewCredit('r-1'), reviewCredit('r-2'), reviewCredit('r-3')];
+    expect(masteryOf(PUZZLE, rows, reviewCycles('r-1', 'r-2', 'r-3'))).toBe(false);
+    expect(masteredPuzzleIds(rows, reviewCycles('r-1', 'r-2', 'r-3'))).toEqual(new Set());
+  });
+
+  it('counts only real cycles when Review and real cycles are mixed', () => {
+    const twoRealPlusReview = [...credits('c1', 'c2'), reviewCredit('r-1')];
+    expect(
+      masteryOf(PUZZLE, twoRealPlusReview, [...cycles('c1', 'c2'), ...reviewCycles('r-1')]),
+    ).toBe(false);
   });
 });
 

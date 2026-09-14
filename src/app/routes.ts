@@ -9,6 +9,7 @@ export const ROUTES = {
   trainingSet: '/training/sets/:setId',
   trainingCycle: '/training/sets/:setId/cycles/:cycleNumber',
   trainingCycleResults: '/training/sets/:setId/cycles/:cycleNumber/results',
+  trainingReview: '/training/review',
   statistics: '/statistics',
   settings: '/settings',
   playground: '/playground',

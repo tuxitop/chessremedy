@@ -22,7 +22,7 @@
  * a signature change.
  */
 
-import { QUICK_TRAIN_SET_ID } from './autoSet';
+import { QUICK_TRAIN_SET_ID, REVIEW_SET_ID } from './autoSet';
 import type { TrainingCycleRow } from './cycleTypes';
 import type { PuzzleAttemptRow } from './types';
 
@@ -97,7 +97,12 @@ function legitimateCycleIdsByPuzzle(
  */
 function knownCycleIdsOf(cycles: readonly TrainingCycleRow[]): ReadonlySet<string> {
   return new Set(
-    cycles.filter((cycle) => cycle.trainingSetId !== QUICK_TRAIN_SET_ID).map((cycle) => cycle.id),
+    cycles
+      .filter(
+        (cycle) =>
+          cycle.trainingSetId !== QUICK_TRAIN_SET_ID && cycle.trainingSetId !== REVIEW_SET_ID,
+      )
+      .map((cycle) => cycle.id),
   );
 }
 

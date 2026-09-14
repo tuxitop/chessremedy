@@ -62,7 +62,7 @@ describe('v3 → v4 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(12);
+      expect(migrated.verno).toBe(13);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -79,6 +79,7 @@ describe('v3 → v4 schema migration', () => {
         'syncState',
         'syncTombstones',
         'syncBackups',
+        'puzzleSchedules',
       ]);
 
       expect((await migrated.settings.get('theme'))?.value).toBe('dark');

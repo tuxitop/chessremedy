@@ -30,7 +30,7 @@ describe('v9 → v10 schema migration', () => {
     const fresh = new ChessRemedyDatabase(name);
     try {
       await fresh.open();
-      expect(fresh.verno).toBe(12);
+      expect(fresh.verno).toBe(13);
       expect(fresh.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -47,6 +47,7 @@ describe('v9 → v10 schema migration', () => {
         'syncState',
         'syncTombstones',
         'syncBackups',
+        'puzzleSchedules',
       ]);
 
       // Both Feature-013 tables exist, start empty and are immediately usable.
@@ -165,7 +166,7 @@ describe('v9 → v10 schema migration', () => {
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(12);
+      expect(migrated.verno).toBe(13);
       expect(migrated.tables.map((t) => t.name)).toEqual([
         'settings',
         'games',
@@ -182,6 +183,7 @@ describe('v9 → v10 schema migration', () => {
         'syncState',
         'syncTombstones',
         'syncBackups',
+        'puzzleSchedules',
       ]);
 
       // Pre-v10 rows (settings, game, analyses, summaries, candidates, puzzle,

@@ -5,6 +5,7 @@ import { makeJob, makeRecords, TEST_ENGINE } from '@/domain/analysis/test-suppor
 import { puzzleFixture, puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
 import { cycleAttemptFixture, cycleFixture, setFixture } from '@/domain/training/test-support';
+import { puzzleScheduleRowFixture } from '@/domain/review/test-support';
 import {
   makeTombstone,
   serializeEnvelope,
@@ -72,6 +73,7 @@ async function clearAll(): Promise<void> {
   await db.puzzleCandidates.clear();
   await db.puzzles.clear();
   await db.puzzleAttempts.clear();
+  await db.puzzleSchedules.clear();
   await db.trainingSets.clear();
   await db.trainingCycles.clear();
   await db.settings.clear();
@@ -166,7 +168,7 @@ describe('DexieSyncCollectionsGateway', () => {
     expect(rows.find((row) => row.id === 'local-cycle')?.cycleNumber).toBe(2);
   });
 
-  it('never includes the engine cache, syncState or syncBackups in the envelope', async () => {
+  it('never includes the engine cache, puzzleSchedules, syncState or syncBackups in the envelope', async () => {
     await db.positionAnalysisCache.put({
       key: 'fen-key',
       analysis: engineResult(),
@@ -178,16 +180,22 @@ describe('DexieSyncCollectionsGateway', () => {
     });
     await syncStateRepository.set(SYNC_STATE_KEYS.refreshToken, 'super-secret-token');
     await db.syncBackups.put({ id: 'backup-1', createdAt: 1, payload: new Uint8Array([1, 2, 3]) });
+    await db.puzzleSchedules.put(puzzleScheduleRowFixture({ puzzleId: 'fixture:mate-one:6' }));
 
     const envelope = await gateway.exportLocal();
     const keys = Object.keys(envelope.collections);
     expect(keys).not.toContain('positionAnalysisCache');
+    expect(keys).not.toContain('puzzleSchedules');
     expect(keys).not.toContain('syncState');
     expect(keys).not.toContain('syncBackups');
 
     const json = serializeEnvelope(envelope);
     expect(json).not.toContain('super-secret-token');
     expect(json).not.toContain('backup-1');
+
+    // Applying an empty remote envelope never clears the derived projection.
+    await gateway.applyEnvelope(makeEnvelope());
+    expect(await db.puzzleSchedules.get('fixture:mate-one:6')).toBeDefined();
   });
 
   it('recomputes the canonical time control on merge so a stale remote category cannot survive', async () => {

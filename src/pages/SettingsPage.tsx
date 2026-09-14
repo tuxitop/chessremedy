@@ -29,6 +29,12 @@ import {
   clampVerificationDepth,
 } from '@/infrastructure/tactics/verificationDepth';
 import { useDefaultHintConfig } from '@/hooks/useDefaultHintConfig';
+import {
+  MAX_DAILY_NEW_CAP,
+  MAX_DAILY_REVIEW_CAP,
+  useReviewSettings,
+} from '@/hooks/useReviewSettings';
+import { DEFAULT_DAILY_NEW_CAP, DEFAULT_DAILY_REVIEW_CAP } from '@/domain/review';
 import { HINT_LEVELS } from '@/components/puzzles/cycles';
 import type { HintConfig, HintLevel } from '@/domain/training';
 import { getBrowserAnalysisService } from '@/infrastructure/analysis';
@@ -352,6 +358,12 @@ export function SettingsPage({
     error: hintsError,
     save: saveHints,
   } = useDefaultHintConfig();
+  const {
+    newCap: reviewNewCap,
+    reviewCap: reviewDailyCap,
+    isReady: reviewReady,
+    save: saveReviewCaps,
+  } = useReviewSettings();
   const [builtService, setBuiltService] = useState<AnalysisServiceLike | null>(null);
   const capabilities = readBrowserCapabilities();
 
@@ -692,6 +704,72 @@ export function SettingsPage({
             />
           ) : (
             <p className={styles.engineLoading}>Loading puzzle hint settings…</p>
+          )}
+        </li>
+
+        <li className={styles.row} data-testid="settings-row-review">
+          <div className={styles.rowText}>
+            <h2 className={styles.rowTitle}>Review scheduling</h2>
+            <p className={styles.rowDescription}>
+              Daily limits for individual review. Caps reset each local calendar day; set a cap to 0
+              to pause that category. Puzzles are scheduled per puzzle from your attempt history.
+            </p>
+          </div>
+          {reviewReady ? (
+            <div>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Daily new-puzzle cap</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={MAX_DAILY_NEW_CAP}
+                  value={reviewNewCap}
+                  aria-describedby="setting-review-daily-new-cap-help"
+                  onChange={(e) =>
+                    void saveReviewCaps({
+                      newCap: Number(e.target.value),
+                      reviewCap: reviewDailyCap,
+                    })
+                  }
+                  data-testid="setting-review-daily-new-cap"
+                />
+              </label>
+              <p
+                id="setting-review-daily-new-cap-help"
+                className={styles.helpText}
+                data-testid="setting-review-daily-new-cap-help"
+              >
+                New puzzles introduced per local day. Default {DEFAULT_DAILY_NEW_CAP}, max{' '}
+                {MAX_DAILY_NEW_CAP}; 0 pauses new puzzles.
+              </p>
+              <label className={styles.rowField}>
+                <span className={styles.rowFieldLabel}>Daily review cap</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={MAX_DAILY_REVIEW_CAP}
+                  value={reviewDailyCap}
+                  aria-describedby="setting-review-daily-review-cap-help"
+                  onChange={(e) =>
+                    void saveReviewCaps({
+                      newCap: reviewNewCap,
+                      reviewCap: Number(e.target.value),
+                    })
+                  }
+                  data-testid="setting-review-daily-review-cap"
+                />
+              </label>
+              <p
+                id="setting-review-daily-review-cap-help"
+                className={styles.helpText}
+                data-testid="setting-review-daily-review-cap-help"
+              >
+                Due reviews presented per local day. Default {DEFAULT_DAILY_REVIEW_CAP}, max{' '}
+                {MAX_DAILY_REVIEW_CAP}; 0 pauses reviews.
+              </p>
+            </div>
+          ) : (
+            <p className={styles.engineLoading}>Loading review settings…</p>
           )}
         </li>
 

@@ -70,4 +70,24 @@ describe('SessionSetup', () => {
     fireEvent.click(screen.getByTestId('session-setup-cancel'));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('renders the optional review title/details/begin label without changing the defaults', () => {
+    renderWithProviders(
+      <SessionSetup
+        defaultDurationMs={DEFAULT_SESSION_DURATION_MS}
+        title="Review session"
+        description="A fixed queue."
+        beginLabel="Start"
+        details={<span data-testid="custom-details">Due 3</span>}
+        onBegin={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Review session' })).toBeInTheDocument();
+    expect(screen.getByTestId('custom-details')).toHaveTextContent('Due 3');
+    expect(screen.getByTestId('session-begin')).toHaveTextContent('Start');
+    // The duration options are unchanged.
+    expect(screen.getByTestId('session-duration-10')).toBeInTheDocument();
+    expect(screen.getByTestId('session-duration-none')).toBeInTheDocument();
+  });
 });

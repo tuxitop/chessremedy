@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { SetCard, formatPercent } from '@/components/puzzles/cycles';
+import { ReviewCard } from '@/components/puzzles/review/ReviewCard';
 import { Button } from '@/components/ui/Button';
 import { ROUTES, trainingCyclePath, trainingSetPath } from '@/app/routes';
+import { useReviewOverview } from '@/hooks/useReviewOverview';
+import type { ReviewService } from '@/infrastructure/review';
 import {
   activeCycleOf,
   BLOCK_SIZE_OPTIONS,
@@ -74,6 +77,8 @@ export interface TrainingHomePageProps {
   readonly puzzles?: PuzzlesRepository;
   /** Injectable for tests; defaults to the singleton repository. */
   readonly attempts?: PuzzleAttemptsRepository;
+  /** Injectable for tests; defaults to the singleton-backed review service. */
+  readonly reviewService?: ReviewService;
 }
 
 /**
@@ -89,8 +94,10 @@ export function TrainingHomePage({
   cycleService: providedCycles,
   puzzles: providedPuzzles,
   attempts: providedAttempts,
+  reviewService: providedReview,
 }: TrainingHomePageProps = {}): React.JSX.Element {
   const navigate = useNavigate();
+  const review = useReviewOverview(providedReview === undefined ? {} : { service: providedReview });
   const setsService = useMemo(
     () =>
       providedSets ??
@@ -233,6 +240,14 @@ export function TrainingHomePage({
           </Link>
         </div>
       </header>
+
+      <ReviewCard
+        overview={review.overview}
+        isReady={!review.loading}
+        error={review.error}
+        now={review.now()}
+        to={ROUTES.trainingReview}
+      />
 
       {data.resume !== null ? (
         <section

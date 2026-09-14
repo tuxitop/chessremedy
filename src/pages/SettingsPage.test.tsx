@@ -212,6 +212,41 @@ describe('Settings page — Timed-training settings (Feature 019 §8)', () => {
   });
 });
 
+describe('Settings page — Review scheduling (Feature 020 §6)', () => {
+  beforeEach(async () => {
+    await db.settings.clear();
+  });
+
+  it('renders the review cap rows with the documented defaults', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    const row = await screen.findByTestId('settings-row-review');
+    expect(await within(row).findByTestId('setting-review-daily-new-cap')).toHaveValue(20);
+    expect(within(row).getByTestId('setting-review-daily-review-cap')).toHaveValue(100);
+  });
+
+  it('persists and clamps the caps including 0', async () => {
+    renderWithProviders(<SettingsPage />, { withRouter: false });
+    const row = await screen.findByTestId('settings-row-review');
+
+    fireEvent.change(await within(row).findByTestId('setting-review-daily-new-cap'), {
+      target: { value: '0' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.reviewDailyNewCap)).toBe(0);
+    });
+
+    fireEvent.change(within(row).getByTestId('setting-review-daily-review-cap'), {
+      target: { value: '999999' },
+    });
+    await waitFor(async () => {
+      expect(await settingsRepository.get(SETTINGS_KEYS.reviewDailyReviewCap)).toBe(1000);
+    });
+    expect(within(row).getByTestId('setting-review-daily-review-cap')).toHaveValue(1000);
+    // Editing one cap keeps the other.
+    expect(await settingsRepository.get(SETTINGS_KEYS.reviewDailyNewCap)).toBe(0);
+  });
+});
+
 describe('Settings page — Puzzle hints default (Feature 017 §7)', () => {
   beforeEach(async () => {
     await db.settings.clear();

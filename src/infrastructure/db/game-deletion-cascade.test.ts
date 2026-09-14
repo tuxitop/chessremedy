@@ -7,6 +7,7 @@ import { summariesRepository } from './summaries-repository';
 import { puzzleCandidatesRepository } from './candidates-repository';
 import { puzzlesRepository } from './puzzles-repository';
 import { attemptsRepository } from './attempts-repository';
+import { reviewSchedulesRepository } from './review-schedules-repository';
 import { trainingSetsRepository } from './training-sets-repository';
 import { trainingCyclesRepository } from './training-cycles-repository';
 import { DexieEngineAnalysisCache } from './engine-cache-repository';
@@ -16,6 +17,7 @@ import { createAnalysisJob } from '@/domain/analysis';
 import { buildAnalysisSummary } from '@/domain/analysis/summaryDerivation';
 import { puzzleRowFixture } from '@/domain/puzzle/test-support';
 import { puzzleIdOf } from '@/domain/puzzle/id';
+import { puzzleScheduleRowFixture } from '@/domain/review/test-support';
 import {
   attemptRowFixture,
   cycleContextFixture,
@@ -77,6 +79,7 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
     await db.puzzleCandidates.clear();
     await db.puzzles.clear();
     await db.puzzleAttempts.clear();
+    await db.puzzleSchedules.clear();
     await db.trainingSets.clear();
     await db.trainingCycles.clear();
     await db.syncState.clear();
@@ -182,6 +185,14 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
       }),
     );
 
+    // Feature-020 derived schedule rows for the deleted game's puzzles (and a
+    // foreign row that must survive) — the cascade removes them by `puzzleId`.
+    await reviewSchedulesRepository.bulkPut([
+      puzzleScheduleRowFixture({ puzzleId: deletedPuzzleIds[0]! }),
+      puzzleScheduleRowFixture({ puzzleId: deletedPuzzleIds[1]! }),
+      puzzleScheduleRowFixture({ puzzleId: foreignPuzzleId }),
+    ]);
+
     const cache = new DexieEngineAnalysisCache();
     await cache.put('shared-fen-key', {
       jobId: 'j-x',
@@ -249,5 +260,14 @@ describe('game deletion cascade (ARCHITECTURE.md §7)', () => {
       expect(storedPuzzles.has(attempt.puzzleId)).toBe(true);
     }
     expect(await attemptsRepository.listForPuzzle(deletedPuzzleIds[0]!)).toEqual([]);
+
+    // Feature-020: schedule rows cascade by puzzle id; the foreign row
+    // survives and no orphan schedule row remains.
+    expect(await reviewSchedulesRepository.get(deletedPuzzleIds[0]!)).toBeUndefined();
+    expect(await reviewSchedulesRepository.get(deletedPuzzleIds[1]!)).toBeUndefined();
+    expect(await reviewSchedulesRepository.get(foreignPuzzleId)).toBeDefined();
+    for (const row of await db.puzzleSchedules.toArray()) {
+      expect(storedPuzzles.has(row.puzzleId)).toBe(true);
+    }
   });
 });

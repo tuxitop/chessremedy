@@ -83,6 +83,7 @@ const TABLE_LIST = [
   'syncState',
   'syncTombstones',
   'syncBackups',
+  'puzzleSchedules',
 ] as const;
 
 describe('v11 → v12 schema migration (Feature 016 sync tables + updatedAt backfill)', () => {
@@ -93,7 +94,7 @@ describe('v11 → v12 schema migration (Feature 016 sync tables + updatedAt back
     const migrated = new ChessRemedyDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(12);
+      expect(migrated.verno).toBe(13);
       expect(migrated.tables.map((t) => t.name)).toEqual([...TABLE_LIST]);
 
       // The three additive stores exist and start empty.
@@ -114,7 +115,7 @@ describe('v11 → v12 schema migration (Feature 016 sync tables + updatedAt back
       expect(cycle).toBeDefined();
       expect(cycle!.updatedAt).toBe(cycle!.startedAt);
 
-      expect(PERSISTENCE_SCHEMA_VERSION).toBe(12);
+      expect(PERSISTENCE_SCHEMA_VERSION).toBe(13);
     } finally {
       migrated.close();
     }

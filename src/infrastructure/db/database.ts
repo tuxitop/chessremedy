@@ -12,6 +12,7 @@ import {
   applyV10Schema,
   applyV11Schema,
   applyV12Schema,
+  applyV13Schema,
 } from './schema';
 import type { GameRow } from './games-repository';
 import type { AnalysisJob } from '@/domain/analysis';
@@ -26,6 +27,7 @@ import type { TrainingCyclesRow } from './training-cycles-repository';
 import type { SyncStateRow } from './sync-state-repository';
 import type { SyncTombstoneRow } from './tombstones-repository';
 import type { SyncBackupRow } from './sync-backups-repository';
+import type { PuzzleScheduleRow } from './review-schedules-repository';
 import { PERSISTENCE_SCHEMA_VERSION } from '@/config/app-config';
 import type { ImportJob } from '@/domain/import/job';
 
@@ -63,6 +65,8 @@ export class ChessRemedyDatabase extends Dexie {
   syncTombstones!: Table<SyncTombstoneRow, string>;
   /** Feature-016 non-synced recovery payloads (schema v12), keyed by id. */
   syncBackups!: Table<SyncBackupRow, string>;
+  /** Feature-020 derived review schedules (schema v13), keyed by `puzzleId`. */
+  puzzleSchedules!: Table<PuzzleScheduleRow, string>;
 
   constructor(name = 'chessremedy') {
     super(name);
@@ -79,14 +83,15 @@ export class ChessRemedyDatabase extends Dexie {
     applyV10Schema(this);
     applyV11Schema(this);
     applyV12Schema(this);
+    applyV13Schema(this);
   }
 }
 
 export const db = new ChessRemedyDatabase();
 
-if (PERSISTENCE_SCHEMA_VERSION !== 12) {
+if (PERSISTENCE_SCHEMA_VERSION !== 13) {
   throw new Error(
-    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v12. ` +
+    `PERSISTENCE_SCHEMA_VERSION mismatch: ${PERSISTENCE_SCHEMA_VERSION} vs Dexie v13. ` +
       `Bump PERSISTENCE_SCHEMA_VERSION in app-config.ts and add a new schema module ` +
       `when extending the database.`,
   );
